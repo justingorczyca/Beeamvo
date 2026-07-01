@@ -1,0 +1,125 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+# Least privilege for a no-secrets source-build gate. No signing identities,
+# tokens, or secrets are required: this verifies that a clean checkout of the
+# project analyzes, tests, and builds from public sources. Distribution signing
+# / notarization is handled out-of-band.
+permissions:
+  contents: read
+
+# Cancel superseded runs on the same branch so PRs stay fast; allow main runs to
+# complete so release-candidate builds are not interrupted.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
+
+jobs:
+  analyze-and-test:
+    name: Analyze, format & test
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    # Deterministic pub cache location so it can be cached across all jobs/OSes.
+    env:
+      PUB_CACHE: ${{ runner.temp }}/.pub-cache
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Cache pub dependencies
+        uses: actions/cache@v4
+        with:
+          path: ${{ runner.temp }}/.pub-cache
+          key: pub-${{ runner.os }}-${{ hashFiles('frontend/pubspec.lock') }}
+          restore-keys: pub-${{ runner.os }}-
+
+      - name: Set up Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          # Pinned to the audited baseline for reproducible source builds.
+          # Bump intentionally when moving the supported toolchain forward.
+          flutter-version: '3.44.2'
+          channel: stable
+          cache: true
+
+      - name: flutter pub get (lockfile enforced)
+        run: flutter pub get --enforce-lockfile
+
+      - name: dart format check
+        run: dart format --output=none --set-exit-if-changed lib test
+
+      - name: flutter analyze
+        run: flutter analyze
+
+      - name: flutter test
+        run: flutter test
+
+  build:
+    name: Build (${{ matrix.target }})
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: macos-latest
+            target: macos
+          - os: windows-latest
+            target: windows
+          - os: ubuntu-latest
+            target: linux
+    env:
+      PUB_CACHE: ${{ runner.temp }}/.pub-cache
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      # Linux is an "experimental" platform but ships a complete native runner
+      # (frontend/linux/) and a whisper.cpp integration identical to Windows.
+      # It needs the standard Flutter Linux desktop build prerequisites plus the
+      # Linux desktop feature flag. CI is the authoritative native-compile gate.
+      - name: Install Linux build prerequisites
+        if: matrix.target == 'linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y clang cmake ninja-build pkg-config libgtk-3-dev liblzma-dev libstdc++-12-dev
+
+      - name: Enable Flutter Linux desktop
+        if: matrix.target == 'linux'
+        run: flutter config --enable-linux-desktop
+
+      - name: Cache pub dependencies
+        uses: actions/cache@v4
+        with:
+          path: ${{ runner.temp }}/.pub-cache
+          key: pub-${{ runner.os }}-${{ hashFiles('frontend/pubspec.lock') }}
+          restore-keys: pub-${{ runner.os }}-
+
+      - name: Set up Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          flutter-version: '3.44.2'
+          channel: stable
+          cache: true
+
+      - name: flutter pub get (lockfile enforced)
+        run: flutter pub get --enforce-lockfile
+
+      # Native deps: on Windows/Linux the native runner fetches the whisper.cpp
+      # source from GitHub at build time via a pinned CMake FetchContent commit
+      # (v1.8.4), so this step needs network access and the platform C++
+      # toolchain (Visual Studio / Xcode / clang) that the hosted runners
+      # provide. macOS links the bundled local whisper.cpp copy (no fetch).
+      - name: Build app (${{ matrix.target }})
+        shell: bash
+        run: flutter build ${{ matrix.target }} --release

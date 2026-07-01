@@ -1,0 +1,52 @@
+# Dependabot configuration.
+#
+# This is an *additive, no-secrets* convenience: it opens low-frequency pull
+# requests to keep GitHub Actions and Dart (pub) dependencies from going stale
+# and to surface known advisories. It does not change CI behavior, requires no
+# tokens, and every PR it opens still has to pass the normal `ci.yml` gate
+# (`pub get --enforce-lockfile`, `dart format`, `analyze`, `test`, per-OS build).
+#
+# Honest coverage note (no false assurances):
+#   - `github-actions` updates are GA and reliable (keeps `uses:` versions patched).
+#   - `pub` provides version-update PRs and surfaces advisories from GitHub's
+#     Advisory Database, but automated *security* update coverage for pub is not
+#     exhaustive. This does NOT replace manual review of dependency changes or the
+#     supply-chain/process audits in docs/. Treat `docs/THIRD_PARTY_NOTICES.md`
+#     and the `pubspec.lock` + CMake FetchContent pins as the authoritative,
+#     reviewable dependency record for the source release.
+version: 2
+
+# The pub ecosystem historically requires opting in to beta ecosystems.
+enable-beta-ecosystems: true
+
+updates:
+  # GitHub Actions used in CI.
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    open-pull-requests-limit: 5
+    commit-message:
+      prefix: "ci"
+    labels:
+      - "dependencies"
+
+  # Dart/Flutter packages (pubspec.yaml lives in frontend/).
+  - package-ecosystem: "pub"
+    directory: "/frontend"
+    schedule:
+      interval: "weekly"
+    # Keep churn low for a community-maintained project.
+    open-pull-requests-limit: 5
+    commit-message:
+      prefix: "deps"
+    labels:
+      - "dependencies"
+    # Group minor/patch bumps so a single PR can update several packages.
+    # Major-version bumps still get their own PR because they may need code
+    # changes and must be reviewable in isolation.
+    groups:
+      dart-minor-and-patch:
+        update-types:
+          - "minor"
+          - "patch"

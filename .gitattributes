@@ -1,0 +1,22 @@
+# Normalize text files for consistent open-source diffs.
+* text=auto eol=lf
+
+# Scripts should keep Unix line endings.
+*.sh text eol=lf
+
+# Windows project files can remain text-normalized; binaries must not be altered.
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.ico binary
+*.icns binary
+*.pdf binary
+*.wav binary
+*.mp3 binary
+*.mp4 binary
+*.bin binary
+*.dll binary
+*.exe binary
+*.dylib binary
+*.so binary

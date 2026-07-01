@@ -1,0 +1,5 @@
+#include "../../Flutter/Flutter-Debug.xcconfig"
+#include "Warnings.xcconfig"
+
+// Bridging header for whisper.cpp
+SWIFT_OBJC_BRIDGING_HEADER = Runner/WhisperBridgingHeader.h
