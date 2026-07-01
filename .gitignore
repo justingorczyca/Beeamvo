@@ -1,0 +1,85 @@
+# OS files
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# IDE
+.idea/
+.vscode/
+*.iml
+*.swp
+*.swo
+
+# Build artifacts
+/build/
+**/build/
+*.app
+*.dmg
+*.msix
+
+# Flutter
+.dart_tool/
+.flutter-plugins
+.flutter-plugins-dependencies
+.pub-cache/
+.pub/
+coverage/
+
+# Environment (local only)
+*.env
+*.env.local
+*.env.*.local
+*.env.production
+!*.env.example
+
+# Logs / generated diagnostics
+*.log
+**/build_log.txt
+**/run_log.txt
+**/run_log_utf8.txt
+**/analysis.txt
+**/analysis_output.txt
+
+# Misc
+*.symbols
+*.map.json
+
+# Secrets / credentials / signing material
+**/google-services.json
+**/firebase_options.dart
+**/GoogleService-Info.plist
+**/service-account*.json
+**/service_account*.json
+**/credentials*.json
+**/client_secret*.json
+*.pem
+*.key
+*.p8
+*.p12
+*.pfx
+*.jks
+*.keystore
+*.mobileprovision
+*.provisionprofile
+*.cer
+*.crt
+*.der
+
+# Sensitive / generated config files
+**/android/local.properties
+**/android/key.properties
+**/ios/Flutter/Generated.xcconfig
+**/ios/Flutter/flutter_export_environment.sh
+**/ios/Flutter/ephemeral/
+**/ios/Runner/ExportOptions.plist
+**/linux/flutter/ephemeral/
+**/linux/flutter/generated_plugin_registrant.*
+**/linux/flutter/generated_plugins.cmake
+**/macos/Flutter/GeneratedPluginRegistrant.swift
+**/macos/Flutter/ephemeral/
+**/windows/flutter/ephemeral/
+**/windows/flutter/generated_plugin_registrant.*
+**/windows/flutter/generated_plugins.cmake
+
+# Downloaded whisper model binaries (ggml-*.bin)
+**/ggml-*.bin

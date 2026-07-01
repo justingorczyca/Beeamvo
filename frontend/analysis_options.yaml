@@ -1,0 +1,18 @@
+include: package:flutter_lints/flutter.yaml
+
+# Additional conservative rules. Chosen to tighten analysis WITHOUT flooding
+# the existing 15k-line codebase. Deliberately NOT added (cascade risk):
+# - require_trailing_commas (would flag thousands of existing call sites)
+# - unawaited_futures (legitimate fire-and-forget async in a GUI app)
+# - prefer_const_declarations (flagged 8 pre-existing untouched files)
+# Rule notes:
+# - avoid_print: the project uses debugPrint; this only flags stray print().
+# - prefer_const_constructors_in_immutables: stays low-noise in this codebase.
+linter:
+  rules:
+    avoid_print: true
+    prefer_const_constructors_in_immutables: true
+    # Disabled: introduced by the lints 6.0 -> 6.1 dependency upgrade and flags
+    # pre-existing AnimatedSwitcher patterns across untouched UI files
+    # (use_null_aware_elements). Kept out to avoid churning unrelated code.
+    use_null_aware_elements: false

@@ -1,0 +1,73 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  analyze-and-test:
+    name: Analyze & Test
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Flutter (stable)
+        uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+
+      - name: flutter pub get
+        run: flutter pub get
+
+      - name: flutter analyze
+        run: flutter analyze
+
+      - name: flutter test
+        run: flutter test
+
+  build:
+    name: Build (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [macos-latest, windows-latest]
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Flutter (stable)
+        uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+
+      - name: flutter pub get
+        run: flutter pub get
+
+      # Native deps note: on Windows/Linux the native runner fetches the
+      # whisper.cpp source from GitHub at build time, so this step needs
+      # network access and the platform C++ toolchain (Visual Studio / Xcode)
+      # that GitHub-hosted runners provide. Marked continue-on-error: false
+      # but treated as best-effort across the native-dependency matrix.
+      - name: Build app (macOS / Windows)
+        continue-on-error: false
+        shell: bash
+        run: |
+          if [ "$RUNNER_OS" = "macOS" ]; then
+            flutter build macos --release
+          elif [ "$RUNNER_OS" = "Windows" ]; then
+            flutter build windows --release
+          fi
