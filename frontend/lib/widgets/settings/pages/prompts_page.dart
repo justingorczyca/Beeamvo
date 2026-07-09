@@ -5,6 +5,8 @@ import '../../../models/system_prompt.dart';
 import '../../../models/prompt_settings.dart';
 import '../../../services/settings_service.dart';
 import '../../prompt_cloud_switch_dialog.dart';
+import '../bee_input.dart';
+import '../bee_page_header.dart';
 import '../settings_shared.dart';
 import 'prompt_override_panel.dart';
 
@@ -162,16 +164,17 @@ class _PromptsPageState extends State<PromptsPage> {
   Widget _buildPromptList(SettingsService settings) {
     return SingleChildScrollView(
       key: const ValueKey('list'),
-      padding: const EdgeInsets.fromLTRB(24, 22, 24, 24),
+      padding: BeePageHeader.contentPadding,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
+          BeePageHeader(title: 'Prompts'),
           // ── 1. CURRENT PROMPT ────────────────────────────
           // Selected prompt shown prominently at the top with
           // an optional inline preview expander.
           _buildCurrentPromptBlock(settings),
 
-          const SizedBox(height: 22),
+          const SizedBox(height: BeePageHeader.groupGap),
 
           // ── 2. REPHRASER ─────────────────────────────────
           // Global setting that modifies the resolved prompt.
@@ -265,7 +268,7 @@ class _PromptsPageState extends State<PromptsPage> {
             },
           ),
 
-          const SizedBox(height: 22),
+          const SizedBox(height: BeePageHeader.groupGap),
 
           // ── 3. ALL PROMPTS ───────────────────────────────
           // Single unified list with sub-eyebrows for built-in
@@ -445,7 +448,11 @@ class _PromptsPageState extends State<PromptsPage> {
                             ),
                           ),
                           const SizedBox(width: 8),
-                          _buildKindTag(isBuiltIn),
+                          beeBadge(
+                            context,
+                            isBuiltIn ? 'BUILT-IN' : 'CUSTOM',
+                            BeeBadgeTone.neutral,
+                          ),
                         ],
                       ),
                       const SizedBox(height: 3),
@@ -517,25 +524,6 @@ class _PromptsPageState extends State<PromptsPage> {
           secondChild: const SizedBox(width: double.infinity),
         ),
       ],
-    );
-  }
-
-  Widget _buildKindTag(bool isBuiltIn) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1.5),
-      decoration: BoxDecoration(
-        color: beeText(context).withValues(alpha: 0.05),
-        borderRadius: BorderRadius.circular(kBeeRadiusXs),
-      ),
-      child: Text(
-        isBuiltIn ? 'BUILT-IN' : 'CUSTOM',
-        style: GoogleFonts.inter(
-          fontSize: 9,
-          fontWeight: FontWeight.w600,
-          color: beeTextMuted(context),
-          letterSpacing: 0.5,
-        ),
-      ),
     );
   }
 
@@ -801,9 +789,13 @@ class _PromptsPageState extends State<PromptsPage> {
                         });
                       }
                     },
-                    decoration: _flatInputDecoration(
-                      labelText: 'Name',
+                    decoration: beeInputDecoration(context, label: 'Name')
+                        .copyWith(
                       errorText: nameError,
+                      errorStyle: GoogleFonts.inter(
+                        color: beeError(context),
+                        fontSize: 11,
+                      ),
                     ),
                   ),
                   const SizedBox(height: 16),
@@ -824,9 +816,15 @@ class _PromptsPageState extends State<PromptsPage> {
                         }
                       });
                     },
-                    decoration: _flatInputDecoration(
-                      labelText: 'Instruction',
+                    decoration: beeInputDecoration(
+                      context,
+                      label: 'Instruction',
+                    ).copyWith(
                       errorText: instrError,
+                      errorStyle: GoogleFonts.inter(
+                        color: beeError(context),
+                        fontSize: 11,
+                      ),
                       alignLabelWithHint: true,
                     ),
                   ),
@@ -915,45 +913,6 @@ class _PromptsPageState extends State<PromptsPage> {
           );
         },
       ),
-    );
-  }
-
-  /// Flat text field decoration — no yellow focus ring, no box icon.
-  /// Matches the inline flat-field style used elsewhere in the app.
-  InputDecoration _flatInputDecoration({
-    required String labelText,
-    String? errorText,
-    bool alignLabelWithHint = false,
-  }) {
-    return InputDecoration(
-      labelText: labelText,
-      labelStyle: GoogleFonts.inter(
-        color: beeTextSub(context),
-        fontSize: 12,
-        fontWeight: FontWeight.w500,
-      ),
-      alignLabelWithHint: alignLabelWithHint,
-      errorText: errorText,
-      errorStyle: GoogleFonts.inter(color: beeError(context), fontSize: 11),
-      filled: true,
-      fillColor: beeBlack(context),
-      focusedBorder: OutlineInputBorder(
-        borderRadius: BorderRadius.circular(kBeeRadiusSm),
-        borderSide: BorderSide(color: beeTextSub(context)),
-      ),
-      enabledBorder: OutlineInputBorder(
-        borderRadius: BorderRadius.circular(kBeeRadiusSm),
-        borderSide: BorderSide(color: beeBorder(context)),
-      ),
-      errorBorder: OutlineInputBorder(
-        borderRadius: BorderRadius.circular(kBeeRadiusSm),
-        borderSide: BorderSide(color: beeError(context)),
-      ),
-      focusedErrorBorder: OutlineInputBorder(
-        borderRadius: BorderRadius.circular(kBeeRadiusSm),
-        borderSide: BorderSide(color: beeError(context)),
-      ),
-      contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
     );
   }
 

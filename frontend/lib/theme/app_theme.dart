@@ -222,6 +222,12 @@ class AppTheme {
   static const Color darkSuccess = Color(0xFF4EC38B);
   static const Color darkError = Color(0xFFF4685C);
 
+  // ─── Toggle thumb tokens (shared by Material Switch + BeeToggle) ──
+  // Both light and dark give the toggle the same crisp macOS-style knob.
+  static const Color lightToggleThumb = neutral0; // #FFFFFF
+  static const Color darkToggleThumb =
+      Color(0xFFF4F4F2); // tuned warm white, matches dark switchTheme
+
   // ─── ThemeData ──────────────────────────────────────────────────
   static ThemeData get lightTheme {
     final base = _buildLightTheme();
@@ -833,6 +839,11 @@ class BeeColors extends ThemeExtension<BeeColors> {
   /// Semantic error.
   final Color error;
 
+  /// The knob painted on top of a [BeeToggle] / engaged switch track.
+  /// White in light mode, warm off-white (#F4F4F2) in dark mode — the same
+  /// tuned value the Material switch already uses, now shared.
+  final Color toggleThumb;
+
   const BeeColors({
     required this.yellow,
     required this.yellowDim,
@@ -848,6 +859,7 @@ class BeeColors extends ThemeExtension<BeeColors> {
     required this.divider,
     required this.success,
     required this.error,
+    required this.toggleThumb,
   });
 
   /// Light-mode variant — values mirror the legacy compile-time tokens so the
@@ -865,10 +877,11 @@ class BeeColors extends ThemeExtension<BeeColors> {
       textMuted = AppTheme.textTertiary,
       border = AppTheme.border,
       divider = AppTheme.divider,
-      success = AppTheme.success,
-      error = AppTheme.error;
+          success = AppTheme.success,
+          error = AppTheme.error,
+          toggleThumb = AppTheme.lightToggleThumb;
 
-  /// Dark-mode variant — neutral graphite palette layered so each "raised"
+      /// Dark-mode variant — neutral graphite palette layered so each "raised"
   /// surface is one perceptual step brighter than the layer below.
   const BeeColors.dark()
     : yellow = AppTheme.darkAccent,
@@ -884,7 +897,8 @@ class BeeColors extends ThemeExtension<BeeColors> {
       border = AppTheme.darkBorder,
       divider = AppTheme.darkDivider,
       success = AppTheme.darkSuccess,
-      error = AppTheme.darkError;
+      error = AppTheme.darkError,
+      toggleThumb = AppTheme.darkToggleThumb;
 
   @override
   BeeColors copyWith({
@@ -902,6 +916,7 @@ class BeeColors extends ThemeExtension<BeeColors> {
     Color? divider,
     Color? success,
     Color? error,
+    Color? toggleThumb,
   }) {
     return BeeColors(
       yellow: yellow ?? this.yellow,
@@ -916,13 +931,14 @@ class BeeColors extends ThemeExtension<BeeColors> {
       textMuted: textMuted ?? this.textMuted,
       border: border ?? this.border,
       divider: divider ?? this.divider,
-      success: success ?? this.success,
-      error: error ?? this.error,
-    );
-  }
+          success: success ?? this.success,
+          error: error ?? this.error,
+          toggleThumb: toggleThumb ?? this.toggleThumb,
+        );
+      }
 
-  @override
-  BeeColors lerp(ThemeExtension<BeeColors>? other, double t) {
+      @override
+      BeeColors lerp(ThemeExtension<BeeColors>? other, double t) {
     if (other is! BeeColors) return this;
     return BeeColors(
       yellow: Color.lerp(yellow, other.yellow, t)!,
@@ -937,13 +953,14 @@ class BeeColors extends ThemeExtension<BeeColors> {
       textMuted: Color.lerp(textMuted, other.textMuted, t)!,
       border: Color.lerp(border, other.border, t)!,
       divider: Color.lerp(divider, other.divider, t)!,
-      success: Color.lerp(success, other.success, t)!,
-      error: Color.lerp(error, other.error, t)!,
-    );
-  }
+          success: Color.lerp(success, other.success, t)!,
+          error: Color.lerp(error, other.error, t)!,
+          toggleThumb: Color.lerp(toggleThumb, other.toggleThumb, t)!,
+        );
+      }
 
-  @override
-  bool operator ==(Object other) {
+      @override
+      bool operator ==(Object other) {
     if (identical(this, other)) return true;
     if (other is! BeeColors) return false;
     return yellow == other.yellow &&
@@ -958,9 +975,10 @@ class BeeColors extends ThemeExtension<BeeColors> {
         textMuted == other.textMuted &&
         border == other.border &&
         divider == other.divider &&
-        success == other.success &&
-        error == other.error;
-  }
+              success == other.success &&
+              error == other.error &&
+              toggleThumb == other.toggleThumb;
+        }
 
   @override
   int get hashCode => Object.hash(
@@ -976,7 +994,8 @@ class BeeColors extends ThemeExtension<BeeColors> {
     textMuted,
     border,
     divider,
-    success,
-    error,
-  );
-}
+        success,
+        error,
+        toggleThumb,
+      );
+    }

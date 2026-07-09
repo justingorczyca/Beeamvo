@@ -6,6 +6,7 @@ import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:window_manager/window_manager.dart';
 import 'package:super_clipboard/super_clipboard.dart';
 import 'package:flutter/services.dart';
+import 'package:hotkey_manager/hotkey_manager.dart';
 
 import 'config.dart';
 import 'services/cloud_transcription_service.dart';
@@ -119,9 +120,7 @@ class _BeeamvoAppState extends State<BeeamvoApp> {
             GlobalWidgetsLocalizations.delegate,
             GlobalCupertinoLocalizations.delegate,
           ],
-          supportedLocales: const [
-            Locale('en'),
-          ],
+          supportedLocales: const [Locale('en')],
           home: BeeamvoHome(
             settingsService: widget.settingsService,
             settingsInitialized: _settingsInitialized,
@@ -206,6 +205,16 @@ class _BeeamvoHomeState extends State<BeeamvoHome>
   // end of onboarding; returning users get the native prompt once at startup).
   bool _showedOnboardingThisRun = false;
 
+  // Backend model transitions share one native Whisper instance. Serialize them
+  // so a rapid settings change cannot initialize and unload the model at the
+  // same time. A newer request supersedes queued work that has not started.
+  Future<void> _backendTransitionQueue = Future<void>.value();
+  int _backendTransitionRevision = 0;
+  TranscriptionBackend? _activeRecordingBackend;
+  Completer<void>? _onboardingCompletion;
+  bool _isShuttingDown = false;
+  String? _hotkeyConfigurationError;
+
   @override
   void initState() {
     super.initState();
@@ -243,24 +252,46 @@ class _BeeamvoHomeState extends State<BeeamvoHome>
   void _onSettingsChanged() {
     final current = _settingsService.transcriptionBackend;
     if (_lastSeenBackend != null && _lastSeenBackend != current) {
-      _onBackendChanged(current);
+      unawaited(_scheduleBackendTransition(current));
     }
     _lastSeenBackend = current;
+    // Clipboard settings are changed from several pages and tray flows. Keep
+    // the monitor in sync immediately instead of waiting for Settings to close.
+    _syncClipboardMonitor();
+  }
+
+  Future<void> _shutdownServices() async {
+    if (_isShuttingDown) return;
+    _isShuttingDown = true;
+    final onboardingCompletion = _onboardingCompletion;
+    if (onboardingCompletion != null && !onboardingCompletion.isCompleted) {
+      onboardingCompletion.complete();
+    }
+    _onboardingCompletion = null;
+    _holdTimer?.cancel();
+    _holdTimer = null;
+    _durationLimitTimer?.cancel();
+    _durationLimitTimer = null;
+    _clipboardMonitorTimer?.cancel();
+    _clipboardMonitorTimer = null;
+    await _unregisterModeSelectionHotkeys();
+    await _unregisterModeCloudConfirmHotkeys();
+    await _hotkeyService.unregisterHotkey('cancel');
+    await _hotkeyService.unregisterHotkey('commit');
+    await _recordingService.dispose();
+    await _whisperService.dispose();
+    await _hotkeyService.dispose();
+    _cloudService.dispose();
+    _trayService.dispose();
   }
 
   @override
   void dispose() {
     _settingsService.removeListener(_onSettingsChanged);
+    windowManager.removeListener(this);
     _pulseController.dispose();
     _rotationController.dispose();
-    _holdTimer?.cancel();
-    _durationLimitTimer?.cancel();
-    _clipboardMonitorTimer?.cancel();
-    windowManager.removeListener(this);
-    _hotkeyService.dispose();
-    _recordingService.dispose();
-    _trayService.dispose();
-    _whisperService.dispose();
+    unawaited(_shutdownServices());
     super.dispose();
   }
 
@@ -317,13 +348,8 @@ class _BeeamvoHomeState extends State<BeeamvoHome>
           settingsService: _settingsService,
           onShowSettings: _showSettings,
           onExit: () async {
-            _clipboardMonitorTimer?.cancel();
-            _holdTimer?.cancel();
-            _durationLimitTimer?.cancel();
-            _recordingService.dispose();
-            _whisperService.dispose();
-            _hotkeyService.dispose();
-            windowManager.destroy();
+            await _shutdownServices();
+            await windowManager.destroy();
           },
           onPromptChanged: () {
             debugPrint(
@@ -372,44 +398,52 @@ class _BeeamvoHomeState extends State<BeeamvoHome>
         await MacOsPermissionService.request();
       }
 
-        await Future.delayed(const Duration(milliseconds: 200));
-        await WindowHelper.hide();
-        debugPrint('Window hidden');
+      await Future.delayed(const Duration(milliseconds: 200));
+      await WindowHelper.hide();
+      debugPrint('Window hidden');
 
-        // ── Background update check ─────────────────────────────────────────
-        // Fire-and-forget: rate-limited to once per 24h (see SettingsService),
-        // never blocks startup or recording, and only surfaces a Settings badge
-        // when a newer GitHub release exists. Every internal failure is swallowed
-        // so this can never affect the rest of the app.
-        if (_settingsService.shouldCheckForUpdates) {
-          unawaited(_performBackgroundUpdateCheck());
-        }
-      } catch (e, stackTrace) {
-        debugPrint('Initialization error: $e');
+      // ── Background update check ─────────────────────────────────────────
+      // Fire-and-forget: rate-limited to once per 24h (see SettingsService),
+      // never blocks startup or recording, and only surfaces a Settings badge
+      // when a newer GitHub release exists. Every internal failure is swallowed
+      // so this can never affect the rest of the app.
+      if (_settingsService.shouldCheckForUpdates) {
+        unawaited(_performBackgroundUpdateCheck());
+      }
+    } catch (e, stackTrace) {
+      debugPrint('Initialization error: $e');
       if (kDebugMode) debugPrint('Stack trace: $stackTrace');
-          setState(() => _state = RecordingState.error);
-        }
+      setState(() => _state = RecordingState.error);
+    }
+  }
+
+  /// Background GitHub-Releases update check. Fully best-effort — every
+  /// failure path is swallowed so the app is never affected by a broken or
+  /// offline check.
+  Future<void> _performBackgroundUpdateCheck() async {
+    try {
+      final result = await UpdateCheckService().checkWithStatus();
+      if (!result.succeeded) {
+        debugPrint('Update check failed; it will be retried later.');
+        return;
       }
 
-      /// Background GitHub-Releases update check. Fully best-effort — every
-      /// failure path is swallowed so the app is never affected by a broken or
-      /// offline check.
-      Future<void> _performBackgroundUpdateCheck() async {
-        try {
-          await _settingsService.recordUpdateCheck();
-          final info = await UpdateCheckService().check();
-          if (info != null) {
-            await _settingsService.setAvailableUpdate(info);
-            debugPrint('Update available: ${info.latestVersion}');
-          } else {
-            await _settingsService.clearAvailableUpdate();
-          }
-        } catch (e) {
-          debugPrint('Update check failed (non-critical): $e');
-        }
+      // Only a successfully parsed GitHub response consumes the 24-hour
+      // rate-limit window. A transient failure should be retried.
+      await _settingsService.recordUpdateCheck();
+      final info = result.update;
+      if (info != null) {
+        await _settingsService.setAvailableUpdate(info);
+        debugPrint('Update available: ${info.latestVersion}');
+      } else {
+        await _settingsService.clearAvailableUpdate();
       }
+    } catch (e) {
+      debugPrint('Update check failed (non-critical): $e');
+    }
+  }
 
-      bool get _clipboardMonitorEnabled =>
+  bool get _clipboardMonitorEnabled =>
       _settingsService.clipboardWatcherEnabled &&
       _settingsService.clipboardHistoryEnabled;
 
@@ -538,33 +572,69 @@ class _BeeamvoHomeState extends State<BeeamvoHome>
         _state == RecordingState.settings;
   }
 
-  /// Register the main global hotkey with the given configuration
-  Future<void> _registerMainHotkey(HotkeyConfig config) async {
-    await _hotkeyService.registerHotkey(
-      id: 'main',
-      key: config.key,
-      modifiers: config.modifiers.toList(),
-      onPressed: _onHotkeyPressed,
+  Future<void> _registerShortcut(
+    String id,
+    HotkeyConfig config,
+    VoidCallback onPressed, {
+    VoidCallback? onReleased,
+  }) async {
+    try {
+      await _hotkeyService.registerHotkey(
+        id: id,
+        key: config.key,
+        modifiers: config.modifiers.toList(),
+        onPressed: onPressed,
+        onReleased: onReleased,
+      );
+    } on HotkeyConflictException catch (error) {
+      // A bad persisted shortcut should not prevent startup or recording. Keep
+      // the already-working binding and surface a reset option in Settings.
+      _hotkeyConfigurationError = error.message;
+      debugPrint('Shortcut configuration conflict: ${error.message}');
+    } catch (error) {
+      // Platform registration failures (for example another app owns the OS
+      // binding) are also non-fatal; the settings screen remains available.
+      _hotkeyConfigurationError = 'Unable to register ${config.displayString}.';
+      debugPrint('Shortcut registration failed for $id: $error');
+    }
+  }
+
+  /// Register the main global hotkey with the given configuration.
+  Future<void> _registerMainHotkey(HotkeyConfig config) {
+    return _registerShortcut(
+      'main',
+      config,
+      _onHotkeyPressed,
       onReleased: _onHotkeyReleased,
     );
   }
 
-  Future<void> _registerClipboardPopupHotkey(HotkeyConfig config) async {
-    await _hotkeyService.registerHotkey(
-      id: 'clipboard_popup',
-      key: config.key,
-      modifiers: config.modifiers.toList(),
-      onPressed: _openClipboardHistoryFromHotkey,
+  Future<void> _registerClipboardPopupHotkey(HotkeyConfig config) {
+    return _registerShortcut(
+      'clipboard_popup',
+      config,
+      _openClipboardHistoryFromHotkey,
     );
   }
 
-  Future<void> _registerModeSelectionHotkey(HotkeyConfig config) async {
-    await _hotkeyService.registerHotkey(
-      id: 'mode_selection',
-      key: config.key,
-      modifiers: config.modifiers.toList(),
-      onPressed: _openModeSelection,
-    );
+  Future<void> _registerModeSelectionHotkey(HotkeyConfig config) {
+    return _registerShortcut('mode_selection', config, _openModeSelection);
+  }
+
+  Future<void> _resetShortcutDefaults() async {
+    await _settingsService.resetHotkey();
+    await _settingsService.resetClipboardPopupHotkey();
+    await _settingsService.resetModeSelectionHotkey();
+    // Remove all old bindings before registering defaults. Otherwise an old
+    // secondary shortcut can block a default primary shortcut during the
+    // conflict check.
+    await _hotkeyService.unregisterHotkey('main');
+    await _hotkeyService.unregisterHotkey('clipboard_popup');
+    await _hotkeyService.unregisterHotkey('mode_selection');
+    _hotkeyConfigurationError = null;
+    await _registerMainHotkey(_settingsService.hotkey);
+    await _registerClipboardPopupHotkey(_settingsService.clipboardPopupHotkey);
+    await _registerModeSelectionHotkey(_settingsService.modeSelectionHotkey);
   }
 
   /// Called when the hotkey is changed in settings
@@ -588,16 +658,44 @@ class _BeeamvoHomeState extends State<BeeamvoHome>
     debugPrint('Recording mode changed to: ${mode.displayName}');
   }
 
-  /// Called when the transcription backend is changed in settings.
-  Future<void> _onBackendChanged(TranscriptionBackend backend) async {
-    debugPrint('Transcription backend changed to: ${backend.name}');
-    if (backend == TranscriptionBackend.whisper) {
-      // Always call init to ensure the selected model is loaded.
-      await _initWhisper();
-    } else if (_whisperService.isInitialized) {
-      // Free offline model resources when leaving whisper backend.
-      await _whisperService.dispose();
-    }
+  /// Applies a settings-page device choice to the long-lived recorder now,
+  /// rather than waiting for the next application launch.
+  void _onAudioDeviceChanged(String? deviceId) {
+    _recordingService.setPreferredDevice(deviceId);
+    debugPrint('Audio input device changed: ${deviceId ?? 'System Default'}');
+  }
+
+  /// Serializes native Whisper transitions and discards queued stale requests.
+  Future<void> _scheduleBackendTransition(TranscriptionBackend backend) {
+    final revision = ++_backendTransitionRevision;
+    final transition = _backendTransitionQueue.then((_) async {
+      if (_isShuttingDown ||
+          !mounted ||
+          revision != _backendTransitionRevision) {
+        return;
+      }
+      debugPrint('Transcription backend changed to: ${backend.name}');
+      if (backend == TranscriptionBackend.whisper) {
+        await _initWhisper();
+      } else {
+        // Release the native model but retain the shared ChangeNotifier so
+        // a later switch back to Whisper can initialize the same service.
+        await _whisperService.unloadModel();
+      }
+    });
+    _backendTransitionQueue = transition.catchError((
+      Object error,
+      StackTrace _,
+    ) {
+      debugPrint('Whisper backend transition failed: $error');
+    });
+    return transition;
+  }
+
+  /// Called by settings widgets; queues instead of racing native operations.
+  Future<void> _onBackendChanged(TranscriptionBackend backend) {
+    _lastSeenBackend = backend;
+    return _scheduleBackendTransition(backend);
   }
 
   Future<void> _verifyCloudProvider(CloudProvider provider) async {
@@ -641,7 +739,18 @@ class _BeeamvoHomeState extends State<BeeamvoHome>
     return modelId.endsWith('.en.bin');
   }
 
+  Future<void> _dismissModeInteractions() async {
+    await _unregisterModeSelectionHotkeys();
+    await _unregisterModeCloudConfirmHotkeys();
+    _modeSelectionIndex = null;
+    _modeCloudConfirmPrompt = null;
+  }
+
   void _showSettings() async {
+    // Settings may be opened by the tray while a mode popup is visible. Tear
+    // down its in-app navigation bindings first so stale handlers cannot act
+    // on a hidden popup.
+    await _dismissModeInteractions();
     // Resize to settings window size and center
     await windowManager.setMinimumSize(const Size(820, 560));
     await windowManager.setSize(const Size(980, 640));
@@ -651,7 +760,22 @@ class _BeeamvoHomeState extends State<BeeamvoHome>
       setState(() => _state = RecordingState.settings);
     }
 
-    WindowHelper.show();
+    await WindowHelper.show();
+    final shortcutError = _hotkeyConfigurationError;
+    if (shortcutError != null && mounted) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('$shortcutError Reset shortcuts to recover.'),
+            action: SnackBarAction(
+              label: 'Reset',
+              onPressed: () => unawaited(_resetShortcutDefaults()),
+            ),
+          ),
+        );
+      });
+    }
   }
 
   void _showRetrySettings() {
@@ -668,23 +792,27 @@ class _BeeamvoHomeState extends State<BeeamvoHome>
     await windowManager.center();
     await WindowHelper.show();
 
-    if (mounted) {
-      setState(() => _state = RecordingState.onboarding);
-    }
+    if (!mounted) return;
+    final completion = Completer<void>();
+    _onboardingCompletion = completion;
+    setState(() => _state = RecordingState.onboarding);
 
-    // Wait until onboarding completes (state changes away from onboarding)
-    // We use a completer-like approach: poll _state.
-    while (mounted && _state == RecordingState.onboarding) {
-      await Future.delayed(const Duration(milliseconds: 100));
+    // The wizard explicitly resolves this completer. Unlike state polling,
+    // this cannot leave initialization spinning forever when a route is closed
+    // or the app is disposed.
+    await completion.future;
+    if (!mounted) return;
+    if (identical(_onboardingCompletion, completion)) {
+      _onboardingCompletion = null;
     }
 
     // macOS: surface the single Accessibility permission for auto-paste right
     // after install, while the window is still at onboarding size.
-    if (Platform.isMacOS && mounted) {
+    if (Platform.isMacOS) {
       await PermissionOnboardingDialog.show(context);
     }
 
-    // Reset window to orb size
+    // Reset window to orb size.
     await WindowHelper.hide();
     await windowManager.setMinimumSize(const Size(150, 150));
     await windowManager.setSize(const Size(150, 150));
@@ -692,6 +820,8 @@ class _BeeamvoHomeState extends State<BeeamvoHome>
   }
 
   void _onOnboardingComplete() {
+    final completion = _onboardingCompletion;
+    if (completion != null && !completion.isCompleted) completion.complete();
     if (mounted) {
       setState(() => _state = RecordingState.idle);
     }
@@ -723,17 +853,21 @@ class _BeeamvoHomeState extends State<BeeamvoHome>
     );
 
     setState(() => _state = RecordingState.modeSelection);
-    await WindowHelper.showWithoutFocus();
+    // Navigation is intentionally app-scoped instead of modifier-less global
+    // shortcuts, so the popup must own focus while it is open.
+    await WindowHelper.show();
 
-    // Register keyboard navigation hotkeys
+    // Register focused-window keyboard navigation hotkeys
     await _hotkeyService.registerHotkey(
       id: 'mode_cancel',
       key: LogicalKeyboardKey.escape,
+      scope: HotKeyScope.inapp,
       onPressed: _cancelModeSelection,
     );
     await _hotkeyService.registerHotkey(
       id: 'mode_up',
       key: LogicalKeyboardKey.arrowUp,
+      scope: HotKeyScope.inapp,
       onPressed: () {
         setState(() {
           _modeSelectionIndex = (_modeSelectionIndex ?? 0) > 0
@@ -745,6 +879,7 @@ class _BeeamvoHomeState extends State<BeeamvoHome>
     await _hotkeyService.registerHotkey(
       id: 'mode_down',
       key: LogicalKeyboardKey.arrowDown,
+      scope: HotKeyScope.inapp,
       onPressed: () {
         final count =
             SystemPrompt.availablePrompts.length +
@@ -760,6 +895,7 @@ class _BeeamvoHomeState extends State<BeeamvoHome>
     await _hotkeyService.registerHotkey(
       id: 'mode_enter',
       key: LogicalKeyboardKey.enter,
+      scope: HotKeyScope.inapp,
       onPressed: () => _selectModeByIndex(_modeSelectionIndex ?? 0),
     );
   }
@@ -820,9 +956,9 @@ class _BeeamvoHomeState extends State<BeeamvoHome>
 
   // ── Inline cloud-switch confirm (Ctrl+M flow) ───────────────────────────
   //
-  // Renders [ModeCloudConfirmPopup] inside the unfocused 320x360 popup. The
-  // window keeps its size, and — because it has no OS focus — navigation is
-  // driven by the same kind of global hotkeys the mode list uses.
+  // Renders [ModeCloudConfirmPopup] inside the focused 320x360 popup. Its
+  // Escape/arrow/Enter bindings are app-scoped, so no keys are captured while
+  // the user is working in another application.
 
   /// Drill into the inline cloud-switch confirm for [prompt]. The
   /// mode-selection navigation hotkeys are already unregistered by the caller,
@@ -839,12 +975,14 @@ class _BeeamvoHomeState extends State<BeeamvoHome>
     await _hotkeyService.registerHotkey(
       id: 'mode_cloud_cancel',
       key: LogicalKeyboardKey.escape,
+      scope: HotKeyScope.inapp,
       onPressed: _cancelModeCloudConfirm,
     );
     if (needsCloudSetup) {
       await _hotkeyService.registerHotkey(
         id: 'mode_cloud_enter',
         key: LogicalKeyboardKey.enter,
+        scope: HotKeyScope.inapp,
         onPressed: _openSettingsFromCloudConfirm,
       );
       return;
@@ -852,6 +990,7 @@ class _BeeamvoHomeState extends State<BeeamvoHome>
     await _hotkeyService.registerHotkey(
       id: 'mode_cloud_up',
       key: LogicalKeyboardKey.arrowUp,
+      scope: HotKeyScope.inapp,
       onPressed: () {
         setState(() {
           _modeCloudConfirmIndex = _modeCloudConfirmIndex > 0
@@ -863,6 +1002,7 @@ class _BeeamvoHomeState extends State<BeeamvoHome>
     await _hotkeyService.registerHotkey(
       id: 'mode_cloud_down',
       key: LogicalKeyboardKey.arrowDown,
+      scope: HotKeyScope.inapp,
       onPressed: () {
         setState(() {
           // Two options: 0 = local two-pass, 1 = cloud.
@@ -873,6 +1013,7 @@ class _BeeamvoHomeState extends State<BeeamvoHome>
     await _hotkeyService.registerHotkey(
       id: 'mode_cloud_enter',
       key: LogicalKeyboardKey.enter,
+      scope: HotKeyScope.inapp,
       onPressed: () => _confirmModeCloudConfirm(_modeCloudConfirmIndex),
     );
   }
@@ -949,16 +1090,19 @@ class _BeeamvoHomeState extends State<BeeamvoHome>
       _state = RecordingState.modeSelection;
       _modeSelectionIndex = _modeSelectionIndex ?? 0;
     });
+    await WindowHelper.show();
 
-    // Re-register keyboard navigation hotkeys.
+    // Re-register focused-window keyboard navigation hotkeys.
     await _hotkeyService.registerHotkey(
       id: 'mode_cancel',
       key: LogicalKeyboardKey.escape,
+      scope: HotKeyScope.inapp,
       onPressed: _cancelModeSelection,
     );
     await _hotkeyService.registerHotkey(
       id: 'mode_up',
       key: LogicalKeyboardKey.arrowUp,
+      scope: HotKeyScope.inapp,
       onPressed: () {
         setState(() {
           _modeSelectionIndex = (_modeSelectionIndex ?? 0) > 0
@@ -970,6 +1114,7 @@ class _BeeamvoHomeState extends State<BeeamvoHome>
     await _hotkeyService.registerHotkey(
       id: 'mode_down',
       key: LogicalKeyboardKey.arrowDown,
+      scope: HotKeyScope.inapp,
       onPressed: () {
         final count =
             SystemPrompt.availablePrompts.length +
@@ -985,6 +1130,7 @@ class _BeeamvoHomeState extends State<BeeamvoHome>
     await _hotkeyService.registerHotkey(
       id: 'mode_enter',
       key: LogicalKeyboardKey.enter,
+      scope: HotKeyScope.inapp,
       onPressed: () => _selectModeByIndex(_modeSelectionIndex ?? 0),
     );
   }
@@ -1014,6 +1160,8 @@ class _BeeamvoHomeState extends State<BeeamvoHome>
       return;
     }
     _isLockActive = true;
+    _durationLimitTimer?.cancel();
+    _durationLimitTimer = null;
     await _clearRetryRecording();
     _useCurrentSettingsForRetry = false;
     _returnToRetryAfterSettings = false;
@@ -1067,17 +1215,16 @@ class _BeeamvoHomeState extends State<BeeamvoHome>
           debugPrint('Duration limit timer set to $limitSeconds seconds');
         }
 
+        // Do not register bare Enter/Escape as system hotkeys here. Those
+        // keys must remain available to the foreground application while a
+        // recording is active; the configured recording shortcut stops Toggle
+        // mode, and the orb can be cancelled with its visible controls.
+        // Keep an in-app Escape handler for the focused orb only.
         await _hotkeyService.registerHotkey(
           id: 'cancel',
           key: LogicalKeyboardKey.escape,
+          scope: HotKeyScope.inapp,
           onPressed: _cancelRecording,
-        );
-
-        // Register Enter key to commit/finish recording
-        await _hotkeyService.registerHotkey(
-          id: 'commit',
-          key: LogicalKeyboardKey.enter,
-          onPressed: _stopRecordingAndProcess,
         );
       } else {
         _recordingStopwatch
@@ -1090,6 +1237,11 @@ class _BeeamvoHomeState extends State<BeeamvoHome>
       _recordingStopwatch
         ..stop()
         ..reset();
+      _durationLimitTimer?.cancel();
+      _durationLimitTimer = null;
+      _holdTimer?.cancel();
+      _holdTimer = null;
+      _isHotkeyHeld = false;
       setState(() => _state = RecordingState.error);
       _hideAfterDelay(2);
     } finally {
@@ -1146,8 +1298,9 @@ class _BeeamvoHomeState extends State<BeeamvoHome>
       _recordingStopwatch
         ..stop()
         ..reset();
-      _durationLimitTimer?.cancel();
     }
+    _durationLimitTimer?.cancel();
+    _durationLimitTimer = null;
     _pulseController.repeat(reverse: true);
     _rotationController.repeat();
     setState(() {
@@ -1219,6 +1372,7 @@ class _BeeamvoHomeState extends State<BeeamvoHome>
       }
 
       final backend = effectiveBackend;
+      _activeRecordingBackend = backend;
 
       // Stop recording — stream path for offline, file path for cloud.
       Uint8List? pcmBytes;
@@ -1232,9 +1386,12 @@ class _BeeamvoHomeState extends State<BeeamvoHome>
       }
       currentAttemptIsRetryable = !isOffline && audioPath != null;
 
-      await _hotkeyService.unregisterHotkey('cancel');
-      await _hotkeyService.unregisterHotkey('commit');
-
+      // A clip rejected locally for minimum duration can never become valid
+      // when replayed. Never present it as a retryable cloud failure.
+      if (recordingDuration <
+          TranscriptionResultGuard.minimumRecordingDuration) {
+        currentAttemptIsRetryable = false;
+      }
       TranscriptionResultGuard.ensureRecordingLongEnough(recordingDuration);
 
       // For cloud paths, read audio bytes from the file.
@@ -1299,16 +1456,24 @@ class _BeeamvoHomeState extends State<BeeamvoHome>
             'Whisper: ${sw.elapsedMilliseconds}ms lang=$lang completed',
           );
         } else {
-          // Stream fell back to file — strip 44-byte WAV header for raw PCM.
+          // A WAV file may contain optional RIFF chunks, so parse its chunk
+          // table instead of assuming a fixed 44-byte header.
           final recordedAudioBytes = audioBytes;
           if (recordedAudioBytes == null) {
             throw CloudTranscriptionException(
               TranscriptionResultGuard.noTranscriptMessage,
             );
           }
-          final rawPcm = recordedAudioBytes.length > 44
-              ? Uint8List.sublistView(recordedAudioBytes, 44)
-              : recordedAudioBytes;
+          final Uint8List rawPcm;
+          try {
+            rawPcm = RecordingService.extractMono16kPcmFromWav(
+              recordedAudioBytes,
+            );
+          } on FormatException {
+            throw CloudTranscriptionException(
+              'Recorded audio is not valid mono 16 kHz PCM WAV data.',
+            );
+          }
           rawTranscript = TranscriptionResultGuard.requireTranscript(
             await _whisperService.transcribeRawPcm(
               rawPcm,
@@ -1367,8 +1532,12 @@ class _BeeamvoHomeState extends State<BeeamvoHome>
       _useCurrentSettingsForRetry = false;
       _returnToRetryAfterSettings = false;
       await _recordingService.deleteRecording();
-      // Track usage stats (non-blocking — don't block the success state)
-      _usageStatsService.recordTranscription(improvedText, recordingDuration);
+      // Persist usage before signaling success so a tray Exit immediately
+      // after a transcription cannot lose this completed activity record.
+      await _usageStatsService.recordTranscription(
+        improvedText,
+        recordingDuration,
+      );
       setState(() => _state = RecordingState.success);
       _hideAfterDelay(1);
     } catch (e, stackTrace) {
@@ -1401,6 +1570,7 @@ class _BeeamvoHomeState extends State<BeeamvoHome>
       }
     } finally {
       _isLockActive = false;
+      _activeRecordingBackend = null;
       // Clear temporary prompt override after the session ends
       if (_temporaryPromptId != null && !keepSessionForRetry) {
         debugPrint(
@@ -1449,24 +1619,30 @@ class _BeeamvoHomeState extends State<BeeamvoHome>
     _recordingStopwatch
       ..stop()
       ..reset();
+    _durationLimitTimer?.cancel();
+    _durationLimitTimer = null;
+    _holdTimer?.cancel();
+    _holdTimer = null;
+    _isHotkeyHeld = false;
 
+    // Use the backend resolved for this session, not the current global
+    // setting. Prompts may temporarily override the backend.
     if (_state == RecordingState.processing &&
-        _settingsService.transcriptionBackend == TranscriptionBackend.whisper) {
+        _activeRecordingBackend == TranscriptionBackend.whisper) {
       await _whisperService.cancelTranscription();
     }
 
     await _recordingService.stopRecording();
     await _recordingService.deleteRecording();
-    await _hotkeyService.unregisterHotkey('cancel');
-    await _hotkeyService.unregisterHotkey('commit');
 
     _pulseController.stop();
     _rotationController.stop();
 
-    setState(() => _state = RecordingState.idle);
+    if (mounted) setState(() => _state = RecordingState.idle);
     await WindowHelper.hide();
 
     _temporaryPromptId = null;
+    _activeRecordingBackend = null;
     debugPrint('Recording cancelled');
   }
 
@@ -1528,28 +1704,15 @@ class _BeeamvoHomeState extends State<BeeamvoHome>
                   usageStatsService: _usageStatsService,
                   onClose: _onSettingsClose,
                   onRunOnboarding: () async {
-                    // Close settings, then launch onboarding
-                    await WindowHelper.hide();
-                    await windowManager.setMinimumSize(const Size(740, 560));
-                    await windowManager.setSize(const Size(740, 560));
-                    await windowManager.center();
-                    setState(() => _state = RecordingState.onboarding);
-                    await WindowHelper.show();
-                    // Wait for onboarding to finish
-                    while (mounted && _state == RecordingState.onboarding) {
-                      await Future.delayed(const Duration(milliseconds: 100));
-                    }
-                    // Reset window
-                    await WindowHelper.hide();
-                    await windowManager.setMinimumSize(const Size(150, 150));
-                    await windowManager.setSize(const Size(150, 150));
-                    // Re-init cloud service in case settings changed
+                    await _showOnboarding();
+                    if (!mounted) return;
+                    // Re-init cloud service in case onboarding changed its
+                    // credentials, provider, or selected model.
                     _cloudService.attachSettings(_settingsService);
                     await _cloudService.initialize();
                     _cloudService.setModelById(
                       _settingsService.selectedModelId,
                     );
-                    // Re-register hotkey in case it changed
                     await _registerMainHotkey(_settingsService.hotkey);
                     await _registerClipboardPopupHotkey(
                       _settingsService.clipboardPopupHotkey,
@@ -1557,7 +1720,7 @@ class _BeeamvoHomeState extends State<BeeamvoHome>
                     await _registerModeSelectionHotkey(
                       _settingsService.modeSelectionHotkey,
                     );
-                    _trayService.updateContextMenu();
+                    await _trayService.updateContextMenu();
                   },
                   onModelChanged: (modelId) {
                     _cloudService.setModelById(modelId);
@@ -1575,6 +1738,8 @@ class _BeeamvoHomeState extends State<BeeamvoHome>
                   onModeSelectionHotkeyChanged: _onModeSelectionHotkeyChanged,
                   onRecordingModeChanged: (mode) =>
                       _onRecordingModeChanged(mode as RecordingMode),
+                  onAudioDeviceChanged: _onAudioDeviceChanged,
+                  onResetAllHotkeys: _resetShortcutDefaults,
                   onClipboardHotkeyChanged: _onClipboardHotkeyChanged,
                   onBackendChanged: (dynamic backend) =>
                       _onBackendChanged(backend as TranscriptionBackend),

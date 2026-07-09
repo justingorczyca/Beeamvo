@@ -18,6 +18,8 @@ class SettingsPageContainer extends StatelessWidget {
   final ValueChanged<dynamic>? onHotkeyChanged;
   final ValueChanged<HotkeyConfig>? onModeSelectionHotkeyChanged;
   final ValueChanged<dynamic>? onRecordingModeChanged;
+  final ValueChanged<String?>? onAudioDeviceChanged;
+  final Future<void> Function()? onResetAllHotkeys;
   final ValueChanged<HotkeyConfig>? onClipboardHotkeyChanged;
   final ValueChanged<dynamic>? onBackendChanged;
   final Future<void> Function(CloudProvider provider)? onVerifyCloudProvider;
@@ -32,6 +34,8 @@ class SettingsPageContainer extends StatelessWidget {
     this.onHotkeyChanged,
     this.onModeSelectionHotkeyChanged,
     this.onRecordingModeChanged,
+    this.onAudioDeviceChanged,
+    this.onResetAllHotkeys,
     this.onClipboardHotkeyChanged,
     this.onBackendChanged,
     this.onVerifyCloudProvider,
@@ -83,6 +87,8 @@ class SettingsPageContainer extends StatelessWidget {
           onModeSelectionHotkeyChanged: onModeSelectionHotkeyChanged,
           onClipboardHotkeyChanged: onClipboardHotkeyChanged,
           onRecordingModeChanged: onRecordingModeChanged,
+          onAudioDeviceChanged: onAudioDeviceChanged,
+          onResetAllHotkeys: onResetAllHotkeys,
           onRunOnboarding: onRunOnboarding,
         );
       case SettingsCategory.aiModels:

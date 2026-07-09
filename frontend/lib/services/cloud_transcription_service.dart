@@ -18,6 +18,7 @@ class CloudTranscriptionService {
   final CloudTranscriptionClient _vertexAiService;
   SettingsService? _settingsService;
   CloudProvider? _providerOverride;
+  bool _isDisposed = false;
 
   void attachSettings(SettingsService settings) {
     _settingsService = settings;
@@ -27,7 +28,24 @@ class CloudTranscriptionService {
   }
 
   Future<void> initialize() async {
+    _ensureNotDisposed();
     await _initializeIfNeeded(_clientFor(currentProvider));
+  }
+
+  /// Releases both provider clients, including the Gemini HTTP client and any
+  /// cached Vertex ADC client. This is idempotent so app shutdown paths may call
+  /// it safely more than once.
+  void dispose() {
+    if (_isDisposed) return;
+    _isDisposed = true;
+    _geminiApiService.dispose();
+    _vertexAiService.dispose();
+  }
+
+  void _ensureNotDisposed() {
+    if (_isDisposed) {
+      throw StateError('CloudTranscriptionService has been disposed.');
+    }
   }
 
   CloudProvider get currentProvider =>
@@ -68,6 +86,7 @@ class CloudTranscriptionService {
   }
 
   Future<void> verifyProvider(CloudProvider provider) async {
+    _ensureNotDisposed();
     final client = _clientFor(provider);
     await _initializeIfNeeded(client);
     await client.verifySetup();
@@ -79,6 +98,7 @@ class CloudTranscriptionService {
     String? modelOverrideId,
     GeminiThinkingLevel? thinkingLevelOverride,
   }) async {
+    _ensureNotDisposed();
     final client = _currentClient;
     await _initializeIfNeeded(client);
     return client.improveTranscription(
@@ -96,6 +116,7 @@ class CloudTranscriptionService {
     String? modelOverrideId,
     GeminiThinkingLevel? thinkingLevelOverride,
   }) async {
+    _ensureNotDisposed();
     final client = _currentClient;
     await _initializeIfNeeded(client);
     final result = await client.transcribeAndImprove(
@@ -113,6 +134,7 @@ class CloudTranscriptionService {
     String mimeType, {
     String? modelOverrideId,
   }) async {
+    _ensureNotDisposed();
     final client = _currentClient;
     await _initializeIfNeeded(client);
     final result = await client.transcribeAudio(

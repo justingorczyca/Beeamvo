@@ -7,6 +7,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- Made switching between Cloud and Offline Whisper backends safe without requiring an app restart.
+- Replaced fixed WAV-header stripping with RIFF/WAV parsing for offline transcription fallback audio.
+- Applied selected microphone changes immediately and released temporary audio-device enumeration resources.
+- Prevented a too-short recording from being offered as a retryable transcription.
+- Replaced modifier-less system-wide popup navigation keys with focused-window navigation, preserving Enter/Escape for other apps during recordings.
+- Cleared stale mode-popup bindings when opening Settings or clipboard history and improved shortcut-conflict recovery.
+- Made Whisper model download cancellation safe when leaving the AI Models page.
+- Retried failed background update checks instead of rate-limiting them as successful checks.
+- Added explicit cloud client cleanup during app shutdown and safer Gemini error messages.
+
+### Security & Privacy
+
+- Stopped treating `.env.example` as runtime configuration.
+- Documented the current OS-trust TLS posture; certificate pin enforcement remains disabled pending a dedicated rollout.
+- Expanded the best-effort clipboard-history sensitive-text filter and clarified plaintext-history behavior.
+
 ## [0.1.0] - 2026-06-12
 
 Initial public release.

@@ -78,6 +78,12 @@ class _HotkeyRecorderWidgetState extends State<HotkeyRecorderWidget>
 
     final key = event.logicalKey;
 
+    // Escape is an explicit cancel action and must work without a modifier.
+    if (key == LogicalKeyboardKey.escape) {
+      _stopRecording();
+      return;
+    }
+
     // Ignore pure modifier key presses
     if (_isModifierKey(key)) return;
 
@@ -102,12 +108,6 @@ class _HotkeyRecorderWidgetState extends State<HotkeyRecorderWidget>
         _errorMessage =
             'Please include at least one modifier (Ctrl, Alt, Shift, or Win)';
       });
-      return;
-    }
-
-    // Check for reserved keys (Escape to cancel)
-    if (key == LogicalKeyboardKey.escape) {
-      _stopRecording();
       return;
     }
 
@@ -157,7 +157,9 @@ class _HotkeyRecorderWidgetState extends State<HotkeyRecorderWidget>
                         ? beeYellow(context).withValues(alpha: 0.08)
                         : beeSurfaceRaised(context),
                     radius: kBeeRadiusMd,
-                    borderColor: _isRecording ? beeYellow(context) : beeBorder(context),
+                    borderColor: _isRecording
+                        ? beeYellow(context)
+                        : beeBorder(context),
                     borderOpacity: _isRecording ? _pulseAnimation.value : 0.9,
                   ),
                   child: Row(
@@ -166,7 +168,9 @@ class _HotkeyRecorderWidgetState extends State<HotkeyRecorderWidget>
                         _isRecording
                             ? Icons.keyboard
                             : Icons.keyboard_command_key_rounded,
-                        color: _isRecording ? beeYellow(context) : beeTextSub(context),
+                        color: _isRecording
+                            ? beeYellow(context)
+                            : beeTextSub(context),
                         size: 24,
                       ),
                       const SizedBox(width: 16),
@@ -178,27 +182,31 @@ class _HotkeyRecorderWidgetState extends State<HotkeyRecorderWidget>
                               _isRecording
                                   ? 'Press your hotkey...'
                                   : widget.currentHotkey.displayString,
-                                style: GoogleFonts.spaceGrotesk(
-                                  color: _isRecording ? beeYellow(context) : beeText(context),
-                                  fontSize: 16,
-                                  fontWeight: FontWeight.w600,
-                                ),
+                              style: GoogleFonts.spaceGrotesk(
+                                color: _isRecording
+                                    ? beeYellow(context)
+                                    : beeText(context),
+                                fontSize: 16,
+                                fontWeight: FontWeight.w600,
                               ),
-                              Text(
-                                _isRecording
-                                    ? 'Press Esc to cancel'
-                                    : 'Modifiers are required for global shortcuts',
-                                style: GoogleFonts.inter(
-                                  color: beeTextMuted(context),
-                                  fontSize: 12,
-                                ),
+                            ),
+                            Text(
+                              _isRecording
+                                  ? 'Press Esc to cancel'
+                                  : 'Modifiers are required for global shortcuts',
+                              style: GoogleFonts.inter(
+                                color: beeTextMuted(context),
+                                fontSize: 12,
                               ),
+                            ),
                           ],
                         ),
                       ),
                       BeeActionChip(
                         label: _isRecording ? 'Listening' : 'Change',
-                        color: _isRecording ? beeYellow(context) : beeTextMuted(context),
+                        color: _isRecording
+                            ? beeYellow(context)
+                            : beeTextMuted(context),
                       ),
                     ],
                   ),
@@ -213,12 +221,12 @@ class _HotkeyRecorderWidgetState extends State<HotkeyRecorderWidget>
           const SizedBox(height: 8),
           Container(
             padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-  decoration: beePanelDecoration(
-      color: beeError(context).withValues(alpha: 0.08),
-      radius: kBeeRadiusSm,
-      borderColor: beeError(context),
-      borderOpacity: 0.28,
-    ),
+            decoration: beePanelDecoration(
+              color: beeError(context).withValues(alpha: 0.08),
+              radius: kBeeRadiusSm,
+              borderColor: beeError(context),
+              borderOpacity: 0.28,
+            ),
             child: Row(
               children: [
                 Icon(Icons.warning_rounded, color: beeError(context), size: 16),
@@ -226,7 +234,10 @@ class _HotkeyRecorderWidgetState extends State<HotkeyRecorderWidget>
                 Expanded(
                   child: Text(
                     _errorMessage!,
-                    style: GoogleFonts.inter(color: beeError(context), fontSize: 12),
+                    style: GoogleFonts.inter(
+                      color: beeError(context),
+                      fontSize: 12,
+                    ),
                   ),
                 ),
               ],
@@ -243,16 +254,17 @@ class _HotkeyRecorderWidgetState extends State<HotkeyRecorderWidget>
               : _handleReset,
           icon: const Icon(Icons.restart_alt_rounded, size: 18),
           label: const Text('Reset to Default'),
-          style: OutlinedButton.styleFrom(
-            foregroundColor: beeTextSub(context),
-            side: BorderSide(color: beeBorder(context)),
-            padding: const EdgeInsets.symmetric(vertical: 12),
-            shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(kBeeRadiusMd),
-            ),
-          ).copyWith(
-            overlayColor: const WidgetStatePropertyAll(Colors.transparent),
-          ),
+          style:
+              OutlinedButton.styleFrom(
+                foregroundColor: beeTextSub(context),
+                side: BorderSide(color: beeBorder(context)),
+                padding: const EdgeInsets.symmetric(vertical: 12),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(kBeeRadiusMd),
+                ),
+              ).copyWith(
+                overlayColor: const WidgetStatePropertyAll(Colors.transparent),
+              ),
         ),
 
         const SizedBox(height: 12),

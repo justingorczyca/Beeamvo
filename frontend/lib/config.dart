@@ -198,15 +198,14 @@ class AppConfig {
   static Future<void> initialize() async {
     // `.env` is a development-only convenience. Do not read dotenv files in
     // release builds so packaged apps cannot accidentally prefer bundled or
-    // adjacent plaintext secrets over OS secure storage.
+    // adjacent plaintext secrets over OS secure storage. In particular,
+    // `.env.example` is documentation only and is never treated as config.
     if (kReleaseMode) {
       dotenv.loadFromString(envString: '', isOptional: true);
       return;
     }
 
-    for (final fileName in ['.env', '.env.example']) {
-      if (await _loadDotEnvFile(fileName)) return;
-    }
+    if (await _loadDotEnvFile('.env')) return;
 
     dotenv.loadFromString(envString: '', isOptional: true);
   }

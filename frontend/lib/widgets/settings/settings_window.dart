@@ -21,6 +21,8 @@ class SettingsWindow extends StatefulWidget {
   final ValueChanged<dynamic>? onHotkeyChanged;
   final ValueChanged<HotkeyConfig>? onModeSelectionHotkeyChanged;
   final ValueChanged<dynamic>? onRecordingModeChanged;
+  final ValueChanged<String?>? onAudioDeviceChanged;
+  final Future<void> Function()? onResetAllHotkeys;
   final ValueChanged<HotkeyConfig>? onClipboardHotkeyChanged;
   final ValueChanged<dynamic>? onBackendChanged;
   final Future<void> Function(CloudProvider provider)? onVerifyCloudProvider;
@@ -37,6 +39,8 @@ class SettingsWindow extends StatefulWidget {
     this.onHotkeyChanged,
     this.onModeSelectionHotkeyChanged,
     this.onRecordingModeChanged,
+    this.onAudioDeviceChanged,
+    this.onResetAllHotkeys,
     this.onClipboardHotkeyChanged,
     this.onBackendChanged,
     this.onVerifyCloudProvider,
@@ -67,7 +71,7 @@ class _SettingsWindowState extends State<SettingsWindow> {
             height: height,
             child: Material(
               color: Colors.transparent,
-                child: Container(
+              child: Container(
                 decoration: beePanelDecoration(
                   color: beeSurface(context),
                   radius: kBeeRadiusXl,
@@ -93,6 +97,9 @@ class _SettingsWindowState extends State<SettingsWindow> {
                                     widget.onModeSelectionHotkeyChanged,
                                 onRecordingModeChanged:
                                     widget.onRecordingModeChanged,
+                                onAudioDeviceChanged:
+                                    widget.onAudioDeviceChanged,
+                                onResetAllHotkeys: widget.onResetAllHotkeys,
                                 onClipboardHotkeyChanged:
                                     widget.onClipboardHotkeyChanged,
                                 onBackendChanged: widget.onBackendChanged,
@@ -148,7 +155,11 @@ class _SettingsWindowState extends State<SettingsWindow> {
                     children: [
                       if (showTitle) ...[
                         const SizedBox(width: 16),
-                        Container(width: 1, height: 14, color: beeBorder(context)),
+                        Container(
+                          width: 1,
+                          height: 14,
+                          color: beeBorder(context),
+                        ),
                         const SizedBox(width: 14),
                         Flexible(
                           child: Text(
@@ -162,21 +173,6 @@ class _SettingsWindowState extends State<SettingsWindow> {
                             ),
                           ),
                         ),
-                        const SizedBox(width: 6),
-                        Container(
-                          width: 5,
-                          height: 5,
-                          decoration: BoxDecoration(
-                            shape: BoxShape.circle,
-                            color: beeYellow(context),
-                            boxShadow: [
-                              BoxShadow(
-                                color: beeYellow(context).withValues(alpha: 0.32),
-                                blurRadius: 5,
-                              ),
-                            ],
-                          ),
-                        ),
                       ],
                       const Spacer(),
                       if (showDragHint) ...[
@@ -187,10 +183,10 @@ class _SettingsWindowState extends State<SettingsWindow> {
                               width: 2,
                               height: 2,
                               margin: const EdgeInsets.symmetric(horizontal: 2),
-  decoration: BoxDecoration(
-      shape: BoxShape.circle,
-      color: beeTextMuted(context),
-    ),
+                              decoration: BoxDecoration(
+                                shape: BoxShape.circle,
+                                color: beeTextMuted(context),
+                              ),
                             ),
                           ),
                         ),
@@ -208,77 +204,77 @@ class _SettingsWindowState extends State<SettingsWindow> {
     );
   }
 
-        Widget _buildCloseButton() {
-          return _CloseButton(onClose: widget.onClose);
-        }
-      }
+  Widget _buildCloseButton() {
+    return _CloseButton(onClose: widget.onClose);
+  }
+}
 
-    /// Close button with proper desktop hover feedback.
-    class _CloseButton extends StatefulWidget {
-      final VoidCallback onClose;
+/// Close button with proper desktop hover feedback.
+class _CloseButton extends StatefulWidget {
+  final VoidCallback onClose;
 
-      const _CloseButton({required this.onClose});
+  const _CloseButton({required this.onClose});
 
-      @override
-      State<_CloseButton> createState() => _CloseButtonState();
-    }
+  @override
+  State<_CloseButton> createState() => _CloseButtonState();
+}
 
-    class _CloseButtonState extends State<_CloseButton> {
-      bool _isHovered = false;
+class _CloseButtonState extends State<_CloseButton> {
+  bool _isHovered = false;
 
-      @override
-      Widget build(BuildContext context) {
-        return Tooltip(
-          message: 'Close preferences',
-          child: Semantics(
-            button: true,
-            label: 'Close preferences',
-            onTap: widget.onClose,
-            child: MouseRegion(
-              cursor: SystemMouseCursors.click,
-              onEnter: (_) => setState(() => _isHovered = true),
-              onExit: (_) => setState(() => _isHovered = false),
-              child: Focus(
-                child: Shortcuts(
-                  shortcuts: const <ShortcutActivator, Intent>{
-                    SingleActivator(LogicalKeyboardKey.enter): ActivateIntent(),
-                    SingleActivator(LogicalKeyboardKey.space): ActivateIntent(),
-                  },
-                  child: Actions(
-                    actions: <Type, Action<Intent>>{
-                      ActivateIntent: CallbackAction<ActivateIntent>(
-                        onInvoke: (_) {
-                          widget.onClose();
-                          return null;
-                        },
-                      ),
+  @override
+  Widget build(BuildContext context) {
+    return Tooltip(
+      message: 'Close preferences',
+      child: Semantics(
+        button: true,
+        label: 'Close preferences',
+        onTap: widget.onClose,
+        child: MouseRegion(
+          cursor: SystemMouseCursors.click,
+          onEnter: (_) => setState(() => _isHovered = true),
+          onExit: (_) => setState(() => _isHovered = false),
+          child: Focus(
+            child: Shortcuts(
+              shortcuts: const <ShortcutActivator, Intent>{
+                SingleActivator(LogicalKeyboardKey.enter): ActivateIntent(),
+                SingleActivator(LogicalKeyboardKey.space): ActivateIntent(),
+              },
+              child: Actions(
+                actions: <Type, Action<Intent>>{
+                  ActivateIntent: CallbackAction<ActivateIntent>(
+                    onInvoke: (_) {
+                      widget.onClose();
+                      return null;
                     },
-                    child: GestureDetector(
-                      excludeFromSemantics: true,
-                      behavior: HitTestBehavior.opaque,
-                      onTap: widget.onClose,
-                      child: SizedBox(
-                        width: 32,
-                        height: 32,
+                  ),
+                },
+                child: GestureDetector(
+                  excludeFromSemantics: true,
+                  behavior: HitTestBehavior.opaque,
+                  onTap: widget.onClose,
+                  child: SizedBox(
+                    width: 32,
+                    height: 32,
+                    child: Center(
+                      child: AnimatedContainer(
+                        duration: kBeeTransitionDuration,
+                        curve: kBeeTransitionCurve,
+                        width: 24,
+                        height: 24,
+                        decoration: BoxDecoration(
+                          color: _isHovered
+                              ? beeError(context).withValues(alpha: 0.10)
+                              : Colors.transparent,
+                          borderRadius: BorderRadius.circular(kBeeRadiusXs),
+                        ),
                         child: Center(
-                          child: AnimatedContainer(
-                            duration: kBeeTransitionDuration,
-                            curve: kBeeTransitionCurve,
-                            width: 24,
-                            height: 24,
-                            decoration: BoxDecoration(
-                              color: _isHovered
-                                  ? beeError(context).withValues(alpha: 0.10)
-                                  : Colors.transparent,
-                              borderRadius: BorderRadius.circular(kBeeRadiusXs),
-                            ),
-                            child: Center(
-                              child: Icon(
-                                Icons.close_rounded,
-                                size: 13,
-                                color: _isHovered ? beeError(context) : beeTextMuted(context),
-                              ),
-                            ),
+                          child: Icon(
+                            Icons.close_rounded,
+                            size: 13,
+                            color: _isHovered
+                                ? beeError(context)
+                                : beeTextMuted(context),
                           ),
                         ),
                       ),
@@ -288,6 +284,8 @@ class _SettingsWindowState extends State<SettingsWindow> {
               ),
             ),
           ),
-        );
-      }
-    }
+        ),
+      ),
+    );
+  }
+}

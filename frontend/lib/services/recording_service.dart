@@ -101,6 +101,92 @@ class RecordingService {
     return null;
   }
 
+  /// Extracts mono, 16 kHz, 16-bit little-endian PCM data from a RIFF/WAV file.
+  ///
+  /// WAV containers may include optional chunks (for example `LIST` or `fact`),
+  /// so callers must not assume the PCM data always begins at byte 44. Throws a
+  /// [FormatException] for truncated containers and formats Whisper cannot
+  /// process directly.
+  static Uint8List extractMono16kPcmFromWav(Uint8List wavBytes) {
+    if (wavBytes.length < 12 ||
+        !_hasAsciiAt(wavBytes, 0, 'RIFF') ||
+        !_hasAsciiAt(wavBytes, 8, 'WAVE')) {
+      throw const FormatException('Recording is not a RIFF/WAV file.');
+    }
+
+    int? audioFormat;
+    int? channels;
+    int? sampleRate;
+    int? bitsPerSample;
+    int? dataOffset;
+    int? dataLength;
+    var offset = 12;
+
+    while (offset < wavBytes.length) {
+      if (offset + 8 > wavBytes.length) {
+        throw const FormatException('WAV file has a truncated chunk header.');
+      }
+
+      final chunkId = String.fromCharCodes(
+        wavBytes.sublist(offset, offset + 4),
+      );
+      final chunkLength = ByteData.sublistView(
+        wavBytes,
+      ).getUint32(offset + 4, Endian.little);
+      final chunkDataOffset = offset + 8;
+      final chunkEnd = chunkDataOffset + chunkLength;
+      if (chunkEnd > wavBytes.length) {
+        throw FormatException('WAV $chunkId chunk is truncated.');
+      }
+
+      if (chunkId == 'fmt ') {
+        if (chunkLength < 16) {
+          throw const FormatException('WAV format chunk is too short.');
+        }
+        final data = ByteData.sublistView(wavBytes);
+        audioFormat = data.getUint16(chunkDataOffset, Endian.little);
+        channels = data.getUint16(chunkDataOffset + 2, Endian.little);
+        sampleRate = data.getUint32(chunkDataOffset + 4, Endian.little);
+        bitsPerSample = data.getUint16(chunkDataOffset + 14, Endian.little);
+      } else if (chunkId == 'data') {
+        dataOffset = chunkDataOffset;
+        dataLength = chunkLength;
+      }
+
+      // RIFF chunks are word-aligned; odd-sized chunks include one pad byte.
+      offset = chunkEnd + (chunkLength.isOdd ? 1 : 0);
+    }
+
+    if (audioFormat != 1 ||
+        channels != 1 ||
+        sampleRate != 16000 ||
+        bitsPerSample != 16) {
+      throw FormatException(
+        'Unsupported WAV format: expected mono 16 kHz PCM-16, received '
+        'format=$audioFormat channels=$channels sampleRate=$sampleRate '
+        'bits=$bitsPerSample.',
+      );
+    }
+    if (dataOffset == null || dataLength == null || dataLength == 0) {
+      throw const FormatException('WAV file contains no PCM audio data.');
+    }
+    if (dataLength.isOdd) {
+      throw const FormatException(
+        'PCM-16 audio data must have an even byte length.',
+      );
+    }
+
+    return Uint8List.sublistView(wavBytes, dataOffset, dataOffset + dataLength);
+  }
+
+  static bool _hasAsciiAt(Uint8List bytes, int offset, String expected) {
+    if (offset + expected.length > bytes.length) return false;
+    for (var index = 0; index < expected.length; index++) {
+      if (bytes[offset + index] != expected.codeUnitAt(index)) return false;
+    }
+    return true;
+  }
+
   /// Delete the current recording file
   Future<void> deleteRecording() async {
     if (_currentRecordingPath != null) {
@@ -204,10 +290,7 @@ class RecordingService {
 
       final done = _streamDoneCompleter;
       if (done != null && !done.isCompleted) {
-        await done.future.timeout(
-          const Duration(seconds: 2),
-          onTimeout: () {},
-        );
+        await done.future.timeout(const Duration(seconds: 2), onTimeout: () {});
       }
 
       final data = _streamBuffer.takeBytes();

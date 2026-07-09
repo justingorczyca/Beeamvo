@@ -48,11 +48,29 @@ class UpdateInfo {
   }
 
   Map<String, dynamic> toMap() => {
-        'version': latestVersion,
-        'url': releaseUrl,
-        'notes': releaseNotes,
-        'publishedAt': publishedAt,
-      };
+    'version': latestVersion,
+    'url': releaseUrl,
+    'notes': releaseNotes,
+    'publishedAt': publishedAt,
+  };
+}
+
+/// Result of a GitHub release lookup.
+///
+/// A successful lookup may legitimately have no [update] when the installed
+/// version is current. [succeeded] is therefore kept separate from [update] so
+/// callers do not rate-limit transient network or parsing failures as if they
+/// had successfully checked for updates.
+class UpdateCheckResult {
+  final bool succeeded;
+  final UpdateInfo? update;
+
+  const UpdateCheckResult._({required this.succeeded, this.update});
+
+  const UpdateCheckResult.success([UpdateInfo? update])
+    : this._(succeeded: true, update: update);
+
+  const UpdateCheckResult.failure() : this._(succeeded: false);
 }
 
 class UpdateCheckService {
@@ -65,14 +83,13 @@ class UpdateCheckService {
 
   /// Compares the installed version against the latest GitHub release.
   ///
-  /// Returns an [UpdateInfo] only when a strictly newer version exists,
-  /// otherwise `null` (including on any error or timeout). [force] is accepted
-  /// for symmetry/Manual-check flows but the rate-limit gate itself lives in
-  /// [SettingsService] — this method only performs the fetch + comparison.
-  Future<UpdateInfo?> check({bool force = false}) async {
-    // Use the certificate-pinning client. api.github.com has NO configured pins,
-    // so this is identical to a plain http.Client() today; once we pin GitHub we
-    // get that protection for free. Created/closed per check so it never leaks.
+  /// Unlike [check], this preserves whether the lookup itself succeeded. This
+  /// lets background callers retry a failed network request instead of treating
+  /// it as a successful up-to-date result for the next 24 hours.
+  Future<UpdateCheckResult> checkWithStatus({bool force = false}) async {
+    // api.github.com has no configured pins in the shipped configuration, so
+    // this currently uses normal OS certificate trust. The client is scoped to
+    // a single request and always closed below.
     final client = createPinnedHttpClient();
     try {
       final installed = (await PackageInfo.fromPlatform()).version;
@@ -80,31 +97,45 @@ class UpdateCheckService {
           .get(Uri.parse(_api), headers: {'User-Agent': _userAgent})
           .timeout(const Duration(seconds: 8));
 
-      if (res.statusCode != 200) return null;
+      if (res.statusCode != 200) return const UpdateCheckResult.failure();
 
       final decoded = jsonDecode(res.body);
-      if (decoded is! Map<String, dynamic>) return null;
+      if (decoded is! Map<String, dynamic>) {
+        return const UpdateCheckResult.failure();
+      }
 
       final tag = (decoded['tag_name'] as String?)?.trim();
       final url = decoded['html_url'] as String?;
-      if (tag == null || url == null || url.isEmpty) return null;
+      if (tag == null || url == null || url.isEmpty) {
+        return const UpdateCheckResult.failure();
+      }
 
       final latest = _normalizeVersion(tag);
-      if (latest.isEmpty) return null;
-      if (_isVersionNewer(installed, latest) != true) return null;
+      if (latest.isEmpty) return const UpdateCheckResult.failure();
+      if (!_isVersionNewer(installed, latest)) {
+        return const UpdateCheckResult.success();
+      }
 
-      return UpdateInfo(
-        latestVersion: latest,
-        releaseUrl: url,
-        releaseNotes: (decoded['body'] as String?) ?? '',
-        publishedAt: (decoded['published_at'] as String?) ?? '',
+      return UpdateCheckResult.success(
+        UpdateInfo(
+          latestVersion: latest,
+          releaseUrl: url,
+          releaseNotes: (decoded['body'] as String?) ?? '',
+          publishedAt: (decoded['published_at'] as String?) ?? '',
+        ),
       );
     } catch (_) {
       // Best-effort: never propagate failures to the caller.
-      return null;
+      return const UpdateCheckResult.failure();
     } finally {
       client.close();
     }
+  }
+
+  /// Compatibility wrapper for UI paths that only need an available update.
+  /// Use [checkWithStatus] when retry/rate-limit decisions depend on success.
+  Future<UpdateInfo?> check({bool force = false}) async {
+    return (await checkWithStatus(force: force)).update;
   }
 
   /// Strips a leading `v`/`V` and any build/pre-release suffix, returning the

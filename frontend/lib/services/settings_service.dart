@@ -119,7 +119,8 @@ class SettingsService extends ChangeNotifier {
   // file. On load we try the live file, then `.bak`, then the leftover
   // `.tmp`, before falling back to an empty document.
   Future<void> _load() async {
-    _data = await _readJsonMap(_file) ??
+    _data =
+        await _readJsonMap(_file) ??
         await _readJsonMap(File('${_file.path}.bak')) ??
         await _readJsonMap(File('${_file.path}.tmp')) ??
         <String, dynamic>{};
@@ -275,7 +276,10 @@ class SettingsService extends ChangeNotifier {
 
     // Two-pass overrides — clear any stale id, leave valid/null untouched so
     // the inheritance (`?? selectedModelId`) keeps working as designed.
-    for (final key in [_kTwoPassTranscriptionModelId, _kTwoPassRefinementModelId]) {
+    for (final key in [
+      _kTwoPassTranscriptionModelId,
+      _kTwoPassRefinementModelId,
+    ]) {
       final v = _getString(key);
       if (!AppConfig.isOfferedModelId(v)) {
         _data.remove(key);
@@ -373,12 +377,14 @@ class SettingsService extends ChangeNotifier {
       _promptOverrides.remove(promptId);
     }
     await _savePromptOverrides();
+    notifyListeners();
   }
 
   /// Clear all per-prompt setting overrides for [promptId].
   Future<void> clearPromptOverrides(String promptId) async {
     _promptOverrides.remove(promptId);
     await _savePromptOverrides();
+    notifyListeners();
   }
 
   // ── clipboard history ─────────────────────────────────────────────────────
@@ -444,6 +450,7 @@ class SettingsService extends ChangeNotifier {
 
   Future<void> setSelectedPromptId(String value) async {
     await _setString(_kSelectedPromptId, value);
+    notifyListeners();
   }
 
   // ── Rephraser Level ───────────────────────────────────────────────────────
@@ -467,6 +474,7 @@ class SettingsService extends ChangeNotifier {
   Future<void> addCustomPrompt(SystemPrompt prompt) async {
     _customPrompts.add(prompt);
     await _saveCustomPrompts();
+    notifyListeners();
   }
 
   Future<void> removeCustomPrompt(String id) async {
@@ -475,6 +483,7 @@ class SettingsService extends ChangeNotifier {
       await setSelectedPromptId('standard');
     }
     await _saveCustomPrompts();
+    notifyListeners();
   }
 
   Future<void> updateCustomPrompt(SystemPrompt prompt) async {
@@ -482,6 +491,7 @@ class SettingsService extends ChangeNotifier {
     if (idx != -1) {
       _customPrompts[idx] = prompt;
       await _saveCustomPrompts();
+      notifyListeners();
     }
   }
 
@@ -491,6 +501,7 @@ class SettingsService extends ChangeNotifier {
 
   Future<void> setSelectedModelId(String value) async {
     await _setString(_kSelectedModelId, value);
+    notifyListeners();
   }
 
   // ── Thinking Level (per model) ────────────────────────────────────────────
@@ -510,11 +521,13 @@ class SettingsService extends ChangeNotifier {
     GeminiThinkingLevel level,
   ) async {
     await _setString(_thinkingLevelKey(modelId), level.apiValue);
+    notifyListeners();
   }
 
   /// Clears any override, reverting to the model's built-in default.
   Future<void> resetThinkingLevelForModel(String modelId) async {
     await _remove(_thinkingLevelKey(modelId));
+    notifyListeners();
   }
 
   // ── Two-pass Transcription ────────────────────────────────────────────────
@@ -532,6 +545,7 @@ class SettingsService extends ChangeNotifier {
 
   Future<void> setTwoPassTranscriptionModelId(String value) async {
     await _setString(_kTwoPassTranscriptionModelId, value);
+    notifyListeners();
   }
 
   String get twoPassRefinementModelId =>
@@ -539,6 +553,7 @@ class SettingsService extends ChangeNotifier {
 
   Future<void> setTwoPassRefinementModelId(String value) async {
     await _setString(_kTwoPassRefinementModelId, value);
+    notifyListeners();
   }
 
   // ── Hotkey ────────────────────────────────────────────────────────────────
@@ -550,10 +565,12 @@ class SettingsService extends ChangeNotifier {
 
   Future<void> setHotkey(HotkeyConfig config) async {
     await _setString(_kHotkey, config.toJson());
+    notifyListeners();
   }
 
   Future<void> resetHotkey() async {
     await _remove(_kHotkey);
+    notifyListeners();
   }
 
   // ── Clipboard History ─────────────────────────────────────────────────────
@@ -561,12 +578,14 @@ class SettingsService extends ChangeNotifier {
 
   Future<void> setClipboardHistoryEnabled(bool value) async {
     await _setBool(_kClipboardHistoryEnabled, value);
+    notifyListeners();
   }
 
   bool get clipboardWatcherEnabled => _getBool(_kClipboardWatcherEnabled);
 
   Future<void> setClipboardWatcherEnabled(bool value) async {
     await _setBool(_kClipboardWatcherEnabled, value);
+    notifyListeners();
   }
 
   int get clipboardHistoryMaxItems =>
@@ -577,6 +596,7 @@ class SettingsService extends ChangeNotifier {
     await _setInt(_kClipboardHistoryMaxItems, safeValue);
     _trimClipboardHistory();
     await _saveClipboardHistory();
+    notifyListeners();
   }
 
   List<ClipboardHistoryEntry> get clipboardHistory =>
@@ -589,6 +609,7 @@ class SettingsService extends ChangeNotifier {
 
   Future<void> setAutoPasteEnabled(bool value) async {
     await _setBool(_kAutoPasteEnabled, value);
+    notifyListeners();
   }
 
   static bool shouldSkipClipboardHistoryText(String text) {
@@ -603,7 +624,12 @@ class SettingsService extends ChangeNotifier {
       RegExp(r'''\bbearer\s+[a-z0-9._~+/=-]{20,}\b''', caseSensitive: false),
       RegExp(r'''\b(sk-[A-Za-z0-9_-]{20,}|AIza[A-Za-z0-9_-]{20,})\b'''),
       RegExp(
-        r'''\b(gh[pousr]_[A-Za-z0-9_]{20,}|github_pat_[A-Za-z0-9_]{20,}|xox[baprs]-[A-Za-z0-9-]{20,})\b''',
+        r'''\b(gh[pousr]_[A-Za-z0-9_]{20,}|github_pat_[A-Za-z0-9_]{20,}|glpat-[A-Za-z0-9_-]{20,}|xox[baprs]-[A-Za-z0-9-]{20,})\b''',
+      ),
+      RegExp(r'''\bAKIA[0-9A-Z]{16}\b'''),
+      RegExp(r'''\b(?:sk|rk)_(?:live|test)_[A-Za-z0-9]{16,}\b'''),
+      RegExp(
+        r'''\beyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\b''',
       ),
       RegExp(r'''-----BEGIN [A-Z ]*PRIVATE KEY-----''', caseSensitive: false),
     ];
@@ -689,42 +715,46 @@ class SettingsService extends ChangeNotifier {
 
   // ── Clipboard Popup Hotkey ────────────────────────────────────────────────
   HotkeyConfig get clipboardPopupHotkey {
-      final json = _getString(_kClipboardPopupHotkey);
-      if (json == null) {
-        return HotkeyConfig.defaultClipboardPopupHotkey;
-      }
-      return HotkeyConfig.fromJson(
-        json,
-        defaultTo: HotkeyConfig.defaultClipboardPopupHotkey,
-      );
+    final json = _getString(_kClipboardPopupHotkey);
+    if (json == null) {
+      return HotkeyConfig.defaultClipboardPopupHotkey;
     }
+    return HotkeyConfig.fromJson(
+      json,
+      defaultTo: HotkeyConfig.defaultClipboardPopupHotkey,
+    );
+  }
 
   Future<void> setClipboardPopupHotkey(HotkeyConfig config) async {
     await _setString(_kClipboardPopupHotkey, config.toJson());
+    notifyListeners();
   }
 
   Future<void> resetClipboardPopupHotkey() async {
     await _remove(_kClipboardPopupHotkey);
+    notifyListeners();
   }
 
   // ── Mode Selection Hotkey ─────────────────────────────────────────────────
   HotkeyConfig get modeSelectionHotkey {
-      final json = _getString(_kModeSelectionHotkey);
-      if (json == null) {
-        return HotkeyConfig.defaultModeSelectionHotkey;
-      }
-      return HotkeyConfig.fromJson(
-        json,
-        defaultTo: HotkeyConfig.defaultModeSelectionHotkey,
-      );
+    final json = _getString(_kModeSelectionHotkey);
+    if (json == null) {
+      return HotkeyConfig.defaultModeSelectionHotkey;
     }
+    return HotkeyConfig.fromJson(
+      json,
+      defaultTo: HotkeyConfig.defaultModeSelectionHotkey,
+    );
+  }
 
   Future<void> setModeSelectionHotkey(HotkeyConfig config) async {
     await _setString(_kModeSelectionHotkey, config.toJson());
+    notifyListeners();
   }
 
   Future<void> resetModeSelectionHotkey() async {
     await _remove(_kModeSelectionHotkey);
+    notifyListeners();
   }
 
   // ── Recording Mode ────────────────────────────────────────────────────────
@@ -736,6 +766,7 @@ class SettingsService extends ChangeNotifier {
 
   Future<void> setRecordingMode(RecordingMode mode) async {
     await _setString(_kRecordingMode, mode.name);
+    notifyListeners();
   }
 
   // ── Audio Input Device ────────────────────────────────────────────────────
@@ -747,6 +778,7 @@ class SettingsService extends ChangeNotifier {
     } else {
       await _setString(_kSelectedAudioDeviceId, deviceId);
     }
+    notifyListeners();
   }
 
   // ── Transcription Backend ─────────────────────────────────────────────────
@@ -820,6 +852,7 @@ class SettingsService extends ChangeNotifier {
 
   Future<void> setCloudProvider(CloudProvider provider) async {
     await _setString(_kCloudProvider, provider.name);
+    notifyListeners();
   }
 
   String? _envValue(String key) {
@@ -847,11 +880,13 @@ class SettingsService extends ChangeNotifier {
     }
     await _credentialStore.writeGeminiApiKey(trimmed);
     _hasGeminiApiKey = true;
+    notifyListeners();
   }
 
   Future<void> clearGeminiApiKey() async {
     await _credentialStore.deleteGeminiApiKey();
     _hasGeminiApiKey = false;
+    notifyListeners();
   }
 
   String? get vertexProjectId {
@@ -869,10 +904,12 @@ class SettingsService extends ChangeNotifier {
       return;
     }
     await _setString(_kVertexProjectId, trimmed);
+    notifyListeners();
   }
 
   Future<void> clearVertexProjectId() async {
     await _remove(_kVertexProjectId);
+    notifyListeners();
   }
 
   /// Whether the currently-selected cloud provider has the credentials
@@ -891,6 +928,7 @@ class SettingsService extends ChangeNotifier {
 
   Future<void> setWhisperModelId(String value) async {
     await _setString(_kWhisperModelId, value);
+    notifyListeners();
   }
 
   // ── Whisper Language ─────────────────────────────────────────────────────
@@ -898,6 +936,7 @@ class SettingsService extends ChangeNotifier {
 
   Future<void> setWhisperLanguage(String value) async {
     await _setString(_kWhisperLanguage, value);
+    notifyListeners();
   }
 
   // ── Onboarding ────────────────────────────────────────────────────────────
@@ -907,102 +946,101 @@ class SettingsService extends ChangeNotifier {
     await _setBool(_kOnboardingComplete, true);
   }
 
-    // ── Duration Limit ────────────────────────────────────────────────────────
-    bool get durationLimitEnabled => _getBool(_kDurationLimitEnabled);
+  // ── Duration Limit ────────────────────────────────────────────────────────
+  bool get durationLimitEnabled => _getBool(_kDurationLimitEnabled);
 
-    Future<void> setDurationLimitEnabled(bool value) async {
-      await _setBool(_kDurationLimitEnabled, value);
+  Future<void> setDurationLimitEnabled(bool value) async {
+    await _setBool(_kDurationLimitEnabled, value);
+  }
+
+  int get durationLimit => _getInt(_kDurationLimit, defaultValue: 300);
+
+  Future<void> setDurationLimit(int seconds) async {
+    await _setInt(_kDurationLimit, seconds);
+  }
+
+  // ── Theme Mode ────────────────────────────────────────────────────────────
+  /// Stored theme-mode preference. One of `'system'`, `'light'`, `'dark'`.
+  /// Defaults to `'system'` (follow the OS preference) when never set.
+  String get themeMode => _getString(_kThemeMode) ?? 'system';
+
+  /// Updates the persisted theme mode and notifies listeners so the app shell
+  /// rebuilds the [MaterialApp] with the new [ThemeMode].
+  Future<void> setThemeMode(String mode) async {
+    await _setString(_kThemeMode, mode);
+    notifyListeners();
+  }
+
+  /// Resolved [ThemeMode] used by [MaterialApp]. Maps the persisted string to
+  /// the Flutter enum; unknown values fall back to [ThemeMode.system].
+  ThemeMode get themeModeEnum {
+    switch (themeMode) {
+      case 'light':
+        return ThemeMode.light;
+      case 'dark':
+        return ThemeMode.dark;
+      default:
+        return ThemeMode.system;
     }
+  }
 
-    int get durationLimit => _getInt(_kDurationLimit, defaultValue: 300);
+  // ── Update Notifications ────────────────────────────────────────────────
+  /// Milliseconds-since-epoch of the last time an update check was performed,
+  /// or `0` if a check has never run.
+  int get _lastUpdateCheckAt => _getInt(_kLastUpdateCheckAt, defaultValue: 0);
 
-    Future<void> setDurationLimit(int seconds) async {
-      await _setInt(_kDurationLimit, seconds);
+  /// True when >= 24h have elapsed since the last check (or on first launch).
+  /// Used to rate-limit the background check so we hit GitHub at most once
+  /// per day per user.
+  bool get shouldCheckForUpdates {
+    final last = _lastUpdateCheckAt;
+    if (last == 0) return true;
+    const oneDayMs = 24 * 60 * 60 * 1000;
+    return DateTime.now().millisecondsSinceEpoch - last >= oneDayMs;
+  }
+
+  /// Records that an update check just happened so the next one is throttled.
+  /// Does not notify: a timestamp change alone has no UI impact.
+  Future<void> recordUpdateCheck() async {
+    await _setInt(_kLastUpdateCheckAt, DateTime.now().millisecondsSinceEpoch);
+  }
+
+  /// The most recently discovered newer release, or `null` if none is known.
+  /// Hydrated directly from the persisted JSON so it survives restarts.
+  UpdateInfo? get availableUpdate {
+    final version = _getString(_kAvailableUpdateVersion);
+    final url = _getString(_kAvailableUpdateUrl);
+    if (version == null || url == null || version.isEmpty || url.isEmpty) {
+      return null;
     }
+    return UpdateInfo(
+      latestVersion: version,
+      releaseUrl: url,
+      releaseNotes: _getString(_kAvailableUpdateNotes) ?? '',
+      publishedAt: '',
+    );
+  }
 
-    // ── Theme Mode ────────────────────────────────────────────────────────────
-    /// Stored theme-mode preference. One of `'system'`, `'light'`, `'dark'`.
-    /// Defaults to `'system'` (follow the OS preference) when never set.
-    String get themeMode => _getString(_kThemeMode) ?? 'system';
+  /// Caches a discovered newer release and notifies any listening UI so the
+  /// sidebar badge and About row rebuild immediately.
+  Future<void> setAvailableUpdate(UpdateInfo info) async {
+    _data[_kAvailableUpdateVersion] = info.latestVersion;
+    _data[_kAvailableUpdateUrl] = info.releaseUrl;
+    _data[_kAvailableUpdateNotes] = info.releaseNotes;
+    await _save();
+    notifyListeners();
+  }
 
-    /// Updates the persisted theme mode and notifies listeners so the app shell
-    /// rebuilds the [MaterialApp] with the new [ThemeMode].
-    Future<void> setThemeMode(String mode) async {
-      await _setString(_kThemeMode, mode);
-      notifyListeners();
-    }
-
-      /// Resolved [ThemeMode] used by [MaterialApp]. Maps the persisted string to
-      /// the Flutter enum; unknown values fall back to [ThemeMode.system].
-      ThemeMode get themeModeEnum {
-        switch (themeMode) {
-          case 'light':
-            return ThemeMode.light;
-          case 'dark':
-            return ThemeMode.dark;
-          default:
-            return ThemeMode.system;
-        }
-      }
-
-      // ── Update Notifications ────────────────────────────────────────────────
-      /// Milliseconds-since-epoch of the last time an update check was performed,
-      /// or `0` if a check has never run.
-      int get _lastUpdateCheckAt =>
-          _getInt(_kLastUpdateCheckAt, defaultValue: 0);
-
-      /// True when >= 24h have elapsed since the last check (or on first launch).
-      /// Used to rate-limit the background check so we hit GitHub at most once
-      /// per day per user.
-      bool get shouldCheckForUpdates {
-        final last = _lastUpdateCheckAt;
-        if (last == 0) return true;
-        const oneDayMs = 24 * 60 * 60 * 1000;
-        return DateTime.now().millisecondsSinceEpoch - last >= oneDayMs;
-      }
-
-      /// Records that an update check just happened so the next one is throttled.
-      /// Does not notify: a timestamp change alone has no UI impact.
-      Future<void> recordUpdateCheck() async {
-        await _setInt(_kLastUpdateCheckAt, DateTime.now().millisecondsSinceEpoch);
-      }
-
-      /// The most recently discovered newer release, or `null` if none is known.
-      /// Hydrated directly from the persisted JSON so it survives restarts.
-      UpdateInfo? get availableUpdate {
-        final version = _getString(_kAvailableUpdateVersion);
-        final url = _getString(_kAvailableUpdateUrl);
-        if (version == null || url == null || version.isEmpty || url.isEmpty) {
-          return null;
-        }
-        return UpdateInfo(
-          latestVersion: version,
-          releaseUrl: url,
-          releaseNotes: _getString(_kAvailableUpdateNotes) ?? '',
-          publishedAt: '',
-        );
-      }
-
-      /// Caches a discovered newer release and notifies any listening UI so the
-      /// sidebar badge and About row rebuild immediately.
-      Future<void> setAvailableUpdate(UpdateInfo info) async {
-        _data[_kAvailableUpdateVersion] = info.latestVersion;
-        _data[_kAvailableUpdateUrl] = info.releaseUrl;
-        _data[_kAvailableUpdateNotes] = info.releaseNotes;
-        await _save();
-        notifyListeners();
-      }
-
-      /// Clears any cached release and notifies listeners. Called when a check
-      /// confirms the running build is already the latest.
-      Future<void> clearAvailableUpdate() async {
-        _data.remove(_kAvailableUpdateVersion);
-        _data.remove(_kAvailableUpdateUrl);
-        _data.remove(_kAvailableUpdateNotes);
-        await _save();
-        notifyListeners();
-      }
-    }
+  /// Clears any cached release and notifies listeners. Called when a check
+  /// confirms the running build is already the latest.
+  Future<void> clearAvailableUpdate() async {
+    _data.remove(_kAvailableUpdateVersion);
+    _data.remove(_kAvailableUpdateUrl);
+    _data.remove(_kAvailableUpdateNotes);
+    await _save();
+    notifyListeners();
+  }
+}
 
 // ── Recording Mode enum ────────────────────────────────────────────────────
 enum RecordingMode { toggle, hold }

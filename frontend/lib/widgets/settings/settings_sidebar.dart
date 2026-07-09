@@ -29,7 +29,12 @@ class _SettingsSidebarState extends State<SettingsSidebar> {
             // title bar read as one continuous chrome layer around the page.
             color: beeSidebar(context),
             border: Border(
-              right: BorderSide(color: beeText(context).withValues(alpha: 0.08)),
+              right: BorderSide(
+                // Same divider token the title bar's bottom seam uses, so
+                // both chrome layers read as one continuous surface. Kept
+                // subtle (0.6) so the long vertical hairline is gentle.
+                color: beeDivider(context).withValues(alpha: 0.6),
+              ),
             ),
           ),
           child: Column(

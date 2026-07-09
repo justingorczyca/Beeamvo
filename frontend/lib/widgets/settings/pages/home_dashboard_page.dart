@@ -5,6 +5,8 @@ import '../../../models/usage_stats.dart';
 import '../../../services/usage_stats_service.dart';
 import 'home_activity_heatmap.dart';
 import 'home_achievements_section.dart';
+import '../bee_data_card.dart';
+import '../bee_page_header.dart';
 import '../settings_shared.dart';
 
 /// Home dashboard — the landing page inside settings.
@@ -34,19 +36,21 @@ class _HomeDashboardPageState extends State<HomeDashboardPage> {
               child: Container(
                 color: beeSurface(context),
                 child: SingleChildScrollView(
-                  padding: const EdgeInsets.fromLTRB(28, 22, 28, 28),
+                  padding: BeePageHeader.contentPadding,
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
+                      const BeePageHeader(title: 'Home'),
                       if (!stats.hasAnyRecording)
-                        _buildEmptyState(context)
+                        _buildEmptyState()
                       else ...[
+                        const SizedBox(height: BeePageHeader.groupGap),
                         _buildOverviewSection(context, stats),
-                        const SizedBox(height: 24),
+                        const SizedBox(height: BeePageHeader.groupGap),
                         _buildWeeklySection(context),
-                        const SizedBox(height: 24),
+                        const SizedBox(height: BeePageHeader.groupGap),
                         HomeActivityHeatmap(stats: stats),
-                        const SizedBox(height: 24),
+                        const SizedBox(height: BeePageHeader.groupGap),
                         HomeAchievementsSection(stats: stats),
                       ],
                     ],
@@ -64,48 +68,14 @@ class _HomeDashboardPageState extends State<HomeDashboardPage> {
   // Empty State
   // ═════════════════════════════════════════════════════════════════════════
 
-  Widget _buildEmptyState(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.only(top: 48),
-      child: Center(
-        child: Column(
-          children: [
-            const SizedBox(height: 24),
-            Container(
-              width: 56,
-              height: 56,
-              decoration: BoxDecoration(
-                shape: BoxShape.circle,
-                color: beeYellow(context).withValues(alpha: 0.10),
-              ),
-              child: Icon(
-                Icons.mic_rounded,
-                size: 24,
-                color: beeYellow(context).withValues(alpha: 0.50),
-              ),
-            ),
-            const SizedBox(height: 16),
-            Text(
-              'No recordings yet',
-              style: GoogleFonts.inter(
-                fontSize: 13,
-                fontWeight: FontWeight.w600,
-                color: beeTextSub(context),
-              ),
-            ),
-            const SizedBox(height: 6),
-            Text(
-              'Press your hotkey and start speaking.\n'
-              'Your stats will appear here automatically.',
-              textAlign: TextAlign.center,
-              style: GoogleFonts.inter(
-                fontSize: 11,
-                color: beeTextMuted(context),
-                height: 1.5,
-              ),
-            ),
-          ],
-        ),
+  Widget _buildEmptyState() {
+    return Center(
+      child: BeeEmptyState(
+        icon: Icons.mic_none_outlined,
+        title: 'No recordings yet',
+        subtitle: 'Press your hotkey and start speaking.\n'
+            'Your stats will appear here automatically.',
+        size: BeeEmptySize.prominent,
       ),
     );
   }
@@ -251,25 +221,20 @@ class _HomeDashboardPageState extends State<HomeDashboardPage> {
           ],
         ),
         const SizedBox(height: 8),
-        Container(
+        SizedBox(
           width: double.infinity,
-          padding: const EdgeInsets.fromLTRB(16, 16, 16, 12),
-          decoration: BoxDecoration(
-            color: beeSurfaceHighest(context),
-            borderRadius: BorderRadius.circular(kBeeRadiusMd),
-            border: Border.all(
-              color: beeBorder(context).withValues(alpha: 0.5),
-            ),
-          ),
-          child: SizedBox(
-            height: 72,
-            child: CustomPaint(
-              painter: _WeeklyBarPainter(
-                data: weeklyData,
-                maxValue: maxVal.toDouble(),
-                barColor: beeYellow(context),
-                dimColor: beeBorder(context),
-                labelColor: beeTextMuted(context),
+          child: BeeDataCard(
+            padding: const EdgeInsets.fromLTRB(16, 16, 16, 12),
+            child: SizedBox(
+              height: 72,
+              child: CustomPaint(
+                painter: _WeeklyBarPainter(
+                  data: weeklyData,
+                  maxValue: maxVal.toDouble(),
+                  barColor: beeYellow(context),
+                  dimColor: beeBorder(context),
+                  labelColor: beeTextMuted(context),
+                ),
               ),
             ),
           ),
@@ -372,7 +337,7 @@ class _StatBadge extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
       decoration: BoxDecoration(
-        color: accent.withValues(alpha: 0.08),
+        color: accent.withValues(alpha: kBeeTintActive),
         borderRadius: BorderRadius.circular(kBeeRadiusPill),
       ),
       child: Row(

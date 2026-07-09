@@ -24,7 +24,10 @@ class VertexAiService implements CloudTranscriptionClient {
   final VertexAdcClientFactory _adcClientFactory;
 
   http.Client? _adcClient;
+  Future<http.Client>? _adcClientCreation;
+  int _adcClientGeneration = 0;
   bool _isInitialized = false;
+  bool _isDisposed = false;
   GeminiModelConfig _currentModel = AppConfig.getModelById(
     AppConfig.defaultModelId,
   );
@@ -37,20 +40,32 @@ class VertexAiService implements CloudTranscriptionClient {
 
   @override
   Future<void> initialize() async {
+    if (_isDisposed) {
+      throw StateError('VertexAiService has been disposed.');
+    }
     _isInitialized = true;
   }
 
   @override
   void dispose() {
+    if (_isDisposed) return;
+    _isDisposed = true;
+    _isInitialized = false;
     _recycleAdcClient();
   }
 
   /// Drops the cached ADC client so the next request obtains a fresh,
   /// auto-refreshing client (forcing a credential/token refresh). Also used on
   /// 401/403 to recycle a stale token before a single retry.
+  ///
+  /// Incrementing the generation also invalidates a client creation already in
+  /// flight. When that future completes, [_getAdcClient] closes the obsolete
+  /// client rather than caching (or leaking) it.
   void _recycleAdcClient() {
+    _adcClientGeneration++;
     _adcClient?.close();
     _adcClient = null;
+    _adcClientCreation = null;
   }
 
   @override
@@ -113,19 +128,53 @@ class VertexAiService implements CloudTranscriptionClient {
   }
 
   Future<http.Client> _getAdcClient() async {
-    final cachedClient = _adcClient;
-    if (cachedClient != null) return cachedClient;
+    // Coalesce simultaneous first requests into one ADC client creation. A
+    // recycle/dispose can happen while that future is pending, so validate the
+    // generation after every await before returning or caching a client.
+    while (true) {
+      if (_isDisposed) {
+        throw StateError('VertexAiService has been disposed.');
+      }
 
-    try {
-      final client = await _adcClientFactory();
+      final cachedClient = _adcClient;
+      if (cachedClient != null) return cachedClient;
+
+      final generation = _adcClientGeneration;
+      final creation = _adcClientCreation ??= _createAdcClient();
+      http.Client client;
+      try {
+        client = await creation;
+      } catch (_) {
+        if (identical(_adcClientCreation, creation)) {
+          _adcClientCreation = null;
+        }
+        throw CloudTranscriptionException(
+          'Vertex ADC is not configured. Run gcloud auth application-default '
+          'login or set GOOGLE_APPLICATION_CREDENTIALS, then retry.',
+        );
+      }
+
+      if (identical(_adcClientCreation, creation)) {
+        _adcClientCreation = null;
+      }
+
+      if (_isDisposed) {
+        client.close();
+        throw StateError('VertexAiService has been disposed.');
+      }
+      if (generation != _adcClientGeneration) {
+        // The client was refreshed or disposed during creation. It must never
+        // become the active client after that lifecycle change.
+        client.close();
+        continue;
+      }
+
       _adcClient = client;
       return client;
-    } catch (_) {
-      throw CloudTranscriptionException(
-        'Vertex ADC is not configured. Run gcloud auth application-default login or set GOOGLE_APPLICATION_CREDENTIALS, then retry.',
-      );
     }
   }
+
+  Future<http.Client> _createAdcClient() => _adcClientFactory();
 
   Future<http.Client> _resolveHttpClient() async {
     return _getAdcClient();
@@ -349,11 +398,11 @@ class VertexAiService implements CloudTranscriptionClient {
       case 403:
         return isRetry
             ? 'Vertex AI authentication failed after refreshing credentials. '
-                'Your application-default credentials may be revoked or '
-                'expired — run "gcloud auth application-default login" again, '
-                'then retry.'
+                  'Your application-default credentials may be revoked or '
+                  'expired — run "gcloud auth application-default login" again, '
+                  'then retry.'
             : 'Vertex AI rejected the request credentials. Retrying may help; '
-                'if it persists, refresh your credentials.';
+                  'if it persists, refresh your credentials.';
       case 404:
         return 'Vertex AI could not find the requested project, location, or '
             'model. Double-check your project ID and the selected '

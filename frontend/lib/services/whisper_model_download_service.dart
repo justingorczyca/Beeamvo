@@ -115,11 +115,33 @@ class WhisperModelDownloadService extends ChangeNotifier {
   http.Client? _httpClient;
   IOSink? _fileSink;
   File? _tempFile;
+  StreamIterator<List<int>>? _activeStreamIterator;
+  Future<void>? _cleanupFuture;
   bool _isCancelled = false;
+  bool _isDisposed = false;
   final http.Client? _providedHttpClient;
 
+  // This hook and [beginDownloadForTesting] allow lifecycle behavior to be
+  // exercised without starting a platform-specific file or HTTP download.
+  final Future<void> Function()? _testCleanup;
+
   WhisperModelDownloadService({http.Client? httpClient})
-    : _providedHttpClient = httpClient;
+    : _providedHttpClient = httpClient,
+      _testCleanup = null;
+
+  @visibleForTesting
+  WhisperModelDownloadService.forTesting({Future<void> Function()? cleanup})
+    : _providedHttpClient = null,
+      _testCleanup = cleanup;
+
+  @visibleForTesting
+  void beginDownloadForTesting() {
+    if (_isDisposed) return;
+    _resetState();
+    _isCancelled = false;
+    _status = DownloadStatus.downloading;
+    _notifyListenersSafely();
+  }
 
   // Getters
   DownloadStatus get status => _status;
@@ -159,7 +181,7 @@ class WhisperModelDownloadService extends ChangeNotifier {
     String? targetPath,
     void Function(double progress, int downloaded, int total)? onProgress,
   }) async {
-    if (_status == DownloadStatus.downloading) {
+    if (_isDisposed || _status == DownloadStatus.downloading) {
       _debugLog('[WhisperDownload] Download already in progress');
       return false;
     }
@@ -169,7 +191,7 @@ class WhisperModelDownloadService extends ChangeNotifier {
       _resetState();
       _errorMessage = 'Unknown or unsafe whisper model id: ${model.id}';
       _status = DownloadStatus.error;
-      notifyListeners();
+      _notifyListenersSafely();
       return false;
     }
 
@@ -177,7 +199,7 @@ class WhisperModelDownloadService extends ChangeNotifier {
     _currentModelId = downloadModel.id;
     _status = DownloadStatus.downloading;
     _totalBytes = downloadModel.sizeBytes;
-    notifyListeners();
+    _notifyListenersSafely();
 
     // Default to the certificate-pinning client. huggingface.co ships with an
     // empty pin allow-list, so this is identical to a plain http.Client() until a
@@ -199,6 +221,10 @@ class WhisperModelDownloadService extends ChangeNotifier {
 
       final request = http.Request('GET', Uri.parse(downloadModel.url));
       final response = await _httpClient!.send(request).timeout(requestTimeout);
+
+      if (_isCancelled) {
+        return _finishCancellation();
+      }
 
       if (response.statusCode != 200) {
         throw Exception(
@@ -225,31 +251,49 @@ class WhisperModelDownloadService extends ChangeNotifier {
       _fileSink = _tempFile!.openWrite();
 
       _bytesDownloaded = 0;
-      await for (final chunk in response.stream.timeout(downloadIdleTimeout)) {
-        if (_isCancelled) {
-          _debugLog('[WhisperDownload] Download cancelled by user');
-          await _cleanup();
-          _status = DownloadStatus.cancelled;
-          notifyListeners();
-          return false;
+      final streamIterator = StreamIterator<List<int>>(
+        response.stream.timeout(downloadIdleTimeout),
+      );
+      _activeStreamIterator = streamIterator;
+      try {
+        while (await streamIterator.moveNext()) {
+          if (_isCancelled) {
+            return _finishCancellation();
+          }
+
+          final chunk = streamIterator.current;
+          _fileSink!.add(chunk);
+          _bytesDownloaded += chunk.length;
+          _validateExpectedSize(_bytesDownloaded, downloadModel);
+
+          // Update progress
+          if (_totalBytes > 0) {
+            _progress = _bytesDownloaded / _totalBytes;
+          }
+
+          if (!_isDisposed) {
+            onProgress?.call(_progress, _bytesDownloaded, _totalBytes);
+          }
+          _notifyProgressListeners();
         }
-
-        _fileSink!.add(chunk);
-        _bytesDownloaded += chunk.length;
-        _validateExpectedSize(_bytesDownloaded, downloadModel);
-
-        // Update progress
-        if (_totalBytes > 0) {
-          _progress = _bytesDownloaded / _totalBytes;
+      } finally {
+        if (identical(_activeStreamIterator, streamIterator)) {
+          _activeStreamIterator = null;
         }
+        await streamIterator.cancel();
+      }
 
-        onProgress?.call(_progress, _bytesDownloaded, _totalBytes);
-        _notifyProgressListeners();
+      if (_isCancelled) {
+        return _finishCancellation();
       }
 
       await _fileSink!.flush();
       await _fileSink!.close();
       _fileSink = null;
+
+      if (_isCancelled) {
+        return _finishCancellation();
+      }
 
       if (!await _verifyIntegrity(downloadModel)) {
         await _cleanup();
@@ -257,8 +301,12 @@ class WhisperModelDownloadService extends ChangeNotifier {
             'Download integrity check failed. The file may be corrupted or '
             'tampered with. Please try again.';
         _status = DownloadStatus.error;
-        notifyListeners();
+        _notifyListenersSafely();
         return false;
+      }
+
+      if (_isCancelled) {
+        return _finishCancellation();
       }
 
       // Move temp file to final destination
@@ -283,14 +331,17 @@ class WhisperModelDownloadService extends ChangeNotifier {
 
       _status = DownloadStatus.completed;
       _progress = 1.0;
-      notifyListeners();
+      _notifyListenersSafely();
       return true;
     } catch (e) {
+      if (_isCancelled) {
+        return _finishCancellation();
+      }
       _debugLog('[WhisperDownload] Download error: ${e.runtimeType}');
       _errorMessage = e.toString();
       _status = DownloadStatus.error;
       await _cleanup();
-      notifyListeners();
+      _notifyListenersSafely();
       return false;
     } finally {
       if (_providedHttpClient == null) {
@@ -300,14 +351,25 @@ class WhisperModelDownloadService extends ChangeNotifier {
     }
   }
 
-  /// Cancel the current download
-  Future<void> cancelDownload() async {
+  /// Cancel the current download and remove its partial download file.
+  ///
+  /// [notifyListeners] is disabled by page teardown so cancellation and cleanup
+  /// can finish before the notifier is disposed without scheduling UI work.
+  Future<void> cancelDownload({bool notifyListeners = true}) async {
     if (_status != DownloadStatus.downloading) return;
 
     _isCancelled = true;
-    await _cleanup();
-    _status = DownloadStatus.cancelled;
-    notifyListeners();
+    await _activeStreamIterator?.cancel();
+    await _finishCancellation(notifyListeners: notifyListeners);
+  }
+
+  /// Ends page-owned work before disposing this notifier.
+  ///
+  /// Widget [State.dispose] cannot be async, so callers intentionally do not
+  /// await this future. The notifier remains alive until cleanup has completed.
+  Future<void> cancelAndDispose() async {
+    await cancelDownload(notifyListeners: false);
+    dispose();
   }
 
   /// Delete a downloaded model
@@ -339,7 +401,7 @@ class WhisperModelDownloadService extends ChangeNotifier {
           await Directory(resolvedCoreMlPath).delete(recursive: true);
         }
         _debugLog('[WhisperDownload] Deleted model: $safeModelId');
-        notifyListeners();
+        _notifyListenersSafely();
         return true;
       }
       return false;
@@ -352,7 +414,7 @@ class WhisperModelDownloadService extends ChangeNotifier {
   /// Reset the download state
   void resetState() {
     _resetState();
-    notifyListeners();
+    _notifyListenersSafely();
   }
 
   void _resetState() {
@@ -379,11 +441,37 @@ class WhisperModelDownloadService extends ChangeNotifier {
 
     _lastProgressNotificationAt = now;
     _lastNotifiedProgress = _progress;
-    notifyListeners();
+    _notifyListenersSafely();
   }
 
-  Future<void> _cleanup() async {
+  Future<bool> _finishCancellation({bool notifyListeners = true}) async {
+    _debugLog('[WhisperDownload] Download cancelled');
+    await _cleanup();
+    final statusChanged = _status != DownloadStatus.cancelled;
+    _status = DownloadStatus.cancelled;
+    if (notifyListeners && statusChanged) {
+      _notifyListenersSafely();
+    }
+    return false;
+  }
+
+  Future<void> _cleanup() {
+    final activeCleanup = _cleanupFuture;
+    if (activeCleanup != null) return activeCleanup;
+
+    late final Future<void> cleanup;
+    cleanup = _performCleanup().whenComplete(() {
+      if (identical(_cleanupFuture, cleanup)) {
+        _cleanupFuture = null;
+      }
+    });
+    _cleanupFuture = cleanup;
+    return cleanup;
+  }
+
+  Future<void> _performCleanup() async {
     try {
+      await _testCleanup?.call();
       await _fileSink?.close();
       _fileSink = null;
 
@@ -394,6 +482,29 @@ class WhisperModelDownloadService extends ChangeNotifier {
     } catch (e) {
       _debugLog('[WhisperDownload] Cleanup error: ${e.runtimeType}');
     }
+  }
+
+  void _notifyListenersSafely() {
+    if (!_isDisposed) {
+      notifyListeners();
+    }
+  }
+
+  @override
+  void dispose() {
+    if (_isDisposed) return;
+    final hasActiveDownload = _status == DownloadStatus.downloading;
+    _isDisposed = true;
+    _isCancelled = true;
+    unawaited(_activeStreamIterator?.cancel() ?? Future<void>.value());
+    if (hasActiveDownload) {
+      unawaited(_cleanup());
+    }
+    if (_providedHttpClient == null) {
+      _httpClient?.close();
+    }
+    _httpClient = null;
+    super.dispose();
   }
 
   Future<bool> _verifyIntegrity(WhisperModelInfo model) async {

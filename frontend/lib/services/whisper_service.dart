@@ -272,6 +272,23 @@ class WhisperService extends ChangeNotifier {
     }
   }
 
+  /// Test seam for the native plugin. Production instances use [_channel].
+  final Future<T?> Function<T>(String method, [Map<String, dynamic>? arguments])
+  _invokeNative;
+
+  /// Test seam for model-path validation. Production instances validate that
+  /// the supplied path is an existing, allowed local model path.
+  final String Function(String modelPath) _resolveModelPath;
+
+  WhisperService({
+    Future<T?> Function<T>(String method, [Map<String, dynamic>? arguments])?
+    nativeInvoker,
+    String Function(String modelPath)? modelPathResolver,
+  }) : _invokeNative = nativeInvoker ?? _channel.invokeMethod,
+       _resolveModelPath =
+           modelPathResolver ??
+           ((modelPath) => resolveAllowedModelPath(modelPath, mustExist: true));
+
   bool _isInitialized = false;
   bool _isLoading = false;
   bool _isDisposed = false;
@@ -283,44 +300,65 @@ class WhisperService extends ChangeNotifier {
   String? get loadedModelPath => _loadedModelPath;
   String? get modelLoadError => _modelLoadError;
 
+  /// Notifies listeners only while this notifier is still usable.
+  void _notifyListenersIfActive() {
+    if (!_isDisposed) notifyListeners();
+  }
+
   /// Initialize the whisper model from the given path.
   ///
   /// [modelPath] Path to the ggml model file (e.g., ggml-tiny.bin).
   /// [threads] Number of threads to use (0 = auto = CPU count).
   Future<bool> initialize({required String modelPath, int threads = 0}) async {
+    // ChangeNotifier.dispose is terminal. In particular, do not validate a
+    // path or notify listeners after final disposal.
+    if (_isDisposed) return false;
+
     late final String safeModelPath;
     try {
-      safeModelPath = resolveAllowedModelPath(modelPath, mustExist: true);
+      safeModelPath = _resolveModelPath(modelPath);
     } on ArgumentError catch (e) {
       _modelLoadError = 'Invalid model path: ${e.message}';
-      notifyListeners();
+      _notifyListenersIfActive();
       return false;
     } on FileSystemException {
       _modelLoadError = 'Model file not found at $modelPath';
-      notifyListeners();
+      _notifyListenersIfActive();
       return false;
     }
 
     if (_isInitialized) {
-      // Already initialized with same model
+      // Already initialized with same model.
       if (_loadedModelPath == safeModelPath) return true;
-      // Different model — tear down the native model WITHOUT disposing the
-      // ChangeNotifier, so this instance (and its listeners) stay usable
-      // across re-initialization. Calling dispose() here would mark the
-      // notifier disposed and make the notifyListeners() below throw.
-      await _teardownNative();
+      // Do not call dispose here: this instance and its listeners must remain
+      // usable when switching models.
+      await _unloadNativeModel();
     }
+
+    // Final disposal can race an awaited unload in callers that do not
+    // serialize transitions. Do not start another native operation then.
+    if (_isDisposed) return false;
 
     _isLoading = true;
     _modelLoadError = null;
-    notifyListeners();
+    _notifyListenersIfActive();
 
     try {
-      final ok = await _channel.invokeMethod<bool>('init', {
+      final ok = await _invokeNative<bool>('init', {
         'modelPath': safeModelPath,
         'threads': threads,
       });
-      _isInitialized = ok ?? false;
+      final initialized = ok ?? false;
+
+      // If final disposal occurred while native initialization was in flight,
+      // release the just-created native model rather than reviving this
+      // terminal notifier.
+      if (_isDisposed) {
+        if (initialized) await _cleanupNative();
+        return false;
+      }
+
+      _isInitialized = initialized;
       if (_isInitialized) {
         _loadedModelPath = safeModelPath;
         _modelLoadError = null;
@@ -334,12 +372,13 @@ class WhisperService extends ChangeNotifier {
       return false;
     } finally {
       _isLoading = false;
-      notifyListeners();
+      _notifyListenersIfActive();
     }
   }
 
-  /// Initialize with the default model
+  /// Initialize with the default model.
   Future<bool> initializeDefault({int threads = 0}) async {
+    if (_isDisposed) return false;
     return initialize(modelPath: defaultModelPath, threads: threads);
   }
 
@@ -362,7 +401,7 @@ class WhisperService extends ChangeNotifier {
     }
 
     try {
-      final text = await _channel.invokeMethod<String>('transcribeRaw', {
+      final text = await _invokeNative<String>('transcribeRaw', {
         'pcmBytes': pcm16Bytes,
         'sampleRate': sampleRate,
         'channels': channels,
@@ -379,37 +418,56 @@ class WhisperService extends ChangeNotifier {
   /// Best-effort only: if no transcription is active, this is a no-op.
   Future<void> cancelTranscription() async {
     try {
-      await _channel.invokeMethod('cancel');
+      await _invokeNative<void>('cancel');
     } catch (_) {
       // Ignore cancellation errors to keep cancel path resilient.
     }
   }
 
-  /// Tear down the native whisper model in place (used when switching models
-  /// during [initialize]) WITHOUT disposing the [ChangeNotifier], so the
-  /// service instance and its listeners remain alive for the re-init.
-  /// Idempotent; safe to call when nothing is loaded.
-  Future<void> _teardownNative() async {
-    if (_isInitialized) {
-      try {
-        await _channel.invokeMethod('cleanup');
-      } catch (_) {
-        // Ignore cleanup errors.
-      }
-    }
-    _isInitialized = false;
-    _loadedModelPath = null;
+  /// Unload the active native model without disposing this service.
+  ///
+  /// This is safe to call repeatedly and lets the same [WhisperService]
+  /// instance be initialized again later. Callers that can request concurrent
+  /// initialize/unload operations must serialize those operations.
+  Future<void> unloadModel() async {
+    if (_isDisposed) return;
+
+    final changed = await _unloadNativeModel();
+    if (changed) _notifyListenersIfActive();
   }
 
-  /// Dispose and cleanup resources.
+  /// Calls native cleanup and deliberately ignores plugin failures so that the
+  /// Dart lifecycle state is always released.
+  Future<void> _cleanupNative() async {
+    try {
+      await _invokeNative<void>('cleanup');
+    } catch (_) {
+      // Native cleanup is best effort.
+    }
+  }
+
+  /// Release native model state without disposing the [ChangeNotifier].
   ///
-  /// Idempotent: safe to call more than once (e.g. once from the
-  /// backend-toggle path and again during app shutdown).
+  /// Returns whether a loaded model state was cleared. This private helper is
+  /// used by both reusable unload and terminal disposal; it never notifies.
+  Future<bool> _unloadNativeModel() async {
+    final wasInitialized = _isInitialized;
+    if (wasInitialized) await _cleanupNative();
+
+    _isInitialized = false;
+    _loadedModelPath = null;
+    return wasInitialized;
+  }
+
+  /// Dispose and cleanup resources permanently.
+  ///
+  /// Final disposal is idempotent, but unlike [unloadModel] it makes this
+  /// ChangeNotifier terminal and prevents all later notifications.
   @override
   Future<void> dispose() async {
     if (_isDisposed) return;
     _isDisposed = true;
-    await _teardownNative();
+    await _unloadNativeModel();
     super.dispose();
   }
 }

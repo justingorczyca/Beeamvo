@@ -12,12 +12,9 @@ import 'settings_service.dart';
 import 'transcription_result_guard.dart';
 
 class GeminiApiService implements CloudTranscriptionClient {
-  // Default to the certificate-pinning client for defense-in-depth. The pin
-  // client only ever enforces pins for hosts that have a configured allow-list;
-  // every other host (including generativelanguage.googleapis.com, which ships
-  // with an empty allow-list) defers to the OS trust store and is identical to a
-  // plain http.Client(). The constructor-injection seam is preserved so tests
-  // can still pass an http/testing.dart MockClient.
+  // The default client currently uses normal OS certificate trust. The pin
+  // configuration ships empty and enforcement remains disabled; the injected
+  // client seam is retained for tests.
   GeminiApiService({http.Client? httpClient})
     : _httpClient = httpClient ?? createPinnedHttpClient();
 
@@ -26,6 +23,7 @@ class GeminiApiService implements CloudTranscriptionClient {
 
   final http.Client _httpClient;
   bool _isInitialized = false;
+  bool _isDisposed = false;
   GeminiModelConfig _currentModel = AppConfig.getModelById(
     AppConfig.defaultModelId,
   );
@@ -38,6 +36,9 @@ class GeminiApiService implements CloudTranscriptionClient {
 
   @override
   Future<void> initialize() async {
+    if (_isDisposed) {
+      throw StateError('GeminiApiService has been disposed.');
+    }
     _isInitialized = true;
   }
 
@@ -46,6 +47,9 @@ class GeminiApiService implements CloudTranscriptionClient {
 
   @override
   void dispose() {
+    if (_isDisposed) return;
+    _isDisposed = true;
+    _isInitialized = false;
     _httpClient.close();
   }
 
@@ -281,12 +285,18 @@ class GeminiApiService implements CloudTranscriptionClient {
 
     final decoded = _decodeResponse(response);
     if (response.statusCode >= 400) {
-      final error = decoded['error'];
-      final message =
-          error is Map<String, dynamic> && error['message'] is String
-          ? error['message'] as String
-          : 'Gemini request failed with status ${response.statusCode}.';
-      throw CloudTranscriptionException(message);
+      // Upstream error bodies can include request details, project metadata, or
+      // user-supplied content. Never show them in the UI. The status code is a
+      // safe diagnostic that remains available in debug builds.
+      if (kDebugMode) {
+        debugPrint(
+          '[GeminiApiService] request failed: HTTP ${response.statusCode}; '
+          'upstream response body suppressed.',
+        );
+      }
+      throw CloudTranscriptionException(
+        _userFacingFailureMessage(response.statusCode),
+      );
     }
 
     final candidates = decoded['candidates'];
@@ -313,6 +323,30 @@ class GeminiApiService implements CloudTranscriptionClient {
       throw CloudTranscriptionException('Gemini returned an empty response.');
     }
     return text;
+  }
+
+  String _userFacingFailureMessage(int statusCode) {
+    switch (statusCode) {
+      case 400:
+        return 'Gemini could not process this request. Check your selected '
+            'model and try again.';
+      case 401:
+      case 403:
+        return 'Invalid API key or missing access to the selected model. '
+            'Check the key in Settings and try again.';
+      case 404:
+        return 'Gemini could not find the selected model. Choose another model '
+            'in Settings and try again.';
+      case 429:
+        return 'Gemini is rate-limiting requests. Wait a moment, then try again.';
+      default:
+        if (statusCode >= 500) {
+          return 'Gemini is temporarily unavailable (HTTP $statusCode). Try '
+              'again in a moment.';
+        }
+        return 'Gemini request failed (HTTP $statusCode). Check your '
+            'configuration and try again.';
+    }
   }
 
   Map<String, dynamic> _decodeResponse(http.Response response) {

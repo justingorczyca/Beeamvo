@@ -6,6 +6,8 @@ import 'package:google_fonts/google_fonts.dart';
 import '../../../models/clipboard_history_entry.dart';
 import '../../../providers/settings_provider.dart';
 import '../../../services/settings_service.dart';
+import '../bee_input.dart';
+import '../bee_page_header.dart';
 import '../settings_shared.dart';
 
 class ClipboardPage extends StatefulWidget {
@@ -91,10 +93,11 @@ class _ClipboardPageState extends State<ClipboardPage> {
           child: Container(
             color: beeSurface(context),
             child: SingleChildScrollView(
-              padding: const EdgeInsets.fromLTRB(24, 22, 24, 24),
+              padding: BeePageHeader.contentPadding,
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
+                  BeePageHeader(title: 'Clipboard'),
                   // ── PREFERENCES ────────────────────────────────
                   const BeeGroupLabel(label: 'Preferences'),
                   BeeSettingsRow(
@@ -171,7 +174,7 @@ class _ClipboardPageState extends State<ClipboardPage> {
                     ),
                   ),
 
-                  const SizedBox(height: 28),
+                  const SizedBox(height: BeePageHeader.groupGap),
 
                   // ── PINNED ─────────────────────────────────────
                   const BeeGroupLabel(label: 'Pinned Prompts'),
@@ -190,7 +193,7 @@ class _ClipboardPageState extends State<ClipboardPage> {
                   const SizedBox(height: 12),
                   _buildPinnedPanel(pinnedItems, settings),
 
-                  const SizedBox(height: 28),
+                  const SizedBox(height: BeePageHeader.groupGap),
 
                   // ── HISTORY ────────────────────────────────────
                   Row(
@@ -254,30 +257,7 @@ class _ClipboardPageState extends State<ClipboardPage> {
       textInputAction: TextInputAction.done,
       onSubmitted: (_) => _pinPrompt(settings),
       style: GoogleFonts.inter(fontSize: 13, color: beeText(context)),
-      decoration: InputDecoration(
-        hintText: 'Type a snippet to pin...',
-        hintStyle: GoogleFonts.inter(fontSize: 13, color: beeTextMuted(context)),
-        filled: true,
-        fillColor: beeText(context).withValues(alpha: 0.04),
-        contentPadding: const EdgeInsets.symmetric(
-          horizontal: 12,
-          vertical: 10,
-        ),
-        border: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(kBeeRadiusSm),
-          borderSide: BorderSide(color: beeDivider(context).withValues(alpha: 0.4)),
-        ),
-        enabledBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(kBeeRadiusSm),
-          borderSide: BorderSide(color: beeDivider(context).withValues(alpha: 0.4)),
-        ),
-        focusedBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(kBeeRadiusSm),
-          // Use a subtle ink ring instead of yellow focus.
-          borderSide: BorderSide(color: beeText(context).withValues(alpha: 0.30)),
-        ),
-        isDense: true,
-      ),
+      decoration: beeInputDecoration(context, hint: 'Type a snippet to pin...'),
     );
   }
 
@@ -286,16 +266,11 @@ class _ClipboardPageState extends State<ClipboardPage> {
       controller: _search,
       onChanged: _onSearchChanged,
       style: GoogleFonts.inter(fontSize: 13, color: beeText(context)),
-      decoration: InputDecoration(
-        hintText: 'Search history...',
-        hintStyle: GoogleFonts.inter(fontSize: 13, color: beeTextMuted(context)),
-        prefixIcon: Icon(
-          Icons.search_rounded,
-          size: 16,
-          color: beeTextMuted(context),
-        ),
-        prefixIconConstraints: const BoxConstraints(minWidth: 36, minHeight: 0),
-        suffixIcon: _search.text.isEmpty
+      decoration: beeInputDecoration(
+        context,
+        hint: 'Search history...',
+        prefixIcon: Icons.search_rounded,
+        suffix: _search.text.isEmpty
             ? null
             : Tooltip(
                 message: 'Clear search',
@@ -314,16 +289,6 @@ class _ClipboardPageState extends State<ClipboardPage> {
                   onPressed: _clearSearch,
                 ),
               ),
-        suffixIconConstraints: const BoxConstraints(minWidth: 36, minHeight: 0),
-        filled: false,
-        contentPadding: const EdgeInsets.symmetric(
-          horizontal: 12,
-          vertical: 11,
-        ),
-        border: InputBorder.none,
-        enabledBorder: InputBorder.none,
-        focusedBorder: InputBorder.none,
-        isDense: true,
       ),
     );
   }
@@ -348,10 +313,11 @@ class _ClipboardPageState extends State<ClipboardPage> {
     SettingsService settings,
   ) {
     if (items.isEmpty) {
-      return _buildCompactEmpty(
+      return BeeEmptyState(
         icon: Icons.push_pin_outlined,
         title: 'No pinned prompts',
         subtitle: 'Pinned snippets stay available above history.',
+        size: BeeEmptySize.compact,
       );
     }
 
@@ -392,12 +358,13 @@ class _ClipboardPageState extends State<ClipboardPage> {
             Container(height: 1, color: beeDivider(context).withValues(alpha: 0.55)),
         // Entries
         if (items.isEmpty)
-          _buildCompactEmpty(
+          BeeEmptyState(
             icon: Icons.history_rounded,
             title: 'No entries',
             subtitle: _historyEnabled
                 ? 'Processed text will appear here.'
                 : 'Enable clipboard history to collect entries.',
+            size: BeeEmptySize.compact,
           )
         else
           _buildEntryListPanel(
@@ -406,38 +373,6 @@ class _ClipboardPageState extends State<ClipboardPage> {
             maxHeight: _maxHistoryListHeight,
           ),
       ],
-    );
-  }
-
-  Widget _buildCompactEmpty({
-    required IconData icon,
-    required String title,
-    required String subtitle,
-  }) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 34, horizontal: 20),
-      child: Center(
-        child: Column(
-          children: [
-            Icon(icon, size: 28, color: beeTextMuted(context)),
-            const SizedBox(height: 12),
-            Text(
-              title,
-              style: GoogleFonts.inter(
-                fontSize: 13,
-                fontWeight: FontWeight.w600,
-                color: beeTextSub(context),
-              ),
-            ),
-            const SizedBox(height: 4),
-            Text(
-              subtitle,
-              style: GoogleFonts.inter(fontSize: 11, color: beeTextMuted(context)),
-              textAlign: TextAlign.center,
-            ),
-          ],
-        ),
-      ),
     );
   }
 

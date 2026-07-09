@@ -35,6 +35,7 @@ void main() {
         'pass${'word'}: correct-horse-battery-staple',
         'Authorization: ${'Bearer'} abcdefghijklmnopqrstuvwxyz123456',
         'github_${'pat'}_1234567890ABCDEFGHIJKLMNOPQRSTUVWXYZ',
+        '${'eyJ'}aaaaaaaaaa.bbbbbbbbbb.cccccccccc',
         '-----BEGIN ${'PRIVATE'} KEY-----',
       ];
 

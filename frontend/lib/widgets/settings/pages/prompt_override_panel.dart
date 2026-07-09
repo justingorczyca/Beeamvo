@@ -6,6 +6,7 @@ import '../../../models/system_prompt.dart';
 import '../../../services/settings_service.dart';
 import '../../../services/whisper_service.dart';
 import '../../../services/whisper_model_download_service.dart';
+import '../bee_dropdown.dart';
 import '../settings_shared.dart';
 
 /// Sentinel used inside [showMenu] dropdowns to represent the
@@ -222,10 +223,14 @@ class _PromptDetailPageState extends State<PromptDetailPage> {
             ),
           ),
           const Spacer(),
-          _kindTag(context, widget.isBuiltIn),
+          beeBadge(
+            context,
+            widget.isBuiltIn ? 'BUILT-IN' : 'CUSTOM',
+            BeeBadgeTone.neutral,
+          ),
           if (hasOverride) ...[
             const SizedBox(width: 8),
-            _customizedPill(context),
+            beeBadge(context, 'Customized', BeeBadgeTone.amber),
           ],
         ],
       ),
@@ -273,49 +278,32 @@ class _PromptDetailPageState extends State<PromptDetailPage> {
     );
   }
 
-  Widget _kindTag(BuildContext context, bool isBuiltIn) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1.5),
-      decoration: BoxDecoration(
-        color: beeText(context).withValues(alpha: 0.05),
-        borderRadius: BorderRadius.circular(kBeeRadiusXs),
-      ),
-      child: Text(
-        isBuiltIn ? 'BUILT-IN' : 'CUSTOM',
-        style: GoogleFonts.inter(
-          fontSize: 9,
-          fontWeight: FontWeight.w600,
-          color: beeTextMuted(context),
-          letterSpacing: 0.5,
-        ),
-      ),
-    );
-  }
+  // ── Override dropdown adapter ───────────────────────────────────────────
 
-  Widget _customizedPill(BuildContext context) {
-    final accent = beeYellow(context);
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
-      decoration: BoxDecoration(
-        color: accent.withValues(alpha: 0.12),
-        borderRadius: BorderRadius.circular(kBeeRadiusPill),
-      ),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Icon(Icons.tune_rounded, size: 10, color: accent),
-          const SizedBox(width: 4),
-          Text(
-            'CUSTOMIZED',
-            style: GoogleFonts.inter(
-              fontSize: 9,
-              fontWeight: FontWeight.w700,
-              color: accent,
-              letterSpacing: 0.5,
-            ),
+  /// Trailing control binding a nullable per-prompt override to the shared
+  /// [BeeDropdown].
+  ///
+  /// `null` means "inherit the app default" here, but [BeeDropdown] is built
+  /// on [showMenu], which resolves to `null` when dismissed — so a real
+  /// `null` selection can't be distinguished from a dismiss. The "Global
+  /// default" choice is routed through [_kGlobalSentinel] instead and mapped
+  /// back to `null` on the way out.
+  Widget _inheritDropdown({
+    required List<({String? value, String label})> items,
+    required String? value,
+    required ValueChanged<String?> onChanged,
+  }) {
+    return BeeDropdown<String>(
+      value: value ?? _kGlobalSentinel,
+      options: [
+        for (final item in items)
+          BeeDropdownOption(
+            value: item.value ?? _kGlobalSentinel,
+            label: item.label,
           ),
-        ],
-      ),
+      ],
+      onChanged: (selected) =>
+          onChanged(selected == _kGlobalSentinel ? null : selected),
     );
   }
 
@@ -482,7 +470,7 @@ class _PromptDetailPageState extends State<PromptDetailPage> {
           ? 'Inherits the app default — ${_modelDisplayName(_s.selectedModelId)}'
           : 'Custom override for this prompt',
       showDivider: showDivider,
-      trailing: _OverrideDropdown(
+      trailing: _inheritDropdown(
         items: items,
         value: _selectedModel,
         onChanged: (v) => setState(() {
@@ -512,7 +500,7 @@ class _PromptDetailPageState extends State<PromptDetailPage> {
           ? 'Inherits the app default — ${globalLevel.displayLabel}'
           : 'Custom override for this prompt',
       showDivider: showDivider,
-      trailing: _OverrideDropdown(
+      trailing: _inheritDropdown(
         items: [
           (value: null, label: 'Global default'),
           ...levels.map((l) => (value: l.apiValue, label: l.displayLabel)),
@@ -550,7 +538,7 @@ class _PromptDetailPageState extends State<PromptDetailPage> {
           ? 'Inherits the app default — ${_whisperModelDisplayName(_s.whisperModelId)}'
           : 'Custom override for this prompt',
       showDivider: showDivider,
-      trailing: _OverrideDropdown(
+      trailing: _inheritDropdown(
         items: [
           (value: null, label: 'Global default'),
           ..._getDownloadedModelItems(),
@@ -572,7 +560,7 @@ class _PromptDetailPageState extends State<PromptDetailPage> {
           ? 'Inherits the app default — ${_languageDisplayName(_s.whisperLanguage)}'
           : 'Custom override for this prompt',
       showDivider: showDivider,
-      trailing: _OverrideDropdown(
+      trailing: _inheritDropdown(
         items: const [
           (value: null, label: 'Global default'),
           (value: 'auto', label: 'Auto-Detect'),
@@ -658,7 +646,7 @@ class _PromptDetailPageState extends State<PromptDetailPage> {
           ? 'Inherits the app default — ${_modelDisplayName(_s.twoPassTranscriptionModelId)}'
           : 'Custom override for this prompt',
       showDivider: showDivider,
-      trailing: _OverrideDropdown(
+      trailing: _inheritDropdown(
         items: items,
         value: _selectedPassModel,
         onChanged: (v) => setState(() {
@@ -681,7 +669,7 @@ class _PromptDetailPageState extends State<PromptDetailPage> {
           ? 'Inherits the app default — ${_modelDisplayName(_s.twoPassRefinementModelId)}'
           : 'Custom override for this prompt',
       showDivider: showDivider,
-      trailing: _OverrideDropdown(
+      trailing: _inheritDropdown(
         items: items,
         value: _selectedRefineModel,
         onChanged: (v) => setState(() {
@@ -711,7 +699,7 @@ class _PromptDetailPageState extends State<PromptDetailPage> {
           ? 'Inherits the app default — ${globalLevel.displayLabel}'
           : 'Custom override for this prompt',
       showDivider: showDivider,
-      trailing: _OverrideDropdown(
+      trailing: _inheritDropdown(
         items: [
           (value: null, label: 'Global default'),
           ...levels.map((l) => (value: l.apiValue, label: l.displayLabel)),
@@ -865,154 +853,4 @@ class _PromptDetailPageState extends State<PromptDetailPage> {
     final modelId = _selectedWhisperModel ?? _s.whisperModelId;
     return _whisperModelDisplayName(modelId);
   }
-}
-
-// ── Override dropdown (flat trailing chip + native popup menu) ──────────────
-
-/// A trailing control for [BeeSettingsRow] that mirrors the AI Models page's
-/// flat dropdown: a [BeeChip] showing the current selection that opens a
-/// native [showMenu] popup. The first item is expected to be the
-/// "Global default" sentinel; a `null` [value] means the row is inheriting.
-class _OverrideDropdown extends StatelessWidget {
-  final List<({String? value, String label})> items;
-  final String? value;
-  final ValueChanged<String?> onChanged;
-
-  const _OverrideDropdown({
-    required this.items,
-    required this.value,
-    required this.onChanged,
-  });
-
-  String _labelForValue(String? v) {
-    for (final item in items) {
-      if (item.value == v) return item.label;
-    }
-    return v ?? 'Global default';
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final isOverride = value != null;
-    final currentLabel = _labelForValue(value);
-
-    return Builder(
-      builder: (context) => ConstrainedBox(
-        constraints: const BoxConstraints(maxWidth: 240),
-        child: BeeChip(
-          displayValue: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              if (isOverride) ...[
-                Container(
-                  width: 6,
-                  height: 6,
-                  decoration: BoxDecoration(
-                    shape: BoxShape.circle,
-                    color: beeYellow(context),
-                  ),
-                ),
-                const SizedBox(width: 6),
-              ],
-              Flexible(
-                child: Text(
-                  currentLabel,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: GoogleFonts.inter(
-                    fontSize: 12,
-                    fontWeight: FontWeight.w500,
-                    color: isOverride
-                        ? beeText(context)
-                        : beeTextMuted(context),
-                  ),
-                ),
-              ),
-            ],
-          ),
-          onTap: () async {
-            final selected = await showMenu<String>(
-              context: context,
-              position: _menuPosition(context),
-              color: beeSurfaceRaised(context),
-              elevation: 8,
-              constraints: const BoxConstraints(minWidth: 210),
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(kBeeRadiusSm),
-                side: BorderSide(
-                  color: beeDivider(context).withValues(alpha: 0.6),
-                ),
-              ),
-              initialValue: value ?? _kGlobalSentinel,
-              items: items.map((item) {
-                final menuValue = item.value ?? _kGlobalSentinel;
-                final isGlobal = item.value == null;
-                final isSel = item.value == value;
-                return PopupMenuItem<String>(
-                  value: menuValue,
-                  height: 40,
-                  child: Row(
-                    children: [
-                      if (isGlobal) ...[
-                        Icon(
-                          Icons.public_rounded,
-                          size: 13,
-                          color: beeTextMuted(context),
-                        ),
-                        const SizedBox(width: 8),
-                      ],
-                      Expanded(
-                        child: Text(
-                          item.label,
-                          overflow: TextOverflow.ellipsis,
-                          style: GoogleFonts.inter(
-                            fontSize: 13,
-                            fontWeight: isSel
-                                ? FontWeight.w600
-                                : FontWeight.w500,
-                            color: isSel
-                                ? beeYellow(context)
-                                : beeText(context),
-                          ),
-                        ),
-                      ),
-                      if (isSel) ...[
-                        const SizedBox(width: 8),
-                        Icon(
-                          Icons.check_rounded,
-                          size: 14,
-                          color: beeYellow(context),
-                        ),
-                      ],
-                    ],
-                  ),
-                );
-              }).toList(),
-            );
-            if (selected == null) return; // dismissed
-            final newValue = selected == _kGlobalSentinel ? null : selected;
-            if (newValue != value) onChanged(newValue);
-          },
-        ),
-      ),
-    );
-  }
-}
-
-/// Position a popup menu just below and roughly centered under the chip.
-RelativeRect _menuPosition(BuildContext context) {
-  final box = context.findRenderObject() as RenderBox?;
-  final overlay = Overlay.of(context).context.findRenderObject() as RenderBox;
-  if (box == null) {
-    return RelativeRect.fill;
-  }
-  final size = box.size;
-  final offset = box.localToGlobal(Offset.zero, ancestor: overlay);
-  final overlaySize = overlay.size;
-  return RelativeRect.fromLTRB(
-    offset.dx + (size.width / 2).clamp(80.0, overlaySize.width / 2),
-    offset.dy + size.height + 4,
-    overlaySize.width - (offset.dx + size.width - 8),
-    overlaySize.height - (offset.dy + size.height + 100),
-  );
 }

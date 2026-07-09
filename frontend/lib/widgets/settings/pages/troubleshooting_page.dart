@@ -12,6 +12,7 @@ import '../../../services/recording_service.dart';
 import '../../../services/settings_service.dart';
 import '../../../services/whisper_service.dart';
 import '../../onboarding/permission_onboarding_dialog.dart';
+import '../bee_page_header.dart';
 import '../settings_shared.dart';
 
 class TroubleshootingPage extends StatefulWidget {
@@ -310,10 +311,12 @@ class _TroubleshootingPageState extends State<TroubleshootingPage> {
           child: Container(
             color: beeSurface(context),
             child: SingleChildScrollView(
-              padding: const EdgeInsets.fromLTRB(28, 24, 28, 28),
+              padding: BeePageHeader.contentPadding,
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
+                  BeePageHeader(title: 'Troubleshooting'),
+
                   // ── Permissions (macOS only) ──────────────────
                   if (Platform.isMacOS) ...[
                     const BeeGroupLabel(label: 'Permissions'),
@@ -322,84 +325,82 @@ class _TroubleshootingPageState extends State<TroubleshootingPage> {
                       'Required for auto-paste & global hotkeys',
                       _accessibilityGranted,
                       () async {
-                              await PermissionOnboardingDialog.show(context);
-                              _checkPermissions();
-                            },
-                            isLast: true,
-                          ),
-                          // One-click recovery if the Accessibility toggle is "stuck"
-                          // (stale after a rebuild). Clears just this app's entry and
-                          // re-fires the native prompt.
-                          BeeSettingsRow(
-                            icon: Icons.auto_fix_high_rounded,
-                            label: 'Auto-repair stuck permission',
-                            description:
-                                'Use if the toggle is already ON but paste still fails '
-                                '(common after flutter clean / rebuild).',
-                            showDivider: false,
-                            trailing: BeeActionChip(
-                              label: 'Repair',
-                              onTap: () async {
-                                final messenger =
-                                    ScaffoldMessenger.of(context);
-                                final snackBg =
-                                    beeSurfaceHighest(context);
-                                final snackRadius =
-                                    BorderRadius.circular(kBeeRadiusMd);
-                                final ok =
-                                    await MacOsPermissionService.autoRepair();
-                                if (!mounted) return;
-                                messenger.showSnackBar(
-                                  SnackBar(
-                                    content: Text(ok
-                                        ? 'Permission repaired & granted. Auto-paste is ready.'
-                                        : 'Repaired the entry — re-enable Beeamvo in the prompt that appeared.'),
-                                    backgroundColor: snackBg,
-                                    behavior: SnackBarBehavior.floating,
-                                    shape: RoundedRectangleBorder(
-                                      borderRadius: snackRadius,
-                                    ),
-                                  ),
-                                );
-                                await _checkPermissions();
-                                await _runDiagnostics();
-                              },
+                        await PermissionOnboardingDialog.show(context);
+                        _checkPermissions();
+                      },
+                      isLast: true,
+                    ),
+                    // One-click recovery if the Accessibility toggle is "stuck"
+                    // (stale after a rebuild). Clears just this app's entry and
+                    // re-fires the native prompt.
+                    BeeSettingsRow(
+                      icon: Icons.auto_fix_high_rounded,
+                      label: 'Auto-repair stuck permission',
+                      description:
+                          'Use if the toggle is already ON but paste still fails '
+                          '(common after flutter clean / rebuild).',
+                      showDivider: false,
+                      trailing: BeeActionChip(
+                        label: 'Repair',
+                        onTap: () async {
+                          final messenger = ScaffoldMessenger.of(context);
+                          final snackBg = beeSurfaceHighest(context);
+                          final snackRadius = BorderRadius.circular(
+                            kBeeRadiusMd,
+                          );
+                          final ok = await MacOsPermissionService.autoRepair();
+                          if (!mounted) return;
+                          messenger.showSnackBar(
+                            SnackBar(
+                              content: Text(
+                                ok
+                                    ? 'Permission repaired & granted. Auto-paste is ready.'
+                                    : 'Repaired the entry — re-enable Beeamvo in the prompt that appeared.',
+                              ),
+                              backgroundColor: snackBg,
+                              behavior: SnackBarBehavior.floating,
+                              shape: RoundedRectangleBorder(
+                                borderRadius: snackRadius,
+                              ),
                             ),
-                          ),
-                          const SizedBox(height: 28),
-                        ],
+                          );
+                          await _checkPermissions();
+                          await _runDiagnostics();
+                        },
+                      ),
+                    ),
+                    const SizedBox(height: BeePageHeader.groupGap),
+                  ],
 
                   // ── Permissions (Windows) ─────────────────────
                   if (Platform.isWindows) ...[
                     const BeeGroupLabel(label: 'Permissions'),
-                    _buildInfoBox(
-                      icon: Icons.shield_outlined,
-                      text:
-                          'Beeamvo requires microphone access. When you first record, Windows will prompt you. '
-                          'If recording fails, go to Settings > Privacy & security > Microphone and ensure '
-                          '"Let desktop apps access your microphone" is enabled.',
+                    _buildCallout(
+                      Icons.shield_outlined,
+                      'Beeamvo requires microphone access. When you first record, Windows will prompt you. '
+                      'If recording fails, go to Settings > Privacy & security > Microphone and ensure '
+                      '"Let desktop apps access your microphone" is enabled.',
                     ),
-                    const SizedBox(height: 28),
+                    const SizedBox(height: BeePageHeader.groupGap),
                   ],
 
                   // ── Permissions (Linux) ──────────────────────
                   if (Platform.isLinux) ...[
                     const BeeGroupLabel(label: 'Requirements'),
-                    _buildInfoBox(
-                      icon: Icons.shield_outlined,
-                      text:
-                          'Beeamvo requires microphone access via PulseAudio/PipeWire. '
-                          'For auto-paste, install xdotool (X11) or wtype (Wayland):\n'
-                          '  sudo apt install xdotool\n'
-                          'If auto-paste fails, text is still copied to your clipboard.',
+                    _buildCallout(
+                      Icons.shield_outlined,
+                      'Beeamvo requires microphone access via PulseAudio/PipeWire. '
+                      'For auto-paste, install xdotool (X11) or wtype (Wayland):\n'
+                      '  sudo apt install xdotool\n'
+                      'If auto-paste fails, text is still copied to your clipboard.',
                     ),
-                    const SizedBox(height: 28),
+                    const SizedBox(height: BeePageHeader.groupGap),
                   ],
 
                   // ── Live Diagnostics ──────────────────────────
                   const BeeGroupLabel(label: 'Live Diagnostics'),
                   _buildDiagnosticsPanel(),
-                  const SizedBox(height: 28),
+                  const SizedBox(height: BeePageHeader.groupGap),
 
                   // ── FAQ ───────────────────────────────────────
                   const BeeGroupLabel(label: 'Frequently Asked Questions'),
@@ -430,7 +431,23 @@ class _TroubleshootingPageState extends State<TroubleshootingPage> {
                     'Beeamvo copies text to your clipboard and simulates Ctrl+V (Cmd+V on macOS). '
                         'Some apps block simulated paste events. If paste fails, the text will still be '
                         'on your clipboard — just press Ctrl+V manually.\n\n'
-                        'On macOS, ensure Automation permission is granted for the target application.',
+                        'On macOS, grant Beeamvo Accessibility permission for auto-paste.',
+                  ),
+                  _buildFaq(
+                    'How are network connections secured?',
+                    'Cloud requests use HTTPS and your operating system\'s normal certificate trust '
+                        'store. Certificate pinning is not currently active or enforced; the shipped '
+                        'pin allow-lists are empty. Keep your operating system and trusted root '
+                        'certificates up to date.',
+                  ),
+                  _buildFaq(
+                    'What should I know about clipboard privacy?',
+                    'Beeamvo writes processed text to the system clipboard so it can paste it. Other '
+                        'applications, clipboard managers, and any enabled OS clipboard-sync feature '
+                        'may be able to read that text. If Clipboard History is enabled, its entries are '
+                        'stored as plaintext in Beeamvo\'s application-data settings file. Disable '
+                        'clipboard history and the system clipboard watcher, then clear history, when '
+                        'handling sensitive text.',
                   ),
                   _buildFaq(
                     'Recording produces no transcription',
@@ -466,30 +483,11 @@ class _TroubleshootingPageState extends State<TroubleshootingPage> {
 
                   // ── Reset (macOS only) ────────────────────────
                   if (Platform.isMacOS) ...[
-                    const SizedBox(height: 28),
+                    const SizedBox(height: BeePageHeader.groupGap),
                     const BeeGroupLabel(label: 'Reset'),
-                    Padding(
-                      padding: const EdgeInsets.only(bottom: 8),
-                      child: Row(
-                        children: [
-                          Icon(
-                            Icons.warning_amber_rounded,
-                            size: 14,
-                            color: beeYellow(context),
-                          ),
-                          const SizedBox(width: 8),
-                          Expanded(
-                            child: Text(
-                              'Resetting permissions will revoke all macOS access. You will need to re-grant them after restarting the app.',
-                              style: GoogleFonts.inter(
-                                fontSize: 11.5,
-                                color: beeTextSub(context),
-                                height: 1.5,
-                              ),
-                            ),
-                          ),
-                        ],
-                      ),
+                    _buildCallout(
+                      Icons.warning_amber_outlined,
+                      'Resetting permissions will revoke all macOS access. You will need to re-grant them after restarting the app.',
                     ),
                     Align(
                       alignment: Alignment.centerLeft,
@@ -497,24 +495,22 @@ class _TroubleshootingPageState extends State<TroubleshootingPage> {
                         label: _isResetting
                             ? 'Resetting...'
                             : 'Reset All Permissions',
-                        icon: _isResetting
-                            ? null
-                            : Icons.refresh_rounded,
+                        icon: _isResetting ? null : Icons.refresh_rounded,
                         color: beeError(context),
                         onTap: _isResetting ? null : _confirmResetPermissions,
                       ),
                     ),
                   ],
 
-                                  // ── App Info moved to General → About ───────────
-                                ],
-                              ),
-                            ),
-                          ),
-                        ),
-                      ],
-                    );
-                  }
+                  // ── App Info moved to General → About ───────────
+                ],
+              ),
+            ),
+          ),
+        ),
+      ],
+    );
+  }
 
   void _copyDiagnostics() {
     final buffer = StringBuffer();
@@ -626,7 +622,10 @@ class _TroubleshootingPageState extends State<TroubleshootingPage> {
               padding: const EdgeInsets.symmetric(vertical: 14),
               child: Text(
                 'Checking current app status...',
-                style: GoogleFonts.inter(fontSize: 12, color: beeTextSub(context)),
+                style: GoogleFonts.inter(
+                  fontSize: 12,
+                  color: beeTextSub(context),
+                ),
               ),
             )
           else
@@ -637,55 +636,19 @@ class _TroubleshootingPageState extends State<TroubleshootingPage> {
   }
 
   Widget _buildDiagnosticRow(_DiagnosticItem item) {
+    // Shared row primitive — same typography, spacing and hairline divider
+    // as every other settings row. The semantic status is preserved as a
+    // small trailing status dot (color is reserved for genuine state
+    // feedback: good / warning / error / neutral).
     final color = _diagnosticColor(context, item.status);
-    return Container(
-      padding: const EdgeInsets.symmetric(vertical: 9),
-      decoration: BoxDecoration(
-        border: Border(
-          bottom: BorderSide(color: beeDivider(context).withValues(alpha: 0.55)),
-        ),
-      ),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          // Status indicator — just a colored dot, no boxed icon.
-          Padding(
-            padding: const EdgeInsets.only(top: 5),
-            child: Container(
-              width: 8,
-              height: 8,
-              decoration: BoxDecoration(
-                shape: BoxShape.circle,
-                color: color,
-              ),
-            ),
-          ),
-          const SizedBox(width: 12),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  item.label,
-                  style: GoogleFonts.inter(
-                    fontSize: 13,
-                    fontWeight: FontWeight.w500,
-                    color: beeText(context),
-                  ),
-                ),
-                const SizedBox(height: 2),
-                Text(
-                  item.detail,
-                  style: GoogleFonts.inter(
-                    fontSize: 11,
-                    color: beeTextSub(context),
-                    height: 1.4,
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ],
+    return BeeSettingsRow(
+      icon: item.icon,
+      label: item.label,
+      description: item.detail,
+      trailing: Container(
+        width: 8,
+        height: 8,
+        decoration: BoxDecoration(shape: BoxShape.circle, color: color),
       ),
     );
   }
@@ -703,8 +666,12 @@ class _TroubleshootingPageState extends State<TroubleshootingPage> {
     }
   }
 
-  Widget _buildInfoBox({required IconData icon, required String text}) {
-    // Plain text paragraph with a small leading icon — no bordered card.
+  Widget _buildCallout(IconData icon, String text) {
+    // Unified footnote-style callout shared by every notice on this page
+    // (Windows/Linux requirements and the macOS reset warning). Matches the
+    // AI Models footnote convention: Inter 11, muted, italic, height 1.5.
+    // Color is reserved for genuine semantic feedback, so a "warning" here
+    // uses a neutral muted icon + muted text — never amber.
     return Padding(
       padding: const EdgeInsets.only(bottom: 6),
       child: Row(
@@ -719,9 +686,10 @@ class _TroubleshootingPageState extends State<TroubleshootingPage> {
             child: Text(
               text,
               style: GoogleFonts.inter(
-                fontSize: 11.5,
-                color: beeTextSub(context),
-                height: 1.55,
+                fontSize: 11,
+                color: beeTextMuted(context),
+                height: 1.5,
+                fontStyle: FontStyle.italic,
               ),
             ),
           ),
@@ -773,14 +741,18 @@ class _TroubleshootingPageState extends State<TroubleshootingPage> {
   Widget _buildFaq(String question, String answer) {
     return Theme(
       data: Theme.of(context).copyWith(
-        dividerColor: Colors.transparent,
+        // Use the shared divider token so the seams between FAQ tiles match
+        // the diagnostic rows above them, instead of invisible gaps.
+        dividerColor: beeDivider(context),
         hoverColor: Colors.transparent,
       ),
       child: ExpansionTile(
         backgroundColor: Colors.transparent,
         collapsedBackgroundColor: Colors.transparent,
-        tilePadding: const EdgeInsets.symmetric(horizontal: 4),
-        childrenPadding: const EdgeInsets.fromLTRB(4, 0, 4, 12),
+        // Flush with the page content gutter (the scroll view already pads
+        // the sides by 28), so question rows align with the rows & labels.
+        tilePadding: EdgeInsets.zero,
+        childrenPadding: const EdgeInsets.fromLTRB(2, 0, 4, 12),
         title: Text(
           question,
           style: GoogleFonts.inter(

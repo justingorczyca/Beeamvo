@@ -71,9 +71,7 @@ class HotkeyService {
     List<HotKeyModifier>? modifiers,
   ) {
     final modNames =
-        (modifiers ?? const <HotKeyModifier>[])
-            .map((m) => m.name)
-            .toList()
+        (modifiers ?? const <HotKeyModifier>[]).map((m) => m.name).toList()
           ..sort();
     return '${modNames.join(',')}#${key.keyId}';
   }
@@ -109,6 +107,7 @@ class HotkeyService {
     required String id,
     required LogicalKeyboardKey key,
     List<HotKeyModifier> modifiers = const [],
+    HotKeyScope scope = HotKeyScope.system,
     required Function() onPressed,
     Function()? onReleased,
   }) async {
@@ -130,15 +129,12 @@ class HotkeyService {
       // --- Remove any prior binding for this id ---------------------------
       await _unregisterInternal(id);
 
-      final hotkey = HotKey(
-        key: key,
-        modifiers: modifiers,
-        scope: HotKeyScope.system,
-      );
+      final hotkey = HotKey(key: key, modifiers: modifiers, scope: scope);
 
       debugPrint(
         'HotkeyService: Registering hotkey id=$id, '
-        'key=${key.keyLabel} (keyId=${key.keyId}), modifiers=$modifiers',
+        'key=${key.keyLabel} (keyId=${key.keyId}), modifiers=$modifiers, '
+        'scope=${scope.name}',
       );
 
       try {

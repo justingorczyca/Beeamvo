@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
@@ -8,6 +10,9 @@ import '../../../services/settings_service.dart';
 import '../../../services/whisper_service.dart';
 import '../../../services/whisper_model_download_service.dart';
 import '../settings_shared.dart';
+import '../bee_dropdown.dart';
+import '../bee_input.dart';
+import '../bee_page_header.dart';
 
 class AiModelsPage extends StatefulWidget {
   final ValueChanged<String>? onModelChanged;
@@ -59,8 +64,11 @@ class _AiModelsPageState extends State<AiModelsPage> {
 
   @override
   void dispose() {
+    // Whisper downloads belong to this page. Remove the page callback first,
+    // then let cancellation delete any partial file before the notifier itself
+    // is disposed. State.dispose cannot await this lifecycle future.
     _downloadService.removeListener(_onDownloadStateChanged);
-    _downloadService.dispose();
+    unawaited(_downloadService.cancelAndDispose());
     super.dispose();
   }
 
@@ -247,60 +255,49 @@ class _AiModelsPageState extends State<AiModelsPage> {
                       setDialogState(() => errorText = null);
                     }
                   },
-                  decoration: InputDecoration(
-                    hintText: hintText,
-                    helperText: helperText,
-                    errorText: errorText,
-                    hintStyle: GoogleFonts.inter(
-                      color: beeTextMuted(context),
-                      fontSize: 13,
-                    ),
-                    helperStyle: GoogleFonts.inter(
-                      color: beeTextMuted(context),
-                      fontSize: 11,
-                      height: 1.35,
-                    ),
-                    errorStyle: GoogleFonts.inter(
-                      color: beeError(context),
-                      fontSize: 11,
-                    ),
-                    suffixIcon: obscureText
-                        ? IconButton(
-                            tooltip: hideText ? 'Show key' : 'Hide key',
-                            icon: Icon(
-                              hideText
-                                  ? Icons.visibility_rounded
-                                  : Icons.visibility_off_rounded,
-                              size: 18,
-                              color: beeTextMuted(context),
-                            ),
-                            onPressed: () =>
-                                setDialogState(() => hideText = !hideText),
-                          )
-                        : null,
-                    filled: true,
-                    fillColor: beeBlack(context),
-                    focusedBorder: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(kBeeRadiusSm),
-                      borderSide: BorderSide(color: beeYellow(context)),
-                    ),
-                    enabledBorder: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(kBeeRadiusSm),
-                      borderSide: BorderSide(color: beeBorder(context)),
-                    ),
-                    errorBorder: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(kBeeRadiusSm),
-                      borderSide: BorderSide(color: beeError(context)),
-                    ),
-                    focusedErrorBorder: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(kBeeRadiusSm),
-                      borderSide: BorderSide(color: beeError(context)),
-                    ),
-                    contentPadding: const EdgeInsets.symmetric(
-                      horizontal: 14,
-                      vertical: 12,
-                    ),
-                  ),
+                  decoration:
+                      beeInputDecoration(
+                        context,
+                        hint: hintText,
+                        suffix: obscureText
+                            ? IconButton(
+                                tooltip: hideText ? 'Show key' : 'Hide key',
+                                icon: Icon(
+                                  hideText
+                                      ? Icons.visibility_rounded
+                                      : Icons.visibility_off_rounded,
+                                  size: 18,
+                                  color: beeTextMuted(context),
+                                ),
+                                onPressed: () =>
+                                    setDialogState(() => hideText = !hideText),
+                              )
+                            : null,
+                      ).copyWith(
+                        helperText: helperText,
+                        errorText: errorText,
+                        hintStyle: GoogleFonts.inter(
+                          color: beeTextMuted(context),
+                          fontSize: 13,
+                        ),
+                        helperStyle: GoogleFonts.inter(
+                          color: beeTextMuted(context),
+                          fontSize: 11,
+                          height: 1.35,
+                        ),
+                        errorStyle: GoogleFonts.inter(
+                          color: beeError(context),
+                          fontSize: 11,
+                        ),
+                        errorBorder: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(kBeeRadiusMd),
+                          borderSide: BorderSide(color: beeError(context)),
+                        ),
+                        focusedErrorBorder: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(kBeeRadiusMd),
+                          borderSide: BorderSide(color: beeError(context)),
+                        ),
+                      ),
                   style: GoogleFonts.inter(
                     color: beeText(context),
                     fontSize: 14,
@@ -599,10 +596,11 @@ class _AiModelsPageState extends State<AiModelsPage> {
           child: Container(
             color: beeSurface(context),
             child: SingleChildScrollView(
-              padding: const EdgeInsets.fromLTRB(24, 22, 24, 24),
+              padding: BeePageHeader.contentPadding,
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
+                  const BeePageHeader(title: 'AI Models'),
                   // ── PROCESSING ENGINE ──────────────────────────────
                   const BeeGroupLabel(label: 'Processing Engine'),
                   BeeSettingsRow(
@@ -614,16 +612,16 @@ class _AiModelsPageState extends State<AiModelsPage> {
                         : 'Using local Whisper for offline, on-device transcription.',
                     trailing: ConstrainedBox(
                       constraints: const BoxConstraints(maxWidth: 360),
-                      child: _CompactChoiceTabs<TranscriptionBackend>(
+                      child: BeeSegmented<TranscriptionBackend>(
                         value: _transcriptionBackend,
                         options: const [
-                          _CompactChoiceOption(
-                            value: TranscriptionBackend.cloud,
+                          (
+                            val: TranscriptionBackend.cloud,
                             label: 'Cloud AI',
                             icon: Icons.cloud_done_rounded,
                           ),
-                          _CompactChoiceOption(
-                            value: TranscriptionBackend.whisper,
+                          (
+                            val: TranscriptionBackend.whisper,
                             label: 'Local Whisper',
                             icon: Icons.memory_rounded,
                           ),
@@ -633,13 +631,13 @@ class _AiModelsPageState extends State<AiModelsPage> {
                     ),
                   ),
 
-                  const SizedBox(height: 22),
+                  const SizedBox(height: BeePageHeader.groupGap),
 
                   if (_transcriptionBackend == TranscriptionBackend.cloud) ...[
                     // ── CLOUD SETTINGS ────────────────────────────────
                     _buildCloudProviderSection(),
 
-                    const SizedBox(height: 22),
+                    const SizedBox(height: BeePageHeader.groupGap),
 
                     // ── MODEL SETTINGS ────────────────────────────────
                     const BeeGroupLabel(label: 'Model Settings'),
@@ -651,23 +649,21 @@ class _AiModelsPageState extends State<AiModelsPage> {
                       showDivider: !AppConfig.getModelById(
                         _selectedModelId,
                       ).hasSelectableThinkingLevel,
-                      trailing: _buildRefinedDropdown(
-                        value: _selectedModelId,
-                        items: AppConfig.availableModels,
+                      trailing: BeeDropdown<String>(
+                        value: _safeModelId(_selectedModelId),
+                        options: _cloudModelOptions(),
                         onChanged: (v) async {
-                          if (v != null) {
-                            final settings = SettingsProviderScope.of(
-                              context,
-                            ).settingsService;
-                            await settings.setSelectedModelId(v);
-                            setState(() {
-                              _selectedModelId = v;
-                              // Load any saved level for the newly selected model
-                              _selectedThinkingLevel = settings
-                                  .getThinkingLevelForModel(v);
-                            });
-                            widget.onModelChanged?.call(v);
-                          }
+                          final settings = SettingsProviderScope.of(
+                            context,
+                          ).settingsService;
+                          await settings.setSelectedModelId(v);
+                          setState(() {
+                            _selectedModelId = v;
+                            // Load any saved level for the newly selected model
+                            _selectedThinkingLevel = settings
+                                .getThinkingLevelForModel(v);
+                          });
+                          widget.onModelChanged?.call(v);
                         },
                       ),
                     ),
@@ -684,7 +680,7 @@ class _AiModelsPageState extends State<AiModelsPage> {
                       secondChild: const SizedBox(width: double.infinity),
                     ),
 
-                    const SizedBox(height: 22),
+                    const SizedBox(height: BeePageHeader.groupGap),
                   ] else ...[
                     // ── LOCAL SETTINGS ─────────────────────────────────
                     const BeeGroupLabel(label: 'Local Settings'),
@@ -693,11 +689,12 @@ class _AiModelsPageState extends State<AiModelsPage> {
                       label: 'Whisper Engine',
                       description:
                           'Offline speech recognition running entirely on your device.',
-                      trailing: _buildProviderStatusPill(
+                      trailing: beeBadge(
+                        context,
                         '${_downloadedWhisperModelIds.length} ${_downloadedWhisperModelIds.length == 1 ? 'model' : 'models'}',
                         _hasWhisper
-                            ? beeSuccess(context)
-                            : beeTextMuted(context),
+                            ? BeeBadgeTone.success
+                            : BeeBadgeTone.neutral,
                       ),
                     ),
                     Builder(
@@ -710,35 +707,27 @@ class _AiModelsPageState extends State<AiModelsPage> {
                           label: 'Spoken Language',
                           description:
                               'The language Whisper should expect in the audio.',
-                          trailing: _buildRefinedDropdown(
-                            value: settings.whisperLanguage,
-                            items: const [
-                              {'id': 'auto', 'name': 'Auto-Detect'},
-                              {'id': 'en', 'name': 'English'},
-                              {'id': 'de', 'name': 'German'},
-                              {'id': 'fr', 'name': 'French'},
-                              {'id': 'es', 'name': 'Spanish'},
-                            ],
+                          trailing: BeeDropdown<String>(
+                            value: _safeLanguageId(settings.whisperLanguage),
+                            options: _languageOptions,
                             onChanged: (v) async {
-                              if (v != null) {
-                                await settings.setWhisperLanguage(v);
-                                setState(() {});
-                              }
+                              await settings.setWhisperLanguage(v);
+                              setState(() {});
                             },
                           ),
                         );
                       },
                     ),
-                    const SizedBox(height: 14),
+                    const SizedBox(height: BeePageHeader.groupGap),
                     _buildLocalWhisperModelsHeader(),
                     _buildOfflineModelManagerFlat(),
-                    const SizedBox(height: 22),
+                    const SizedBox(height: BeePageHeader.groupGap),
                   ],
 
                   // ── TRANSCRIPTION PIPELINE ────────────────────────
                   _buildPipelineSection(),
 
-                  const SizedBox(height: 18),
+                  const SizedBox(height: BeePageHeader.groupGap),
 
                   // ── FOOTNOTE ──────────────────────────────────────
                   _buildSettingsLocalFootnote(),
@@ -781,21 +770,7 @@ class _AiModelsPageState extends State<AiModelsPage> {
         BeeSettingsRow(
           icon: Icons.linear_scale_rounded,
           label: 'Two-Pass Refinement',
-          warningBadge: Container(
-            padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1.5),
-            decoration: BoxDecoration(
-              color: beeTextSub(context).withValues(alpha: 0.12),
-              borderRadius: BorderRadius.circular(kBeeRadiusXs),
-            ),
-            child: Text(
-              'BETA',
-              style: GoogleFonts.inter(
-                fontSize: 8.5,
-                fontWeight: FontWeight.w700,
-                color: beeTextSub(context),
-              ),
-            ),
-          ),
+          warningBadge: beeBadge(context, 'BETA', BeeBadgeTone.neutral),
           description:
               'Pipeline your audio through a raw transcription pass, followed by an AI refinement pass.',
           trailing: BeeToggle(
@@ -820,11 +795,12 @@ class _AiModelsPageState extends State<AiModelsPage> {
             description: _transcriptionBackend == TranscriptionBackend.cloud
                 ? 'Uses ${AppConfig.getModelById(_selectedModelId).displayName} (primary cloud model).'
                 : 'Uses the selected local Whisper model.',
-            trailing: _buildProviderStatusPill(
+            trailing: beeBadge(
+              context,
               _transcriptionBackend == TranscriptionBackend.cloud
                   ? 'Cloud'
                   : 'Local',
-              beeTextSub(context),
+              BeeBadgeTone.neutral,
             ),
           ),
           BeeSettingsRow(
@@ -832,18 +808,16 @@ class _AiModelsPageState extends State<AiModelsPage> {
             label: 'Pass 2 · AI Refinement',
             description:
                 'Cloud model that formats, corrects, and structures the raw transcript.',
-            trailing: _buildRefinedDropdown(
-              value: _twoPassRefinementModelId,
-              items: AppConfig.availableModels,
+            trailing: BeeDropdown<String>(
+              value: _safeModelId(_twoPassRefinementModelId),
+              options: _cloudModelOptions(),
               onChanged: (v) async {
-                if (v != null) {
-                  await settings.setTwoPassRefinementModelId(v);
-                  setState(() {
-                    _twoPassRefinementModelId = v;
-                    _selectedRefinementThinkingLevel = settings
-                        .getThinkingLevelForModel(v);
-                  });
-                }
+                await settings.setTwoPassRefinementModelId(v);
+                setState(() {
+                  _twoPassRefinementModelId = v;
+                  _selectedRefinementThinkingLevel = settings
+                      .getThinkingLevelForModel(v);
+                });
               },
             ),
           ),
@@ -896,7 +870,7 @@ class _AiModelsPageState extends State<AiModelsPage> {
               label: 'Configure',
               onTap: () => _onBackendSelected(TranscriptionBackend.cloud),
             )
-          : _buildProviderStatusPill('Ready', beeSuccess(context)),
+          : beeBadge(context, 'Ready', BeeBadgeTone.success),
     );
   }
 
@@ -994,7 +968,7 @@ class _AiModelsPageState extends State<AiModelsPage> {
     required bool isConfigured,
   }) {
     if (isManagedByEnv) {
-      return _buildProviderStatusPill('.env', beeSuccess(context));
+      return beeBadge(context, '.env', BeeBadgeTone.success);
     }
     if (!isConfigured) {
       return BeeActionChip(
@@ -1005,7 +979,7 @@ class _AiModelsPageState extends State<AiModelsPage> {
     return Row(
       mainAxisSize: MainAxisSize.min,
       children: [
-        _buildProviderStatusPill('Ready', beeSuccess(context)),
+        beeBadge(context, 'Ready', BeeBadgeTone.success),
         const SizedBox(width: 6),
         BeeActionChip(
           label: 'Edit',
@@ -1018,25 +992,6 @@ class _AiModelsPageState extends State<AiModelsPage> {
           onTap: isGemini ? _clearApiKey : _clearVertexProjectId,
         ),
       ],
-    );
-  }
-
-  Widget _buildProviderStatusPill(String label, Color color) {
-    // Flat macOS-style pill: subtle ink background, colored text.
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
-      decoration: BoxDecoration(
-        color: color.withValues(alpha: 0.10),
-        borderRadius: BorderRadius.circular(kBeeRadiusPill),
-      ),
-      child: Text(
-        label,
-        style: GoogleFonts.inter(
-          fontSize: 10,
-          fontWeight: FontWeight.w600,
-          color: color,
-        ),
-      ),
     );
   }
 
@@ -1219,7 +1174,7 @@ class _AiModelsPageState extends State<AiModelsPage> {
       description: '${model.sizeDisplay} · ${_whisperModelTradeoff(model)}',
       showDivider: false,
       trailing: exists
-          ? _buildProviderStatusPill('Installed', beeSuccess(context))
+          ? beeBadge(context, 'Installed', BeeBadgeTone.success)
           : BeeActionChip(
               label: 'Download',
               onTap: () => _startDownload(model),
@@ -1288,275 +1243,36 @@ class _AiModelsPageState extends State<AiModelsPage> {
     );
   }
 
-  String _dropdownItemId(dynamic item) {
-    return item is Map<String, dynamic>
-        ? item['id'] as String
-        : item.id as String;
+  /// Dropdown options for every available cloud model. Shared by the
+  /// primary-model and two-pass refinement [BeeDropdown] triggers.
+  List<BeeDropdownOption<String>> _cloudModelOptions() {
+    return [
+      for (final m in AppConfig.availableModels)
+        BeeDropdownOption(value: m.id, label: m.displayName),
+    ];
   }
 
-  String? _safeDropdownValue(String value, List<dynamic> items) {
-    for (final item in items) {
-      if (_dropdownItemId(item) == value) {
-        return value;
-      }
-    }
-
-    if (items.isEmpty) {
-      return null;
-    }
-
-    return _dropdownItemId(items.first);
+  /// Resolves a (possibly stale) persisted model id to one that still
+  /// exists in [AppConfig.availableModels], falling back to the default so
+  /// the [BeeDropdown] trigger always renders a label rather than blanking.
+  String _safeModelId(String id) {
+    return AppConfig.availableModels.any((m) => m.id == id)
+        ? id
+        : AppConfig.availableModels.first.id;
   }
 
-  /// One-line description shown below each model in dropdown menus.
-  String _modelDescription(String modelId) {
-    switch (modelId) {
-      case 'gemini-2.5-flash':
-        return 'Fast, good for most tasks';
-      case 'gemini-2.5-flash-lite':
-        return 'Lightweight, lowest latency';
-      case 'gemini-3-flash':
-        return 'Latest generation, advanced reasoning';
-      case 'gemini-3.5-flash':
-        return 'Stable latest Flash, strong reasoning';
-      case 'gemini-3.1-flash-lite':
-        return 'Next-gen lightweight, efficient';
-      default:
-        return '';
-    }
-  }
+  /// Spoken-language choices for the Whisper engine dropdown.
+  static const List<BeeDropdownOption<String>> _languageOptions = [
+    BeeDropdownOption(value: 'auto', label: 'Auto-Detect'),
+    BeeDropdownOption(value: 'en', label: 'English'),
+    BeeDropdownOption(value: 'de', label: 'German'),
+    BeeDropdownOption(value: 'fr', label: 'French'),
+    BeeDropdownOption(value: 'es', label: 'Spanish'),
+  ];
 
-  Widget _buildRefinedDropdown({
-    required String value,
-    required List<dynamic> items,
-    required ValueChanged<String?> onChanged,
-  }) {
-    final safeValue = _safeDropdownValue(value, items);
-
-    // Resolve a clean display label for the currently-selected value so we
-    // can render a flat BeeChip triggering a simple menu.
-    String currentLabel = '';
-    String? currentDesc;
-    for (final m in items) {
-      if (_dropdownItemId(m) == safeValue) {
-        currentLabel = m is Map ? m['name'] as String : m.displayName as String;
-        if (m is GeminiModelConfig) currentDesc = _modelDescription(safeValue!);
-        break;
-      }
-    }
-
-    return Builder(
-      builder: (context) => ConstrainedBox(
-        constraints: const BoxConstraints(maxWidth: 240),
-        child: BeeChip(
-          displayValue: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Flexible(
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  crossAxisAlignment: CrossAxisAlignment.end,
-                  children: [
-                    Text(
-                      currentLabel,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: GoogleFonts.inter(
-                        fontSize: 12,
-                        fontWeight: FontWeight.w500,
-                        color: beeText(context),
-                      ),
-                    ),
-                    if (currentDesc != null && currentDesc.isNotEmpty) ...[
-                      const SizedBox(height: 1),
-                      Text(
-                        currentDesc,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: GoogleFonts.inter(
-                          fontSize: 10,
-                          color: beeTextMuted(context),
-                        ),
-                      ),
-                    ],
-                  ],
-                ),
-              ),
-              const SizedBox(width: 6),
-              Icon(
-                Icons.expand_more_rounded,
-                size: 14,
-                color: beeTextMuted(context),
-              ),
-            ],
-          ),
-          onTap: () async {
-            // Show a simple flat popup menu so the user can pick.
-            final selected = await showMenu<String>(
-              context: context,
-              position: _menuPosition(context),
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(kBeeRadiusSm),
-                side: BorderSide(
-                  color: beeDivider(context).withValues(alpha: 0.6),
-                ),
-              ),
-              color: beeSurfaceRaised(context),
-              elevation: 8,
-              items: items.map((m) {
-                final id = _dropdownItemId(m);
-                final name = m is Map
-                    ? m['name'] as String
-                    : m.displayName as String;
-                final desc = m is GeminiModelConfig
-                    ? _modelDescription(id)
-                    : '';
-                return PopupMenuItem<String>(
-                  value: id,
-                  child: desc.isEmpty
-                      ? Text(name)
-                      : Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            Text(name),
-                            Text(
-                              desc,
-                              style: GoogleFonts.inter(
-                                fontSize: 10,
-                                color: beeTextMuted(context),
-                              ),
-                            ),
-                          ],
-                        ),
-                );
-              }).toList(),
-              initialValue: safeValue,
-            );
-            if (selected != null && selected != safeValue) {
-              onChanged(selected);
-            }
-            if (!context.mounted) return;
-
-            // Tell Flutter the chip state may have changed.
-            setState(() {});
-          },
-          isLoading: false,
-        ),
-      ),
-    );
-  }
-
-  /// Rough position for the popup menu — centered horizontally under the
-  /// chip.
-  RelativeRect _menuPosition(BuildContext context) {
-    final box = context.findRenderObject() as RenderBox?;
-    final overlay = Overlay.of(context).context.findRenderObject() as RenderBox;
-    if (box == null) {
-      return RelativeRect.fill;
-    }
-    final size = box.size;
-    final offset = box.localToGlobal(Offset.zero, ancestor: overlay);
-    final overlaySize = overlay.size;
-    return RelativeRect.fromLTRB(
-      offset.dx + (size.width / 2).clamp(80.0, overlaySize.width / 2),
-      offset.dy + size.height + 4,
-      overlaySize.width - (offset.dx + size.width - 8),
-      overlaySize.height - (offset.dy + size.height + 100),
-    );
-  }
-}
-
-class _CompactChoiceOption<T> {
-  final T value;
-  final String label;
-  final IconData icon;
-
-  const _CompactChoiceOption({
-    required this.value,
-    required this.label,
-    required this.icon,
-  });
-}
-
-class _CompactChoiceTabs<T> extends StatelessWidget {
-  final T value;
-  final List<_CompactChoiceOption<T>> options;
-  final ValueChanged<T> onChanged;
-
-  const _CompactChoiceTabs({
-    required this.value,
-    required this.options,
-    required this.onChanged,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      height: 32,
-      padding: const EdgeInsets.all(2),
-      decoration: BoxDecoration(
-        // Flat ink-tinted pill container — same look as BeeSegmented.
-        color: beeText(context).withValues(alpha: 0.05),
-        borderRadius: BorderRadius.circular(kBeeRadiusSm),
-      ),
-      child: Row(
-        children: [
-          for (var i = 0; i < options.length; i++) ...[
-            if (i > 0) const SizedBox(width: 2),
-            Expanded(child: _buildOption(options[i])),
-          ],
-        ],
-      ),
-    );
-  }
-
-  Widget _buildOption(_CompactChoiceOption<T> option) {
-    final selected = option.value == value;
-
-    return BeeInteractive(
-      onTap: () => onChanged(option.value),
-      semanticLabel: option.label,
-      selected: selected,
-      toggled: selected,
-      builder: (context, focused) => AnimatedContainer(
-        duration: kBeeTransitionDuration,
-        curve: kBeeTransitionCurve,
-        alignment: Alignment.center,
-        padding: const EdgeInsets.symmetric(horizontal: 10),
-        decoration: BoxDecoration(
-          color: selected
-              ? beeText(context).withValues(alpha: 0.10)
-              : focused
-              ? beeText(context).withValues(alpha: 0.05)
-              : Colors.transparent,
-          borderRadius: BorderRadius.circular(kBeeRadiusXs),
-        ),
-        child: Row(
-          mainAxisAlignment: MainAxisAlignment.center,
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Icon(
-              option.icon,
-              size: 13,
-              color: selected ? beeText(context) : beeTextMuted(context),
-            ),
-            const SizedBox(width: 7),
-            Flexible(
-              child: Text(
-                option.label,
-                overflow: TextOverflow.ellipsis,
-                style: GoogleFonts.inter(
-                  fontSize: 12,
-                  fontWeight: selected ? FontWeight.w600 : FontWeight.w500,
-                  color: selected ? beeText(context) : beeTextSub(context),
-                  height: 1,
-                ),
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
+  /// Resolves a (possibly stale) persisted language code to one present in
+  /// [_languageOptions], falling back to auto-detect.
+  String _safeLanguageId(String id) {
+    return _languageOptions.any((o) => o.value == id) ? id : 'auto';
   }
 }

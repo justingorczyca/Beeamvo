@@ -11,6 +11,8 @@ import '../../../services/recording_service.dart';
 import '../../../models/hotkey_config.dart';
 import '../../hotkey_recorder_widget.dart';
 import '../../onboarding/permission_onboarding_dialog.dart';
+import '../bee_input.dart';
+import '../bee_page_header.dart';
 import '../settings_shared.dart';
 import 'package:record/record.dart';
 
@@ -19,6 +21,8 @@ class GeneralSettingsPage extends StatefulWidget {
   final ValueChanged<HotkeyConfig>? onModeSelectionHotkeyChanged;
   final ValueChanged<HotkeyConfig>? onClipboardHotkeyChanged;
   final ValueChanged<dynamic>? onRecordingModeChanged;
+  final ValueChanged<String?>? onAudioDeviceChanged;
+  final Future<void> Function()? onResetAllHotkeys;
   final VoidCallback? onRunOnboarding;
 
   const GeneralSettingsPage({
@@ -27,6 +31,8 @@ class GeneralSettingsPage extends StatefulWidget {
     this.onModeSelectionHotkeyChanged,
     this.onClipboardHotkeyChanged,
     this.onRecordingModeChanged,
+    this.onAudioDeviceChanged,
+    this.onResetAllHotkeys,
     this.onRunOnboarding,
   });
 
@@ -100,8 +106,15 @@ class _GeneralSettingsPageState extends State<GeneralSettingsPage> {
     final settings = SettingsProviderScope.of(context).settingsService;
     setState(() => _isCheckingUpdate = true);
     try {
+      final result = await UpdateCheckService().checkWithStatus(force: true);
+      if (!result.succeeded) {
+        if (!mounted) return;
+        _showUpdateCheckFailedDialog();
+        return;
+      }
+
       await settings.recordUpdateCheck();
-      final info = await UpdateCheckService().check();
+      final info = result.update;
       if (info != null) {
         await settings.setAvailableUpdate(info);
         if (!mounted) return;
@@ -112,10 +125,9 @@ class _GeneralSettingsPageState extends State<GeneralSettingsPage> {
         _showUpToDateDialog();
       }
     } catch (_) {
-      // The network call itself never throws (UpdateCheckService swallows);
-      // this guards only persistence errors. Fall back to a clean result.
+      // Persistence failures must not be presented as a successful check.
       if (!mounted) return;
-      _showUpToDateDialog();
+      _showUpdateCheckFailedDialog();
     } finally {
       if (mounted) setState(() => _isCheckingUpdate = false);
     }
@@ -190,14 +202,55 @@ class _GeneralSettingsPageState extends State<GeneralSettingsPage> {
           ),
           ElevatedButton(
             style: beePrimaryButtonStyle(dialogContext),
-            onPressed: () {
+            onPressed: () async {
+              final uri = Uri.tryParse(info.releaseUrl);
+              if (uri == null || uri.scheme != 'https' || uri.host.isEmpty) {
+                if (dialogContext.mounted) Navigator.pop(dialogContext);
+                if (mounted) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(
+                      content: Text('The saved release link is invalid.'),
+                    ),
+                  );
+                }
+                return;
+              }
               Navigator.pop(dialogContext);
-              launchUrl(
-                Uri.parse(info.releaseUrl),
-                mode: LaunchMode.externalApplication,
-              );
+              await launchUrl(uri, mode: LaunchMode.externalApplication);
             },
             child: const Text('Download'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _showUpdateCheckFailedDialog() {
+    showDialog(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        backgroundColor: beeSurfaceRaised(dialogContext),
+        shape: beeDialogShape(),
+        title: Text(
+          'Unable to check for updates',
+          style: GoogleFonts.spaceGrotesk(
+            color: beeText(dialogContext),
+            fontWeight: FontWeight.w700,
+            fontSize: 17,
+          ),
+        ),
+        content: Text(
+          'Please check your connection and try again later.',
+          style: GoogleFonts.inter(
+            color: beeTextSub(dialogContext),
+            fontSize: 14,
+          ),
+        ),
+        actions: [
+          ElevatedButton(
+            style: beePrimaryButtonStyle(dialogContext),
+            onPressed: () => Navigator.pop(dialogContext),
+            child: const Text('OK'),
           ),
         ],
       ),
@@ -237,39 +290,24 @@ class _GeneralSettingsPageState extends State<GeneralSettingsPage> {
   }
 
   /// Compact tappable "Update available" chip shown inline on the Version row.
-  Widget _buildUpdateAvailableChip(String version) {
+  Widget _buildUpdateAvailableChip() {
     return InkWell(
       borderRadius: BorderRadius.circular(6),
       onTap: () {
-        final update =
-            SettingsProviderScope.of(context).settingsService.availableUpdate;
+        final update = SettingsProviderScope.of(
+          context,
+        ).settingsService.availableUpdate;
         if (update != null) _showUpdateDialog(update);
       },
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
-        decoration: BoxDecoration(
-          color: beeSuccess(context).withValues(alpha: 0.16),
-          borderRadius: BorderRadius.circular(5),
-          border: Border.all(
-            color: beeSuccess(context).withValues(alpha: 0.42),
-          ),
-        ),
-        child: Text(
-          'Update • v$version',
-          style: GoogleFonts.inter(
-            fontSize: 10.5,
-            fontWeight: FontWeight.w600,
-            color: beeSuccess(context),
-          ),
-        ),
-      ),
+      child: beeBadge(context, 'Update available', BeeBadgeTone.success),
     );
   }
 
   Future<void> _loadAudioDevices() async {
     setState(() => _isLoadingDevices = true);
+    final recorder = RecordingService();
     try {
-      final devices = await RecordingService().listInputDevices();
+      final devices = await recorder.listInputDevices();
       if (mounted) {
         setState(() {
           _availableDevices = devices;
@@ -278,6 +316,8 @@ class _GeneralSettingsPageState extends State<GeneralSettingsPage> {
       }
     } catch (_) {
       if (mounted) setState(() => _isLoadingDevices = false);
+    } finally {
+      await recorder.dispose();
     }
   }
 
@@ -286,9 +326,7 @@ class _GeneralSettingsPageState extends State<GeneralSettingsPage> {
     final a = await ks.checkAccessibilityPermissions();
     if (mounted) {
       setState(() => _accessibilityGranted = a);
-      SettingsProviderScope.of(
-        context,
-      ).updatePermissions(accessibility: a);
+      SettingsProviderScope.of(context).updatePermissions(accessibility: a);
     }
   }
 
@@ -301,10 +339,11 @@ class _GeneralSettingsPageState extends State<GeneralSettingsPage> {
           child: Container(
             color: beeSurface(context),
             child: SingleChildScrollView(
-              padding: const EdgeInsets.fromLTRB(24, 22, 24, 24),
+              padding: BeePageHeader.contentPadding,
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
+                  BeePageHeader(title: 'General'),
                   // ── APPEARANCE ──────────────────────────────────
                   // Top-most group: theme mode follows OS or pinned to
                   // light/dark. Kept up here because it affects every frame
@@ -329,7 +368,7 @@ class _GeneralSettingsPageState extends State<GeneralSettingsPage> {
                     ),
                   ),
 
-                  const SizedBox(height: 22),
+                  const SizedBox(height: BeePageHeader.groupGap),
 
                   // ── RECORDING ───────────────────────────────────
                   // Audio device + recording mode + auto-stop + duration.
@@ -347,7 +386,8 @@ class _GeneralSettingsPageState extends State<GeneralSettingsPage> {
                             : _getDeviceLabel(),
                         style: GoogleFonts.inter(
                           fontSize: 12,
-                          color: _selectedDeviceId != null &&
+                          color:
+                              _selectedDeviceId != null &&
                                   _getDeviceLabel() == 'Device Not Found'
                               ? beeError(context)
                               : beeText(context),
@@ -365,10 +405,9 @@ class _GeneralSettingsPageState extends State<GeneralSettingsPage> {
                   BeeSettingsRow(
                     icon: Icons.fiber_manual_record_rounded,
                     label: 'Recording Mode',
-                    description:
-                        _recordingMode == RecordingMode.toggle
-                            ? 'Press once to start. Press again to stop.'
-                            : 'Hold to record. Release to transcribe.',
+                    description: _recordingMode == RecordingMode.toggle
+                        ? 'Press once to start. Press again to stop.'
+                        : 'Hold to record. Release to transcribe.',
                     trailing: BeeSegmented<RecordingMode>(
                       value: _recordingMode,
                       onChanged: (mode) async {
@@ -422,7 +461,7 @@ class _GeneralSettingsPageState extends State<GeneralSettingsPage> {
                       ),
                     ),
 
-                  const SizedBox(height: 22),
+                  const SizedBox(height: BeePageHeader.groupGap),
 
                   // ── SHORTCUTS ──────────────────────────────────
                   const BeeGroupLabel(label: 'Shortcuts'),
@@ -500,7 +539,7 @@ class _GeneralSettingsPageState extends State<GeneralSettingsPage> {
                     ),
                   ),
 
-                  const SizedBox(height: 22),
+                  const SizedBox(height: BeePageHeader.groupGap),
 
                   // ── SYSTEM ─────────────────────────────────────
                   // Truly system-level: launch at login, onboarding,
@@ -532,8 +571,7 @@ class _GeneralSettingsPageState extends State<GeneralSettingsPage> {
                         color: beeTextMuted(context),
                       ),
                     ),
-                  if (Platform.isMacOS &&
-                      _accessibilityGranted == false)
+                  if (Platform.isMacOS && _accessibilityGranted == false)
                     BeeSettingsRow(
                       icon: Icons.warning_amber_rounded,
                       label: 'Enable Auto-Paste (Accessibility)',
@@ -544,8 +582,10 @@ class _GeneralSettingsPageState extends State<GeneralSettingsPage> {
                         label: 'Enable',
                         icon: Icons.open_in_new_rounded,
                         color: beeError(context),
-                        padding:
-                            const EdgeInsets.symmetric(horizontal: 9, vertical: 4),
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 9,
+                          vertical: 4,
+                        ),
                         onTap: () async {
                           await PermissionOnboardingDialog.show(context);
                           _checkPermissions();
@@ -566,7 +606,7 @@ class _GeneralSettingsPageState extends State<GeneralSettingsPage> {
                     ),
                   ),
 
-                  const SizedBox(height: 22),
+                  const SizedBox(height: BeePageHeader.groupGap),
 
                   // ── ABOUT ──────────────────────────────────────
                   const BeeGroupLabel(label: 'About'),
@@ -581,7 +621,7 @@ class _GeneralSettingsPageState extends State<GeneralSettingsPage> {
                           mainAxisSize: MainAxisSize.min,
                           children: [
                             if (update != null) ...[
-                              _buildUpdateAvailableChip(update.latestVersion),
+                              _buildUpdateAvailableChip(),
                               const SizedBox(width: 8),
                             ],
                             Text(
@@ -617,8 +657,7 @@ class _GeneralSettingsPageState extends State<GeneralSettingsPage> {
                             size: 14,
                             color: beeTextMuted(context),
                           ),
-                    onTap:
-                        _isCheckingUpdate ? null : () => _checkForUpdates(),
+                    onTap: _isCheckingUpdate ? null : () => _checkForUpdates(),
                   ),
                   BeeSettingsRow(
                     label: 'Platform',
@@ -720,7 +759,6 @@ class _GeneralSettingsPageState extends State<GeneralSettingsPage> {
     );
   }
 
-
   String _getDeviceLabel() {
     if (_selectedDeviceId == null) return 'System Default';
     final device = _availableDevices.firstWhere(
@@ -776,8 +814,11 @@ class _GeneralSettingsPageState extends State<GeneralSettingsPage> {
 
     if (confirmed != true || !mounted) return;
 
-    // Reset all general settings to defaults
+    // Reset every shortcut advertised by this dialog, then notify the live
+    // registrations so no old secondary binding survives the reset.
     await settings.resetHotkey();
+    await settings.resetClipboardPopupHotkey();
+    await settings.resetModeSelectionHotkey();
     await settings.setRecordingMode(RecordingMode.toggle);
     await settings.setSelectedAudioDeviceId(null);
     await settings.setLaunchAtStartup(false);
@@ -792,8 +833,16 @@ class _GeneralSettingsPageState extends State<GeneralSettingsPage> {
       _durationLimit = 300;
     });
 
-    widget.onHotkeyChanged?.call(settings.hotkey);
+    final resetAllHotkeys = widget.onResetAllHotkeys;
+    if (resetAllHotkeys != null) {
+      await resetAllHotkeys();
+    } else {
+      widget.onHotkeyChanged?.call(settings.hotkey);
+      widget.onClipboardHotkeyChanged?.call(settings.clipboardPopupHotkey);
+      widget.onModeSelectionHotkeyChanged?.call(settings.modeSelectionHotkey);
+    }
     widget.onRecordingModeChanged?.call(_recordingMode);
+    widget.onAudioDeviceChanged?.call(null);
 
     if (mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
@@ -829,7 +878,11 @@ class _GeneralSettingsPageState extends State<GeneralSettingsPage> {
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              _buildDeviceOption('System Default', null),
+              _buildDeviceOption(
+                'System Default',
+                null,
+                showDivider: _availableDevices.isNotEmpty,
+              ),
               if (_availableDevices.isNotEmpty)
                 Flexible(
                   child: ListView.builder(
@@ -840,6 +893,7 @@ class _GeneralSettingsPageState extends State<GeneralSettingsPage> {
                       return _buildDeviceOption(
                         d.label.isNotEmpty ? d.label : 'Device ${i + 1}',
                         d.id,
+                        showDivider: i < _availableDevices.length - 1,
                       );
                     },
                   ),
@@ -858,39 +912,24 @@ class _GeneralSettingsPageState extends State<GeneralSettingsPage> {
     );
   }
 
-  Widget _buildDeviceOption(String label, String? id) {
-    final sel = id == _selectedDeviceId;
-    return GestureDetector(
+  Widget _buildDeviceOption(
+    String label,
+    String? id, {
+    bool showDivider = true,
+  }) {
+    return BeeRadioTile(
+      isSelected: id == _selectedDeviceId,
+      label: label,
       onTap: () async {
-        SettingsProviderScope.of(
+        await SettingsProviderScope.of(
           context,
         ).settingsService.setSelectedAudioDeviceId(id);
+        widget.onAudioDeviceChanged?.call(id);
+        if (!mounted) return;
         setState(() => _selectedDeviceId = id);
-        if (mounted) Navigator.of(context).pop();
+        Navigator.of(context).pop();
       },
-      child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 10),
-        child: Row(
-          children: [
-            Icon(
-              sel
-                  ? Icons.radio_button_checked_rounded
-                  : Icons.radio_button_unchecked_rounded,
-              size: 18,
-              color: sel ? beeYellow(context) : beeTextMuted(context),
-            ),
-            const SizedBox(width: 12),
-            Text(
-              label,
-              style: GoogleFonts.inter(
-                fontSize: 13,
-                fontWeight: sel ? FontWeight.w600 : FontWeight.w400,
-                color: sel ? beeText(context) : beeTextSub(context),
-              ),
-            ),
-          ],
-        ),
-      ),
+      showDivider: showDivider,
     );
   }
 
@@ -919,38 +958,15 @@ class _GeneralSettingsPageState extends State<GeneralSettingsPage> {
                 keyboardType: TextInputType.number,
                 autofocus: true,
                 style: GoogleFonts.inter(color: beeText(context), fontSize: 14),
-                decoration: InputDecoration(
-                  filled: true,
-                  fillColor: beeBlack(context),
-                  labelText: 'Seconds',
-                  labelStyle: GoogleFonts.inter(
-                    color: beeTextSub(context),
-                    fontSize: 13,
-                  ),
-                  suffixText: 'seconds',
-                  errorText: error,
-                  errorStyle: GoogleFonts.inter(color: beeError(context), fontSize: 12),
-                  contentPadding: const EdgeInsets.symmetric(
-                    horizontal: 14,
-                    vertical: 12,
-                  ),
-                  focusedBorder: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(kBeeRadiusSm),
-                    borderSide: BorderSide(color: beeYellow(context)),
-                  ),
-                  enabledBorder: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(kBeeRadiusSm),
-                    borderSide: BorderSide(color: beeBorder(context)),
-                  ),
-                  errorBorder: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(kBeeRadiusSm),
-                    borderSide: BorderSide(color: beeError(context)),
-                  ),
-                  focusedErrorBorder: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(kBeeRadiusSm),
-                    borderSide: BorderSide(color: beeError(context)),
-                  ),
-                ),
+                decoration: beeInputDecoration(context, label: 'Seconds')
+                    .copyWith(
+                      suffixText: 'seconds',
+                      errorText: error,
+                      errorStyle: GoogleFonts.inter(
+                        color: beeError(context),
+                        fontSize: 12,
+                      ),
+                    ),
               ),
             ],
           ),
@@ -984,4 +1000,3 @@ class _GeneralSettingsPageState extends State<GeneralSettingsPage> {
     );
   }
 }
-

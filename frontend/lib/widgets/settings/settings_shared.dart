@@ -44,6 +44,25 @@ const double kBeeSpace32 = AppTheme.space32;
 const Duration kBeeTransitionDuration = Duration(milliseconds: 140);
 const Curve kBeeTransitionCurve = Curves.easeOutCubic;
 
+// ─── Interaction Tint / Alpha Tokens (single source of truth) ─────
+//
+// Before these existed every control hand-rolled its own alpha literal:
+// 0.03, 0.035, 0.04, 0.05, 0.06, 0.10, 0.12, 0.55, 0.65, 0.72, 0.82 …
+// Now "subtle ink fill" is one of exactly four steps. All tints are
+// applied to the runtime `beeText(context)` color so they fade with the
+// theme automatically.
+const double kBeeTintRecess = 0.04; // group / recessed container background
+const double kBeeTintHover = 0.06; // hover / focus fill
+const double kBeeTintActive = 0.10; // selected segment / active fill
+const double kBeeTintDisabled = 0.03; // inert / disabled fill
+const double kBeeTintBadge = 0.12; // badge / status-pill background
+
+// ── Border strengths (the chrome-to-content seam had 3 conventions) ──
+const double kBeeRowDividerAlpha =
+    1.0; // flat-row hairlines — full-strength divider token
+const double kBeeChromeBorderAlpha =
+    0.7; // dialog / popup / panel chrome outline
+
 /// Runtime-resolved colors from the active [ThemeData]. Use this inside any
 /// builder that has a [BuildContext] to pick up the light or dark variant
 /// automatically.
@@ -67,6 +86,9 @@ Color beeDivider(BuildContext c) => beeColors(c).divider;
 Color beeSuccess(BuildContext c) => beeColors(c).success;
 Color beeError(BuildContext c) => beeColors(c).error;
 
+/// The shared toggle thumb color (white / warm off-white).
+Color beeThumb(BuildContext c) => beeColors(c).toggleThumb;
+
 BoxDecoration beePanelDecoration({
   Color? color,
   double radius = kBeeRadiusLg,
@@ -86,7 +108,7 @@ BoxDecoration beePanelDecoration({
 RoundedRectangleBorder beeDialogShape([double radius = kBeeRadiusLg]) {
   return AppTheme.roundedShape(
     radius,
-    sideColor: kBeeBorder.withValues(alpha: 0.65),
+    sideColor: kBeeBorder.withValues(alpha: kBeeChromeBorderAlpha),
   );
 }
 
@@ -494,9 +516,11 @@ class BeeToggle extends StatelessWidget {
           child: Container(
             width: 15,
             height: 15,
-            decoration: const BoxDecoration(
+            decoration: BoxDecoration(
               shape: BoxShape.circle,
-              color: Colors.white,
+              // Was hardcoded Colors.white — now the shared token so the
+              // dark-mode thumb matches the Material switch (#F4F4F2).
+              color: beeThumb(context),
             ),
           ),
         ),
@@ -541,7 +565,7 @@ class BeeSegmented<T> extends StatelessWidget {
             semanticLabel: o.label,
             selected: sel,
             builder: (context, focused) => AnimatedContainer(
-              duration: const Duration(milliseconds: 120),
+              duration: kBeeTransitionDuration,
               curve: kBeeTransitionCurve,
               padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
               decoration: BoxDecoration(
@@ -550,9 +574,11 @@ class BeeSegmented<T> extends StatelessWidget {
                 // fill drops to a much fainter tint so it doesn't read as
                 // "actively selected".
                 color: sel
-                    ? text.withValues(alpha: enabled ? 0.10 : 0.05)
+                    ? text.withValues(
+                        alpha: enabled ? kBeeTintActive : kBeeTintDisabled,
+                      )
                     : (focused && enabled)
-                    ? text.withValues(alpha: 0.05)
+                    ? text.withValues(alpha: kBeeTintHover)
                     : Colors.transparent,
                 borderRadius: BorderRadius.circular(kBeeRadiusXs),
               ),
@@ -609,7 +635,9 @@ class BeeSegmented<T> extends StatelessWidget {
         return Container(
           padding: const EdgeInsets.all(2),
           decoration: BoxDecoration(
-            color: text.withValues(alpha: enabled ? 0.05 : 0.03),
+            color: text.withValues(
+              alpha: enabled ? kBeeTintRecess : kBeeTintDisabled,
+            ),
             borderRadius: BorderRadius.circular(kBeeRadiusSm),
           ),
           child: Row(
@@ -669,7 +697,7 @@ class BeeChoiceGroup<T> extends StatelessWidget {
         // card, just an ink-tinted background to separate from the page.
         return Container(
           decoration: BoxDecoration(
-            color: text.withValues(alpha: 0.03),
+            color: text.withValues(alpha: kBeeTintRecess),
             borderRadius: BorderRadius.circular(kBeeRadiusSm),
           ),
           child: useHorizontalLayout
@@ -738,7 +766,7 @@ class _BeeChoiceRow<T> extends StatelessWidget {
       toggled: selected,
       builder: (context, focused) {
         final selectionColor = selected
-            ? text.withValues(alpha: 0.035)
+            ? text.withValues(alpha: kBeeTintRecess)
             : Colors.transparent;
         final focusOutline = focused ? accent.withValues(alpha: 0.45) : null;
 
@@ -751,41 +779,22 @@ class _BeeChoiceRow<T> extends StatelessWidget {
                 ? null
                 : Border.all(color: focusOutline),
           ),
-          child: IntrinsicHeight(
+          child: Padding(
+            padding: const EdgeInsets.all(12),
             child: Row(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
+              crossAxisAlignment: CrossAxisAlignment.center,
               children: [
-                AnimatedContainer(
-                  duration: kBeeTransitionDuration,
-                  width: 3,
-                  color: selected ? text : Colors.transparent,
-                ),
+                _BeeChoiceIcon(icon: option.icon),
+                const SizedBox(width: 12),
                 Expanded(
-                  child: Padding(
-                    padding: EdgeInsets.fromLTRB(
-                      horizontal ? 13 : 14,
-                      horizontal ? 11 : 12,
-                      horizontal ? 12 : 14,
-                      horizontal ? 11 : 12,
-                    ),
-                    child: Row(
-                      crossAxisAlignment: CrossAxisAlignment.center,
-                      children: [
-                        _BeeChoiceIcon(icon: option.icon, selected: selected),
-                        const SizedBox(width: 12),
-                        Expanded(
-                          child: _BeeChoiceText(
-                            option: option,
-                            selected: selected,
-                            compact: horizontal,
-                          ),
-                        ),
-                        const SizedBox(width: 12),
-                        _BeeChoiceRadio(selected: selected),
-                      ],
-                    ),
+                  child: _BeeChoiceText(
+                    option: option,
+                    selected: selected,
+                    compact: horizontal,
                   ),
                 ),
+                const SizedBox(width: 12),
+                BeeRadioIndicator(selected: selected),
               ],
             ),
           ),
@@ -797,26 +806,26 @@ class _BeeChoiceRow<T> extends StatelessWidget {
 
 class _BeeChoiceIcon extends StatelessWidget {
   final IconData icon;
-  final bool selected;
 
-  const _BeeChoiceIcon({required this.icon, required this.selected});
+  const _BeeChoiceIcon({required this.icon});
 
   @override
   Widget build(BuildContext context) {
-    final text = beeText(context);
-    return AnimatedContainer(
-      duration: kBeeTransitionDuration,
+    // Selection inversion was removed for harmony: the icon no longer
+    // inverts. Selection is conveyed solely by the shared radio dot + the
+    // subtle recess fill — one signal, consistent with [BeeRadioTile].
+    return Container(
       width: 28,
       height: 28,
       decoration: BoxDecoration(
-        color: selected ? text : beeSurfaceRaised(context),
+        color: beeSurfaceRaised(context),
         borderRadius: BorderRadius.circular(kBeeRadiusSm),
-        border: Border.all(color: selected ? text : beeDivider(context)),
+        border: Border.all(color: beeDivider(context)),
       ),
       child: Icon(
         icon,
         size: 14,
-        color: selected ? beeBlack(context) : beeTextSub(context),
+        color: beeTextSub(context),
       ),
     );
   }
@@ -860,7 +869,7 @@ class _BeeChoiceText<T> extends StatelessWidget {
             ),
             if (!compact && option.badge != null) ...[
               const SizedBox(width: 8),
-              _BeeChoiceBadge(label: option.badge!, selected: selected),
+              beeBadge(context, option.badge!, BeeBadgeTone.neutral),
             ],
           ],
         ),
@@ -880,57 +889,43 @@ class _BeeChoiceText<T> extends StatelessWidget {
   }
 }
 
-class _BeeChoiceRadio extends StatelessWidget {
+/// Shared radio indicator — **one selection grammar** across [BeeRadioTile]
+/// and [BeeChoiceGroup]. A 16px ring that fills with an inner 7px dot when
+/// selected (the clean macOS pattern); a plain 1.5px ring otherwise.
+///
+/// Replaces the former `_BeeChoiceRadio` (a 17px inverted check-circle) so
+/// "selected" no longer looks different per control family.
+class BeeRadioIndicator extends StatelessWidget {
   final bool selected;
-
-  const _BeeChoiceRadio({required this.selected});
+  const BeeRadioIndicator({super.key, required this.selected});
 
   @override
   Widget build(BuildContext context) {
-    final text = beeText(context);
-    return AnimatedContainer(
-      duration: kBeeTransitionDuration,
-      width: 17,
-      height: 17,
-      decoration: BoxDecoration(
-        shape: BoxShape.circle,
-        color: selected ? text : Colors.transparent,
-        border: Border.all(
-          color: selected ? text : beeBorder(context),
-          width: selected ? 1 : 1.2,
+    final accent = beeYellow(context);
+    final muted = beeTextMuted(context);
+    return SizedBox(
+      width: 16,
+      height: 16,
+      child: DecoratedBox(
+        decoration: BoxDecoration(
+          shape: BoxShape.circle,
+          border: Border.all(
+            color: selected ? accent : muted.withValues(alpha: 0.55),
+            width: 1.5,
+          ),
         ),
-      ),
-      child: selected
-          ? Icon(Icons.check_rounded, size: 12, color: beeBlack(context))
-          : null,
-    );
-  }
-}
-
-class _BeeChoiceBadge extends StatelessWidget {
-  final String label;
-  final bool selected;
-
-  const _BeeChoiceBadge({required this.label, required this.selected});
-
-  @override
-  Widget build(BuildContext context) {
-    final text = beeText(context);
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
-      decoration: BoxDecoration(
-        color: selected ? text : beeSurfaceRaised(context),
-        borderRadius: BorderRadius.circular(kBeeRadiusXs),
-        border: Border.all(color: selected ? text : beeDivider(context)),
-      ),
-      child: Text(
-        label,
-        style: GoogleFonts.inter(
-          fontSize: 9,
-          fontWeight: FontWeight.w800,
-          color: selected ? beeBlack(context) : beeTextMuted(context),
-          letterSpacing: 0.5,
-        ),
+        child: selected
+            ? Center(
+                child: Container(
+                  width: 7,
+                  height: 7,
+                  decoration: BoxDecoration(
+                    shape: BoxShape.circle,
+                    color: accent,
+                  ),
+                ),
+              )
+            : null,
       ),
     );
   }
@@ -1031,8 +1026,6 @@ class BeeRadioTile extends StatefulWidget {
 class _BeeRadioTileState extends State<BeeRadioTile> {
   @override
   Widget build(BuildContext context) {
-    final accent = beeYellow(context);
-    final muted = beeTextMuted(context);
     return BeeInteractive(
       onTap: widget.onTap,
       semanticLabel: widget.label,
@@ -1050,30 +1043,7 @@ class _BeeRadioTileState extends State<BeeRadioTile> {
                   children: [
                     // macOS-style radio: small filled circle with inner dot
                     // when selected, plain gray ring otherwise.
-                    Container(
-                      width: 15,
-                      height: 15,
-                      decoration: BoxDecoration(
-                        shape: BoxShape.circle,
-                        border: Border.all(
-                          color: widget.isSelected
-                              ? accent
-                              : muted.withValues(alpha: 0.55),
-                          width: 1.5,
-                        ),
-                      ),
-                      alignment: Alignment.center,
-                      child: widget.isSelected
-                          ? Container(
-                              width: 7,
-                              height: 7,
-                              decoration: BoxDecoration(
-                                shape: BoxShape.circle,
-                                color: accent,
-                              ),
-                            )
-                          : null,
-                    ),
+                    BeeRadioIndicator(selected: widget.isSelected),
                     const SizedBox(width: 12),
                     Expanded(
                       child: Column(
@@ -1132,15 +1102,27 @@ class _BeeRadioTileState extends State<BeeRadioTile> {
 }
 
 // ─── Badge (macOS-style: small flat text pill, no border) ─────────
-/// Renders a small flat text pill (no border). The [color] is still a
-/// compile-time constant (typically `beeSuccess(context)` or
-/// `beeError(context)` from the caller) — pass a runtime-resolved color
-/// when calling from a build method.
-Widget beeBadge(String text, Color color) {
+/// Tonal key for [beeBadge]. Resolves to the matching runtime color so the
+/// badge stays consistent across light/dark.
+enum BeeBadgeTone { neutral, success, info, amber }
+
+/// Small flat text pill (no border) — the **canonical** status badge for the
+/// entire settings surface. One style replaces the former six bespoke
+/// variants (sidebar update notice, General update chip, AI provider-status
+/// pill, AI BETA tag, both `_buildKindTag`s, the override `_customizedPill`).
+///
+/// Pass [tone] for the standard semantic colors, or [color] to override.
+Widget beeBadge(
+  BuildContext context,
+  String text,
+  BeeBadgeTone tone, {
+  Color? color,
+}) {
+  final c = color ?? _beeBadgeColor(context, tone);
   return Container(
     padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
     decoration: BoxDecoration(
-      color: color.withValues(alpha: 0.12),
+      color: c.withValues(alpha: kBeeTintBadge),
       borderRadius: BorderRadius.circular(kBeeRadiusXs),
     ),
     child: Text(
@@ -1148,37 +1130,59 @@ Widget beeBadge(String text, Color color) {
       style: GoogleFonts.inter(
         fontSize: 9,
         fontWeight: FontWeight.w700,
-        color: color,
+        color: c,
         letterSpacing: 0.5,
       ),
     ),
   );
 }
 
+Color _beeBadgeColor(BuildContext context, BeeBadgeTone tone) {
+  switch (tone) {
+    case BeeBadgeTone.neutral:
+      return beeTextSub(context);
+    case BeeBadgeTone.success:
+      return beeSuccess(context);
+    case BeeBadgeTone.info:
+      return AppTheme.info;
+    case BeeBadgeTone.amber:
+      return beeYellow(context);
+  }
+}
+
 // ─── Empty State (flat, no bordered card) ──────────────────────────
+/// Size variant for [BeeEmptyState]. `normal` is the default list/block
+/// placeholder; `compact` fits inline small lists (clipboard entries);
+/// `prominent` suits page-level/hero empties (the Home dashboard).
+enum BeeEmptySize { compact, normal, prominent }
+
 class BeeEmptyState extends StatelessWidget {
   final IconData icon;
   final String title;
   final String subtitle;
+  final BeeEmptySize size;
 
   const BeeEmptyState({
     super.key,
     required this.icon,
     required this.title,
     required this.subtitle,
+    this.size = BeeEmptySize.normal,
   });
 
   @override
   Widget build(BuildContext context) {
+    final (iconSize, gap, vPad) = switch (size) {
+      BeeEmptySize.compact => (18.0, 6.0, 12.0),
+      BeeEmptySize.normal => (22.0, 8.0, 18.0),
+      BeeEmptySize.prominent => (44.0, 12.0, 24.0),
+    };
     return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 18, horizontal: 8),
+      padding: EdgeInsets.symmetric(vertical: vPad, horizontal: 8),
       child: Column(
         children: [
-          Padding(
-            padding: const EdgeInsets.only(bottom: 1),
-            child: Icon(icon, size: 22, color: beeTextMuted(context)),
-          ),
-          const SizedBox(height: 8),
+          Icon(icon, size: iconSize, color: beeTextMuted(context)),
+          SizedBox(height: gap),
           Text(
             title,
             style: GoogleFonts.inter(

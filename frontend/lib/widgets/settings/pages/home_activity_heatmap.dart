@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import '../../../models/usage_stats.dart';
+import '../bee_data_card.dart';
 import '../settings_shared.dart';
 
 /// A longer, GitHub-style contribution heatmap that replaces the old 30-day
@@ -103,16 +104,8 @@ class HomeActivityHeatmap extends StatelessWidget {
               ],
             ),
             const SizedBox(height: 8),
-            Container(
-              width: double.infinity,
-              padding: const EdgeInsets.fromLTRB(14, 14, 14, 14),
-              decoration: BoxDecoration(
-                color: beeSurfaceHighest(context),
-                borderRadius: BorderRadius.circular(kBeeRadiusMd),
-                border: Border.all(
-                  color: beeBorder(context).withValues(alpha: 0.5),
-                ),
-              ),
+            BeeDataCard(
+              padding: const EdgeInsets.all(14),
               child: SizedBox(
                 height: height,
                 child: _HeatmapGrid(
