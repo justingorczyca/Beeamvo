@@ -1306,27 +1306,32 @@ class _BeeamvoHomeState extends State<BeeamvoHome>
           debugPrint('Duration limit timer set to $limitSeconds seconds');
         }
 
-        // Register in-app (focused-window) handlers for the bare Enter and
-        // Escape keys: Enter commits the recording (stop + process) and
-        // Escape cancels the active recording/processing. These are
-        // intentionally registered with HotKeyScope.inapp — rather than the
-        // system/default scope used elsewhere — so that, while Beeamvo is
-        // focused, Enter/Escape drive the session, but the moment another
-        // application is in the foreground those bare keys keep working there
-        // normally (typing in text fields, dismissing dialogs, etc.). They are
-        // unregistered again in _stopRecordingAndProcess / _cancelRecording,
+        // Register the bare Enter and Escape keys for the active session:
+        // Enter commits the recording (stop + process), Escape cancels it.
+        //
+        // These MUST be system/global scope, NOT inapp. The recording orb is
+        // intentionally shown WITHOUT stealing OS keyboard focus
+        // (positionAtActiveMonitorBottomCenter uses SW_SHOWNOACTIVATE) so the
+        // user's foreground app keeps the caret for later paste. inapp-scope
+        // hotkeys are delivered through HardwareKeyboard, which only receives
+        // events while the Beeamvo window itself is focused — so an inapp
+        // binding here would be inert for the entire recording. System scope
+        // routes the keys through the OS keyboard hook regardless of which
+        // window is focused, so Escape/Enter reliably drive the session while
+        // the user is typing in another app. They are unregistered again in
+        // _stopRecordingAndProcess / _cancelRecording / _abortStartedRecorder,
         // so the bindings only exist for the lifetime of an active recording.
         await _hotkeyService.registerHotkey(
           id: 'cancel',
           key: LogicalKeyboardKey.escape,
-          scope: HotKeyScope.inapp,
+          scope: HotKeyScope.system,
           onPressed: _cancelRecording,
         );
         // Register Enter key to commit/finish recording
         await _hotkeyService.registerHotkey(
           id: 'commit',
           key: LogicalKeyboardKey.enter,
-          scope: HotKeyScope.inapp,
+          scope: HotKeyScope.system,
           onPressed: _stopRecordingAndProcess,
         );
       } else {
@@ -1691,9 +1696,10 @@ class _BeeamvoHomeState extends State<BeeamvoHome>
       }
     } finally {
       _isLockActive = false;
-      // Release the session-scoped in-app Enter/Escape handlers now that the
-      // session has ended, so bare Enter/Escape are no longer captured by
-      // Beeamvo. Idempotent — safe even if they were never registered.
+      // Release the session-scoped global Enter/Escape handlers now that the
+      // session has ended, so bare Enter/Escape are no longer captured
+      // globally by Beeamvo. Idempotent — safe even if they were never
+      // registered.
       await _hotkeyService.unregisterHotkey('cancel');
       await _hotkeyService.unregisterHotkey('commit');
       _activeRecordingBackend = null;
@@ -1767,7 +1773,7 @@ class _BeeamvoHomeState extends State<BeeamvoHome>
     _durationLimitTimer?.cancel();
     _durationLimitTimer = null;
     _activeRecordingBackend = null;
-    // The session-scoped in-app Enter/Escape handlers are redundant here
+    // The session-scoped global Enter/Escape handlers are redundant here
     // (they are only registered after a start commits), but unregistering is
     // idempotent and keeps the hotkey set clean.
     await _hotkeyService.unregisterHotkey('cancel');
@@ -1796,7 +1802,7 @@ class _BeeamvoHomeState extends State<BeeamvoHome>
       await _whisperService.cancelTranscription();
     }
 
-    // Release the session-scoped in-app Enter/Escape handlers.
+    // Release the session-scoped global Enter/Escape handlers.
     await _hotkeyService.unregisterHotkey('cancel');
     await _hotkeyService.unregisterHotkey('commit');
 
