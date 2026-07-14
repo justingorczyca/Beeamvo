@@ -24,6 +24,7 @@ import 'services/usage_stats_service.dart';
 import 'services/whisper_service.dart';
 import 'models/system_prompt.dart';
 import 'models/prompt_settings.dart';
+import 'models/transcription_backend_resolver.dart';
 import 'models/hotkey_config.dart';
 import 'widgets/frosted_orb.dart';
 import 'widgets/onboarding/onboarding_wizard.dart';
@@ -210,7 +211,15 @@ class _BeeamvoHomeState extends State<BeeamvoHome>
   // same time. A newer request supersedes queued work that has not started.
   Future<void> _backendTransitionQueue = Future<void>.value();
   int _backendTransitionRevision = 0;
+  // The effective transcription backend captured at recording start. Pinned
+  // for the whole session so a mid-session settings change cannot redirect the
+  // captured audio to a different (wrong) transcription path at stop time.
   TranscriptionBackend? _activeRecordingBackend;
+  // Bumped on superseding transitions (e.g. opening Settings while the record
+  // hotkey is mid-start) so an in-flight [_startRecording] can detect that it
+  // lost the race, stop the recorder it already started, and bail out instead
+  // of clobbering the new state.
+  int _sessionToken = 0;
   Completer<void>? _onboardingCompletion;
   bool _isShuttingDown = false;
   String? _hotkeyConfigurationError;
@@ -739,6 +748,33 @@ class _BeeamvoHomeState extends State<BeeamvoHome>
     return modelId.endsWith('.en.bin');
   }
 
+  /// Resolve the transcription backend for [promptId], honoring a per-prompt
+  /// override on top of the global default.
+  ///
+  /// Centralized so recording-start and recording-stop agree on the backend.
+  /// A session pins the result at start time (see [_activeRecordingBackend]);
+  /// callers must use that captured value rather than re-resolving at stop.
+  TranscriptionBackend _resolveBackendForPrompt(String? promptId) {
+    final effectivePromptId = promptId ?? _settingsService.selectedPromptId;
+    final overrides =
+        _settingsService.getPromptOverrides(effectivePromptId) ??
+        const PromptSettings();
+    return resolveSessionBackend(
+      globalDefault: _settingsService.transcriptionBackend,
+      promptBackendOverride: overrides.transcriptionBackend,
+    );
+  }
+
+  /// Resolve the transcription backend that applies to a fresh (non-retry)
+  /// session, honoring the active prompt's per-prompt override.
+  ///
+  /// This is captured into [_activeRecordingBackend] at recording start so the
+  /// stop path uses the session decision rather than mutable settings.
+  TranscriptionBackend _effectiveBackendForSession() {
+    final promptId = _temporaryPromptId ?? _settingsService.selectedPromptId;
+    return _resolveBackendForPrompt(promptId);
+  }
+
   Future<void> _dismissModeInteractions() async {
     await _unregisterModeSelectionHotkeys();
     await _unregisterModeCloudConfirmHotkeys();
@@ -747,6 +783,20 @@ class _BeeamvoHomeState extends State<BeeamvoHome>
   }
 
   void _showSettings() async {
+    // A recording may not survive a Settings transition. Opening Settings
+    // (from the tray, a hotkey, or an in-app flow) while the orb is actively
+    // recording would strand the native recorder — leaving a hot microphone,
+    // unbounded stream memory, and session-scoped Enter/Escape/duration timers
+    // that no longer fire. Discard the in-flight audio (the privacy-safe
+    // choice) before proceeding.
+    if (_state == RecordingState.recording) {
+      await _cancelRecording();
+    }
+    // Invalidate any recording start that is racing concurrently (e.g. the
+    // record hotkey was pressed moments before Settings opened). The in-flight
+    // start checks this token before committing and abandons + stops the
+    // recorder it may have just started.
+    _sessionToken++;
     // Settings may be opened by the tray while a mode popup is visible. Tear
     // down its in-app navigation bindings first so stale handlers cannot act
     // on a hidden popup.
@@ -1160,6 +1210,11 @@ class _BeeamvoHomeState extends State<BeeamvoHome>
       return;
     }
     _isLockActive = true;
+    // Snapshot the transition generation. If Settings (or another superseding
+    // transition) opens while we await async platform calls below, the token
+    // will differ and we bail before committing a half-started recording.
+    final sessionToken = _sessionToken;
+    _activeRecordingBackend = null;
     _durationLimitTimer?.cancel();
     _durationLimitTimer = null;
     await _clearRetryRecording();
@@ -1192,8 +1247,44 @@ class _BeeamvoHomeState extends State<BeeamvoHome>
         return;
       }
 
-      final started = await _recordingService.startRecording();
+      // Offline (Whisper) sessions record an in-memory PCM-16 stream that can be
+      // passed straight to Whisper without a WAV container round-trip. Cloud
+      // sessions (and offline sessions whose microphone won't stream) fall back
+      // to a WAV file. The stop path in [_stopRecordingAndProcess] reads the
+      // actual stream/file mode, so the WAV fallback stays correct regardless
+      // of the pinned backend decision.
+      //
+      // The backend is resolved ONCE here and captured so a mid-session
+      // settings change cannot redirect the captured audio to the wrong path.
+      final sessionBackend = _effectiveBackendForSession();
+      final isOffline = sessionBackend == TranscriptionBackend.whisper;
+      // Explicit fallback flow: offline prefers the PCM stream and only falls
+      // back to a WAV file when streaming is unavailable (driver/permission
+      // edge case). Cloud always records to a WAV file.
+      bool started;
+      if (isOffline) {
+        started = await _recordingService.startStreamRecording();
+        if (!started) {
+          started = await _recordingService.startRecording();
+        }
+      } else {
+        started = await _recordingService.startRecording();
+      }
+
+      if (sessionToken != _sessionToken) {
+        // A superseding transition (e.g. Settings opened) won the race while
+        // we were starting the recorder. Do not commit to RecordingState —
+        // stop the recorder we just started so it cannot leave a hot mic, then
+        // bail. The finally block releases the lock.
+        debugPrint(
+          'Recording start superseded by another transition; aborting.',
+        );
+        await _abortStartedRecorder();
+        return;
+      }
+
       if (started) {
+        _activeRecordingBackend = sessionBackend;
         _recordingStopwatch
           ..reset()
           ..start();
@@ -1215,18 +1306,31 @@ class _BeeamvoHomeState extends State<BeeamvoHome>
           debugPrint('Duration limit timer set to $limitSeconds seconds');
         }
 
-        // Do not register bare Enter/Escape as system hotkeys here. Those
-        // keys must remain available to the foreground application while a
-        // recording is active; the configured recording shortcut stops Toggle
-        // mode, and the orb can be cancelled with its visible controls.
-        // Keep an in-app Escape handler for the focused orb only.
+        // Register in-app (focused-window) handlers for the bare Enter and
+        // Escape keys: Enter commits the recording (stop + process) and
+        // Escape cancels the active recording/processing. These are
+        // intentionally registered with HotKeyScope.inapp — rather than the
+        // system/default scope used elsewhere — so that, while Beeamvo is
+        // focused, Enter/Escape drive the session, but the moment another
+        // application is in the foreground those bare keys keep working there
+        // normally (typing in text fields, dismissing dialogs, etc.). They are
+        // unregistered again in _stopRecordingAndProcess / _cancelRecording,
+        // so the bindings only exist for the lifetime of an active recording.
         await _hotkeyService.registerHotkey(
           id: 'cancel',
           key: LogicalKeyboardKey.escape,
           scope: HotKeyScope.inapp,
           onPressed: _cancelRecording,
         );
+        // Register Enter key to commit/finish recording
+        await _hotkeyService.registerHotkey(
+          id: 'commit',
+          key: LogicalKeyboardKey.enter,
+          scope: HotKeyScope.inapp,
+          onPressed: _stopRecordingAndProcess,
+        );
       } else {
+        _activeRecordingBackend = null;
         _recordingStopwatch
           ..stop()
           ..reset();
@@ -1234,16 +1338,29 @@ class _BeeamvoHomeState extends State<BeeamvoHome>
         _hideAfterDelay(2);
       }
     } catch (e) {
+      debugPrint('Recording start failed: $e');
+      // A platform start may have succeeded before this exception (e.g. the
+      // recorder is running but the subsequent cancel/commit hotkey
+      // registration threw). Best-effort abort/stop it so a failed start can
+      // never strand a hot microphone, and tear down the session-scoped
+      // hotkeys/timers/backend pin captured so far. _abortStartedRecorder is
+      // non-throwing, so it never masks the original error or leaves the mic on.
+      await _abortStartedRecorder();
       _recordingStopwatch
         ..stop()
         ..reset();
-      _durationLimitTimer?.cancel();
-      _durationLimitTimer = null;
       _holdTimer?.cancel();
       _holdTimer = null;
       _isHotkeyHeld = false;
-      setState(() => _state = RecordingState.error);
-      _hideAfterDelay(2);
+
+      if (sessionToken == _sessionToken) {
+        // We still own this session: surface a recoverable error state.
+        setState(() => _state = RecordingState.error);
+        _hideAfterDelay(2);
+      }
+      // If a superseding transition (e.g. Settings opened) won the race while
+      // we were starting, leave the winning transition's UI state intact — it
+      // already set the correct state and we must not overwrite it with error.
     } finally {
       _isLockActive = false;
 
@@ -1324,12 +1441,17 @@ class _BeeamvoHomeState extends State<BeeamvoHome>
           _settingsService.getPromptOverrides(effectivePromptId) ??
           const PromptSettings();
 
-      final effectiveBackend = overrides.transcriptionBackend != null
-          ? TranscriptionBackendExtension.fromValue(
-              overrides.transcriptionBackend,
-            )
-          : _settingsService.transcriptionBackend;
-      final isOffline = effectiveBackend == TranscriptionBackend.whisper;
+      // A session pins its backend at recording start. During a non-retry
+      // stop we reuse that captured decision so a mid-session settings change
+      // (e.g. switching Cloud↔Whisper) cannot redirect the already-captured
+      // audio to a different — and for stream sessions incompatible — path.
+      // Retry intentionally resolves fresh so the user can re-run with the
+      // newly chosen settings.
+      final backend = retryExisting
+          ? _resolveBackendForPrompt(effectivePromptId)
+          : (_activeRecordingBackend ??
+                _resolveBackendForPrompt(effectivePromptId));
+      final isOffline = backend == TranscriptionBackend.whisper;
 
       final effectiveRephraseLevel = overrides.rephraseLevel != null
           ? overrides.rephraseLevel!
@@ -1371,15 +1493,14 @@ class _BeeamvoHomeState extends State<BeeamvoHome>
         debugPrint('Per-prompt provider override: $provider');
       }
 
-      final backend = effectiveBackend;
-      _activeRecordingBackend = backend;
-
-      // Stop recording — stream path for offline, file path for cloud.
+      // Stop recording — decide stream vs. file from the ACTUAL capture mode
+      // (not the pinned backend) so the WAV fallback path stays correct even
+      // if the session's stream attempt failed over to a file at start time.
       Uint8List? pcmBytes;
       String? audioPath;
       if (retryExisting) {
         audioPath = _recordingService.currentRecordingPath;
-      } else if (isOffline && _recordingService.isStreamRecording) {
+      } else if (_recordingService.isStreamRecording) {
         pcmBytes = await _recordingService.stopStreamAndGetPcm();
       } else {
         audioPath = await _recordingService.stopRecording();
@@ -1570,6 +1691,11 @@ class _BeeamvoHomeState extends State<BeeamvoHome>
       }
     } finally {
       _isLockActive = false;
+      // Release the session-scoped in-app Enter/Escape handlers now that the
+      // session has ended, so bare Enter/Escape are no longer captured by
+      // Beeamvo. Idempotent — safe even if they were never registered.
+      await _hotkeyService.unregisterHotkey('cancel');
+      await _hotkeyService.unregisterHotkey('commit');
       _activeRecordingBackend = null;
       // Clear temporary prompt override after the session ends
       if (_temporaryPromptId != null && !keepSessionForRetry) {
@@ -1610,6 +1736,44 @@ class _BeeamvoHomeState extends State<BeeamvoHome>
     await _recordingService.deleteRecording();
   }
 
+  /// Stops the native recorder and resets session recording flags/state after
+  /// a recording start was superseded before it could commit to
+  /// [RecordingState.recording] (e.g. Settings opened while the recorder was
+  /// initializing). Unlike [_cancelRecording], it must not depend on the
+  /// [_state] machine and must not touch the visible orb state — callers are
+  /// transitioning elsewhere themselves.
+  Future<void> _abortStartedRecorder() async {
+    // Stop whichever mode is actually active. The stream path
+    // (stopStreamAndGetPcm) already swallows internal failures; the file path
+    // (stopRecording) does not, so both are guarded here. A platform stop
+    // error must never propagate — this method must remain non-throwing so it
+    // cannot clobber a superseding transition's UI state (e.g. Settings that
+    // won the session-token race) or, when called from the _startRecording
+    // catch, mask a real error with a cleanup failure.
+    try {
+      if (_recordingService.isStreamRecording) {
+        await _recordingService.stopStreamAndGetPcm();
+      } else {
+        await _recordingService.stopRecording();
+      }
+    } catch (e) {
+      debugPrint('Recorder stop during abort failed (best-effort): $e');
+    }
+    try {
+      await _recordingService.deleteRecording();
+    } catch (e) {
+      debugPrint('Recording file cleanup during abort failed: $e');
+    }
+    _durationLimitTimer?.cancel();
+    _durationLimitTimer = null;
+    _activeRecordingBackend = null;
+    // The session-scoped in-app Enter/Escape handlers are redundant here
+    // (they are only registered after a start commits), but unregistering is
+    // idempotent and keeps the hotkey set clean.
+    await _hotkeyService.unregisterHotkey('cancel');
+    await _hotkeyService.unregisterHotkey('commit');
+  }
+
   Future<void> _cancelRecording() async {
     if (_state != RecordingState.recording &&
         _state != RecordingState.processing) {
@@ -1631,6 +1795,10 @@ class _BeeamvoHomeState extends State<BeeamvoHome>
         _activeRecordingBackend == TranscriptionBackend.whisper) {
       await _whisperService.cancelTranscription();
     }
+
+    // Release the session-scoped in-app Enter/Escape handlers.
+    await _hotkeyService.unregisterHotkey('cancel');
+    await _hotkeyService.unregisterHotkey('commit');
 
     await _recordingService.stopRecording();
     await _recordingService.deleteRecording();

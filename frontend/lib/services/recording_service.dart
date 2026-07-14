@@ -65,8 +65,16 @@ class RecordingService {
           : null,
     );
 
-    // Start recording
-    await _recorder.start(config, path: _currentRecordingPath!);
+    // Start recording. A throw can leave the native recorder partially
+    // started; best-effort stop it so a failed start can never keep the
+    // microphone hot, then surface the error to the caller as before.
+    try {
+      await _recorder.start(config, path: _currentRecordingPath!);
+    } catch (e) {
+      await _bestEffortStopRecorder();
+      _currentRecordingPath = null;
+      rethrow;
+    }
 
     _isRecording = true;
     return true;
@@ -269,9 +277,13 @@ class RecordingService {
       return true;
     } catch (e) {
       debugPrint('[RecordingService] stream start failed: $e');
-      _isRecording = false;
-      _isStreamRecording = false;
+      // The native recorder may have started before the stream became usable
+      // (e.g. a platform error thrown mid-start). Stop it best-effort so a
+      // partial start can never leave the microphone hot, then reset all of
+      // the Dart-side stream resources and flags.
+      await _bestEffortStopRecorder();
       await _stopStreamRecording();
+      _isRecording = false;
       return false;
     }
   }
@@ -316,6 +328,20 @@ class RecordingService {
     _streamError = null;
     _streamBuffer = BytesBuilder(copy: false);
     _isStreamRecording = false;
+  }
+
+  /// Best-effort native recorder stop used on cleanup/failure paths.
+  ///
+  /// Stopping a recorder that is idle (e.g. one that never fully started) may
+  /// throw on some platforms, so failures are swallowed — this method must
+  /// never throw and never leave the microphone hot when a recorder *is*
+  /// running.
+  Future<void> _bestEffortStopRecorder() async {
+    try {
+      await _recorder.stop();
+    } catch (_) {
+      // Recorder may already be stopped; cleanup stays best-effort.
+    }
   }
 
   void _completeStreamDone() {
