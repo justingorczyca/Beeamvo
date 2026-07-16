@@ -206,7 +206,7 @@ class _PromptsPageState extends State<PromptsPage> {
                 description: _rephraseLevel.description,
                 showDivider: false,
                 warningBadge: blocked
-                    ? _LocalOnlyBadge(hasGeminiKey: s.hasGeminiApiKey)
+                    ? _LocalOnlyBadge(hasCloudCredentials: s.hasCloudCredentials)
                     : null,
                 // Dim the control when the rephraser can't take
                 // effect (local-only), while keeping it tappable so a
@@ -549,7 +549,10 @@ class _PromptsPageState extends State<PromptsPage> {
       // cloud model is in the pipeline, so it reads as grayed-out/inactive.
       dimmed: promptBlocked,
       warningBadge: promptBlocked && !isSelected
-          ? _LocalOnlyBadge(hasGeminiKey: settings.hasGeminiApiKey)
+          ? _LocalOnlyBadge(
+              hasCloudCredentials: settings.hasCloudCredentials,
+              featureLabel: 'prompt',
+            )
           : null,
       badge: Row(
         mainAxisSize: MainAxisSize.min,
@@ -968,9 +971,13 @@ class _PromptsPageState extends State<PromptsPage> {
 /// Windows modern info tips) rather than triggering a full-screen
 /// modal AlertDialog.
 class _LocalOnlyBadge extends StatefulWidget {
-  final bool hasGeminiKey;
+  final bool hasCloudCredentials;
+  final String featureLabel;
 
-  const _LocalOnlyBadge({required this.hasGeminiKey});
+  const _LocalOnlyBadge({
+    required this.hasCloudCredentials,
+    this.featureLabel = 'Rephraser',
+  });
 
   @override
   State<_LocalOnlyBadge> createState() => _LocalOnlyBadgeState();
@@ -991,11 +998,13 @@ class _LocalOnlyBadgeState extends State<_LocalOnlyBadge> {
 
   void _openPopover() {
     final overlay = Overlay.of(context);
-    final hasGeminiKey = widget.hasGeminiKey;
+    final hasCloudCredentials = widget.hasCloudCredentials;
+    final featureLabel = widget.featureLabel;
     final overlayEntry = OverlayEntry(
       builder: (context) => _LocalOnlyPopover(
         layerLink: _layerLink,
-        hasGeminiKey: hasGeminiKey,
+        hasCloudCredentials: hasCloudCredentials,
+        featureLabel: featureLabel,
         onClose: _closePopover,
       ),
     );
@@ -1021,15 +1030,26 @@ class _LocalOnlyBadgeState extends State<_LocalOnlyBadge> {
   @override
   Widget build(BuildContext context) {
     final error = beeError(context);
+    // Feature label drives the tooltip / accessibility text so the same
+    // badge reads correctly for the rephraser row and for blocked prompt
+    // rows (default 'Rephraser'; prompts pass 'prompt').
+    final label = widget.featureLabel;
+    final tooltipMessage = label == 'Rephraser'
+        ? 'Rephraser has no effect on offline-only Whisper. Tap to learn more.'
+        : 'This ${label.toLowerCase()} has no effect on offline-only '
+            'Whisper. Tap to learn more.';
+    final semanticLabel = label == 'Rephraser'
+        ? 'Rephraser unavailable on local-only Whisper'
+        : '${label[0].toUpperCase()}${label.substring(1).toLowerCase()} '
+            'unavailable on local-only Whisper';
     return CompositedTransformTarget(
       link: _layerLink,
       child: Tooltip(
-        message:
-            'Rephraser has no effect on offline-only Whisper. Tap to learn more.',
+        message: tooltipMessage,
         child: BeeInteractive(
           onTap: _togglePopover,
           toggled: _isOpen,
-          semanticLabel: 'Rephraser unavailable on local-only Whisper',
+          semanticLabel: semanticLabel,
           builder: (context, focused) => AnimatedContainer(
             duration: kBeeTransitionDuration,
             curve: kBeeTransitionCurve,
@@ -1077,12 +1097,14 @@ class _LocalOnlyBadgeState extends State<_LocalOnlyBadge> {
 /// Tapping outside dismisses it.
 class _LocalOnlyPopover extends StatefulWidget {
   final LayerLink layerLink;
-  final bool hasGeminiKey;
+  final bool hasCloudCredentials;
+  final String featureLabel;
   final VoidCallback onClose;
 
   const _LocalOnlyPopover({
     required this.layerLink,
-    required this.hasGeminiKey,
+    required this.hasCloudCredentials,
+    required this.featureLabel,
     required this.onClose,
   });
 
@@ -1153,6 +1175,16 @@ class _LocalOnlyPopoverState extends State<_LocalOnlyPopover>
     final textMuted = beeTextMuted(context);
     final error = beeError(context);
 
+    // Body copy is feature-specific: the rephraser "rewrites" the
+    // transcript, while a prompt is "applied" to it. The ready /
+    // not-ready guidance copy below is shared (it is generic enough).
+    final bodyText = widget.featureLabel == 'Rephraser'
+        ? 'You\u2019re on offline transcription only. The rephraser rewrites '
+            'your transcript with a cloud AI model, so it has no effect in '
+            'this mode.'
+        : 'You\u2019re on offline transcription only. This prompt is applied '
+            'by a cloud AI model, so it has no effect in this mode.';
+
     return Material(
       type: MaterialType.transparency,
       child: Container(
@@ -1207,9 +1239,7 @@ class _LocalOnlyPopoverState extends State<_LocalOnlyPopover>
             ),
             const SizedBox(height: 8),
             Text(
-              'You\u2019re on offline transcription only. The rephraser '
-              'rewrites your transcript with a cloud AI model, so it has '
-              'no effect in this mode.',
+              bodyText,
               style: GoogleFonts.inter(
                 fontSize: 11.5,
                 color: textSub,
@@ -1218,10 +1248,10 @@ class _LocalOnlyPopoverState extends State<_LocalOnlyPopover>
             ),
             const SizedBox(height: 8),
             Text(
-              widget.hasGeminiKey
+              widget.hasCloudCredentials
                   ? 'Pick Medium or High to enable cloud refinement and '
                         'activate the rephraser.'
-                  : 'Add a Gemini API key in Settings \u2192 AI Models, '
+                  : 'Add cloud credentials in Settings \u2192 AI Models, '
                         'then pick Medium or High to activate the rephraser.',
               style: GoogleFonts.inter(
                 fontSize: 11,

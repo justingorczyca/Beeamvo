@@ -308,9 +308,23 @@ class _GeneralSettingsPageState extends State<GeneralSettingsPage> {
     final recorder = RecordingService();
     try {
       final devices = await recorder.listInputDevices();
+      // If the saved selection no longer exists, clear it so recording uses the
+      // OS default instead of a dead id that captures silence/crashes start.
+      var selectedId = _selectedDeviceId;
+      if (selectedId != null &&
+          selectedId.isNotEmpty &&
+          !devices.any((d) => d.id == selectedId)) {
+        if (!mounted) return;
+        await SettingsProviderScope.of(
+          context,
+        ).settingsService.setSelectedAudioDeviceId(null);
+        widget.onAudioDeviceChanged?.call(null);
+        selectedId = null;
+      }
       if (mounted) {
         setState(() {
           _availableDevices = devices;
+          _selectedDeviceId = selectedId;
           _isLoadingDevices = false;
         });
       }

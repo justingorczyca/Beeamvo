@@ -315,10 +315,26 @@ class _BeeamvoHomeState extends State<BeeamvoHome>
       await widget.settingsInitialized;
       debugPrint('Settings initialized');
 
-      // Set the preferred audio input device from settings
+      // Set the preferred audio input device from settings, then validate it
+      // still exists so a stale saved id cannot produce empty captures later.
       final selectedDeviceId = _settingsService.selectedAudioDeviceId;
       _recordingService.setPreferredDevice(selectedDeviceId);
       debugPrint('Audio device set: ${selectedDeviceId ?? "System Default"}');
+      try {
+        final readiness = await _recordingService.assessMicReadiness();
+        debugPrint(
+          'Mic readiness: permission=${readiness.hasPermission}, '
+          'devices=${readiness.devices.length}, '
+          'resolved=${readiness.resolvedDeviceId ?? "System Default"}'
+          '${readiness.fellBackToDefault ? " (stale selection cleared)" : ""}',
+        );
+        if (readiness.fellBackToDefault) {
+          // Persist the fallback so Settings no longer shows "Device Not Found".
+          await _settingsService.setSelectedAudioDeviceId(null);
+        }
+      } catch (e) {
+        debugPrint('Mic readiness check failed (non-critical): $e');
+      }
 
       // ── First-run onboarding ─────────────────────────────────────────
       // Show onboarding only on truly first run (no saved config AND
@@ -1240,11 +1256,28 @@ class _BeeamvoHomeState extends State<BeeamvoHome>
     await WindowHelper.positionAtActiveMonitorBottomCenter(150, 150);
 
     try {
-      final hasPermission = await _recordingService.hasPermission();
-      if (!hasPermission) {
-        setState(() => _state = RecordingState.error);
-        _hideAfterDelay(2);
+      // Preflight: permission + stale-device cleanup. An empty device list is
+      // only a warning (OS default may still work); denied permission is fatal.
+      final readiness = await _recordingService.assessMicReadiness();
+      if (readiness.fellBackToDefault) {
+        await _settingsService.setSelectedAudioDeviceId(null);
+      }
+      if (!readiness.hasPermission) {
+        debugPrint('Recording start blocked: microphone permission denied');
+        setState(() {
+          _lastErrorMessage =
+              'Microphone permission is required. Enable it in system settings.';
+          _state = RecordingState.error;
+        });
+        _hideAfterDelay(3);
         return;
+      }
+      if (!readiness.hasAnyDeviceListed) {
+        // Still attempt start — some platforms report an empty list but allow
+        // the default device — but log loudly for troubleshooting.
+        debugPrint(
+          'Warning: no input devices listed by the OS; attempting System Default',
+        );
       }
 
       // Offline (Whisper) sessions record an in-memory PCM-16 stream that can be
@@ -1265,6 +1298,9 @@ class _BeeamvoHomeState extends State<BeeamvoHome>
       if (isOffline) {
         started = await _recordingService.startStreamRecording();
         if (!started) {
+          debugPrint(
+            'Stream recording unavailable; falling back to WAV file capture',
+          );
           started = await _recordingService.startRecording();
         }
       } else {
@@ -1334,35 +1370,45 @@ class _BeeamvoHomeState extends State<BeeamvoHome>
           scope: HotKeyScope.system,
           onPressed: _stopRecordingAndProcess,
         );
-      } else {
-        _activeRecordingBackend = null;
+        } else {
+          _activeRecordingBackend = null;
+          _recordingStopwatch
+            ..stop()
+            ..reset();
+          setState(() {
+            _lastErrorMessage =
+                'Could not start the microphone. Check the input device in '
+                'Settings → General → Audio Input Device.';
+            _state = RecordingState.error;
+          });
+          _hideAfterDelay(3);
+        }
+      } catch (e) {
+        debugPrint('Recording start failed: $e');
+        // A platform start may have succeeded before this exception (e.g. the
+        // recorder is running but the subsequent cancel/commit hotkey
+        // registration threw). Best-effort abort/stop it so a failed start can
+        // never strand a hot microphone, and tear down the session-scoped
+        // hotkeys/timers/backend pin captured so far. _abortStartedRecorder is
+        // non-throwing, so it never masks the original error or leaves the mic on.
+        await _abortStartedRecorder();
         _recordingStopwatch
           ..stop()
           ..reset();
-        setState(() => _state = RecordingState.error);
-        _hideAfterDelay(2);
-      }
-    } catch (e) {
-      debugPrint('Recording start failed: $e');
-      // A platform start may have succeeded before this exception (e.g. the
-      // recorder is running but the subsequent cancel/commit hotkey
-      // registration threw). Best-effort abort/stop it so a failed start can
-      // never strand a hot microphone, and tear down the session-scoped
-      // hotkeys/timers/backend pin captured so far. _abortStartedRecorder is
-      // non-throwing, so it never masks the original error or leaves the mic on.
-      await _abortStartedRecorder();
-      _recordingStopwatch
-        ..stop()
-        ..reset();
-      _holdTimer?.cancel();
-      _holdTimer = null;
-      _isHotkeyHeld = false;
+        _holdTimer?.cancel();
+        _holdTimer = null;
+        _isHotkeyHeld = false;
 
-      if (sessionToken == _sessionToken) {
-        // We still own this session: surface a recoverable error state.
-        setState(() => _state = RecordingState.error);
-        _hideAfterDelay(2);
-      }
+        if (sessionToken == _sessionToken) {
+          // We still own this session: surface a recoverable error state.
+          setState(() {
+            _lastErrorMessage =
+                'Microphone failed to start. Try System Default in '
+                'Settings → General → Audio Input Device.';
+            _state = RecordingState.error;
+          });
+          _hideAfterDelay(3);
+        }
       // If a superseding transition (e.g. Settings opened) won the race while
       // we were starting, leave the winning transition's UI state intact — it
       // already set the correct state and we must not overwrite it with error.
@@ -1523,20 +1569,44 @@ class _BeeamvoHomeState extends State<BeeamvoHome>
       // For cloud paths, read audio bytes from the file.
       Uint8List? audioBytes;
       if (!isOffline) {
-        if (audioPath == null) throw Exception('Recorder error');
+        if (audioPath == null) {
+          debugPrint('Process aborted: recorder returned no file path');
+          throw CloudTranscriptionException(
+            'Recording failed — no audio was captured. Check that a '
+            'microphone is selected and not in use by another app.',
+          );
+        }
         audioBytes = await _recordingService.getAudioBytes();
         if (audioBytes == null || audioBytes.isEmpty) {
+          debugPrint(
+            'Process aborted: empty audio file at $audioPath '
+            '(duration=${recordingDuration.inMilliseconds}ms)',
+          );
           throw CloudTranscriptionException(
-            TranscriptionResultGuard.noTranscriptMessage,
+            'No audio was captured. Check the microphone in '
+            'Settings → General → Audio Input Device.',
           );
         }
       } else if (pcmBytes == null || pcmBytes.isEmpty) {
-        // Stream fell back to file.
-        if (audioPath == null) throw Exception('Recorder error');
+        // Stream fell back to file, or stream produced silence/empty buffer.
+        if (audioPath == null) {
+          debugPrint(
+            'Process aborted: offline path has neither PCM nor file path',
+          );
+          throw CloudTranscriptionException(
+            'Recording failed — no audio was captured. Check that a '
+            'microphone is selected and not in use by another app.',
+          );
+        }
         audioBytes = await _recordingService.getAudioBytes();
         if (audioBytes == null || audioBytes.isEmpty) {
+          debugPrint(
+            'Process aborted: empty offline audio file at $audioPath '
+            '(duration=${recordingDuration.inMilliseconds}ms)',
+          );
           throw CloudTranscriptionException(
-            TranscriptionResultGuard.noTranscriptMessage,
+            'No audio was captured. Check the microphone in '
+            'Settings → General → Audio Input Device.',
           );
         }
       }

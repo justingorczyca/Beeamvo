@@ -52,7 +52,10 @@ class TrayService with TrayListener {
       } else if (Platform.isMacOS) {
         // On macOS, use the monochrome microphone as a template icon so the
         // menu bar renders it natively in light and dark appearances.
-        await trayManager.setIcon('assets/tray_icon_macos.png', isTemplate: true);
+        await trayManager.setIcon(
+          'assets/tray_icon_macos.png',
+          isTemplate: true,
+        );
       } else if (Platform.isLinux) {
         // On Linux, tray_manager needs an absolute path to the icon file.
         final exePath = Platform.resolvedExecutable;
@@ -99,10 +102,7 @@ class TrayService with TrayListener {
     if (promptsNeedCloud) {
       if (_settingsService.hasCloudCredentials) {
         promptItems.add(
-          MenuItem(
-            key: 'prompt_switch_cloud',
-            label: 'Use cloud for prompts',
-          ),
+          MenuItem(key: 'prompt_switch_cloud', label: 'Use cloud for prompts'),
         );
         promptItems.add(
           MenuItem(
@@ -144,16 +144,53 @@ class TrayService with TrayListener {
         )
         .toList();
 
+    // The rephraser is a global cloud feature: it only takes effect when a
+    // cloud model is in the pipeline (full cloud, or local + cloud two-pass
+    // refine). On the local-only backend, levels above Off silently resolve
+    // to Path A and the rephraser fragment is dropped at record time. Gate the
+    // Medium/High items exactly like the prompt section does above, while
+    // keeping Off selectable as the local-safe default.
     final currentRephraseLevel = _settingsService.rephraseLevel;
-    final rephraserItems = RephraseLevel.values
-        .map(
-          (level) => MenuItem(
-            key: 'rephrase_${level.name}',
-            label: level.displayName,
-            checked: currentRephraseLevel == level,
+    final rephraserNeedsCloud = !_settingsService.isCloudRefinementInPipeline;
+
+    final rephraserItems = <MenuItem>[];
+    if (rephraserNeedsCloud) {
+      if (_settingsService.hasCloudCredentials) {
+        rephraserItems.add(
+          MenuItem(
+            key: 'rephrase_switch_cloud',
+            label: 'Use cloud for rephraser',
           ),
-        )
-        .toList();
+        );
+        rephraserItems.add(
+          MenuItem(
+            key: 'rephrase_switch_twopass',
+            label: 'Keep local + cloud refine (two-pass)',
+          ),
+        );
+      } else {
+        rephraserItems.add(
+          MenuItem(
+            key: 'rephrase_setup_cloud',
+            label: 'Set up cloud for rephraser\u2026',
+          ),
+        );
+      }
+      rephraserItems.add(MenuItem.separator());
+    }
+    for (final level in RephraseLevel.values) {
+      final blocked = rephraserNeedsCloud && level != RephraseLevel.off;
+      rephraserItems.add(
+        MenuItem(
+          key: 'rephrase_${level.name}',
+          label: blocked
+              ? '${level.displayName}  (needs cloud)'
+              : level.displayName,
+          checked: currentRephraseLevel == level,
+          disabled: blocked,
+        ),
+      );
+    }
 
     final items = <MenuItem>[
       MenuItem(key: 'settings', label: 'Settings'),
@@ -216,6 +253,20 @@ class TrayService with TrayListener {
         updateContextMenu();
         _onPromptChanged();
       });
+    } else if (menuItem.key == 'rephrase_switch_cloud') {
+      // Switch fully to cloud so the rephraser takes effect.
+      _settingsService.switchToCloudTranscription().then((_) {
+        updateContextMenu();
+      });
+    } else if (menuItem.key == 'rephrase_switch_twopass') {
+      // Keep local Whisper transcription but refine with a cloud pass so
+      // the rephraser takes effect.
+      _settingsService.enableLocalTwoPassRefinement().then((_) {
+        updateContextMenu();
+      });
+    } else if (menuItem.key == 'rephrase_setup_cloud') {
+      // No cloud provider configured — send the user to settings.
+      _onShowSettings();
     } else if (menuItem.key!.startsWith('rephrase_')) {
       final levelName = menuItem.key!.replaceFirst('rephrase_', '');
       final level = RephraseLevel.values.firstWhere(

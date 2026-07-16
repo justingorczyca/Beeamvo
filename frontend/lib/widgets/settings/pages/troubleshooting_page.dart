@@ -260,20 +260,76 @@ class _TroubleshootingPageState extends State<TroubleshootingPage> {
   Future<void> _appendMicrophoneDiagnostics(List<_DiagnosticItem> items) async {
     final recordingService = RecordingService();
     try {
-      final hasPermission = await recordingService.hasPermission();
-      final devices = await recordingService.listInputDevices();
+      final settings = SettingsProviderScope.of(context).settingsService;
+      final savedDeviceId = settings.selectedAudioDeviceId;
+      recordingService.setPreferredDevice(savedDeviceId);
+      final readiness = await recordingService.assessMicReadiness();
+
+      if (!readiness.hasPermission) {
+        items.add(
+          const _DiagnosticItem(
+            label: 'Microphone',
+            detail: 'Microphone permission is not granted',
+            icon: Icons.mic_off_rounded,
+            status: _DiagnosticStatus.error,
+          ),
+        );
+        return;
+      }
+
+      final deviceCount = readiness.devices.length;
+      final deviceSummary = deviceCount == 0
+          ? 'No input devices listed (OS default may still work)'
+          : '$deviceCount input ${deviceCount == 1 ? 'device' : 'devices'} available';
+
       items.add(
         _DiagnosticItem(
           label: 'Microphone',
-          detail: hasPermission
-              ? '${devices.length} input ${devices.length == 1 ? 'device' : 'devices'} available'
-              : 'Microphone permission is not granted',
-          icon: hasPermission ? Icons.mic_none_rounded : Icons.mic_off_rounded,
-          status: hasPermission
-              ? _DiagnosticStatus.good
-              : _DiagnosticStatus.error,
+          detail: deviceSummary,
+          icon: deviceCount == 0
+              ? Icons.warning_amber_rounded
+              : Icons.mic_none_rounded,
+          status: deviceCount == 0
+              ? _DiagnosticStatus.warning
+              : _DiagnosticStatus.good,
         ),
       );
+
+      if (savedDeviceId != null) {
+        final stillPresent = readiness.devices.any((d) => d.id == savedDeviceId);
+        items.add(
+          _DiagnosticItem(
+            label: 'Selected input device',
+            detail: stillPresent
+                ? (readiness.devices
+                          .firstWhere((d) => d.id == savedDeviceId)
+                          .label
+                          .isNotEmpty
+                      ? readiness.devices
+                            .firstWhere((d) => d.id == savedDeviceId)
+                            .label
+                      : savedDeviceId)
+                : readiness.fellBackToDefault
+                ? 'Saved device missing — will use System Default'
+                : 'Saved device id not found among current inputs',
+            icon: stillPresent
+                ? Icons.check_circle_outline_rounded
+                : Icons.warning_amber_rounded,
+            status: stillPresent
+                ? _DiagnosticStatus.good
+                : _DiagnosticStatus.warning,
+          ),
+        );
+      } else {
+        items.add(
+          const _DiagnosticItem(
+            label: 'Selected input device',
+            detail: 'System Default',
+            icon: Icons.check_circle_outline_rounded,
+            status: _DiagnosticStatus.good,
+          ),
+        );
+      }
     } catch (e) {
       items.add(
         _DiagnosticItem(

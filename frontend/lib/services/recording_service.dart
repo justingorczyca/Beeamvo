@@ -23,17 +23,78 @@ class RecordingService {
 
   /// Get the list of available input devices
   Future<List<InputDevice>> listInputDevices() async {
-    return await _recorder.listInputDevices();
+    try {
+      return await _recorder.listInputDevices();
+    } catch (e) {
+      debugPrint('[RecordingService] listInputDevices failed: $e');
+      return const [];
+    }
   }
 
   /// Set the preferred input device (null for default)
   void setPreferredDevice(String? deviceId) {
-    _selectedDeviceId = deviceId;
+    final normalized = (deviceId == null || deviceId.isEmpty) ? null : deviceId;
+    if (_selectedDeviceId != normalized) {
+      debugPrint(
+        '[RecordingService] preferred device → ${normalized ?? "System Default"}',
+      );
+    }
+    _selectedDeviceId = normalized;
   }
+
+  /// Currently preferred device id, or null for system default.
+  String? get preferredDeviceId => _selectedDeviceId;
 
   /// Check if microphone permission is available
   Future<bool> hasPermission() async {
-    return await _recorder.hasPermission();
+    try {
+      return await _recorder.hasPermission();
+    } catch (e) {
+      debugPrint('[RecordingService] hasPermission failed: $e');
+      return false;
+    }
+  }
+
+  /// Snapshot of mic readiness used before starting a session.
+  ///
+  /// Validates that a previously selected device still exists. When the saved
+  /// id is stale (unplugged headset, renamed driver, empty picker), the
+  /// preferred device is cleared so the next start uses the OS default instead
+  /// of failing with an opaque empty capture.
+  Future<MicReadiness> assessMicReadiness() async {
+    final permission = await hasPermission();
+    final devices = await listInputDevices();
+    final preferred = _selectedDeviceId;
+    var resolvedDeviceId = preferred;
+    var fellBackToDefault = false;
+
+    if (preferred != null) {
+      final stillPresent = devices.any((d) => d.id == preferred);
+      if (!stillPresent) {
+        debugPrint(
+          '[RecordingService] preferred device "$preferred" not in '
+          '${devices.length} available input(s); falling back to System Default',
+        );
+        _selectedDeviceId = null;
+        resolvedDeviceId = null;
+        fellBackToDefault = true;
+      }
+    }
+
+    // On some platforms an empty device list still allows the OS default mic.
+    // We only hard-fail when permission is denied; empty list is a warning.
+    return MicReadiness(
+      hasPermission: permission,
+      devices: devices,
+      resolvedDeviceId: resolvedDeviceId,
+      fellBackToDefault: fellBackToDefault,
+    );
+  }
+
+  InputDevice? _deviceForConfig() {
+    final id = _selectedDeviceId;
+    if (id == null || id.isEmpty) return null;
+    return InputDevice(id: id, label: '');
   }
 
   /// Start recording audio
@@ -41,11 +102,13 @@ class RecordingService {
   /// Returns true if recording started successfully.
   Future<bool> startRecording() async {
     if (_isRecording || _isStreamRecording) {
+      debugPrint('[RecordingService] startRecording ignored: already active');
       return false;
     }
 
     // Check permission
     if (!await hasPermission()) {
+      debugPrint('[RecordingService] startRecording blocked: no permission');
       return false;
     }
 
@@ -56,27 +119,60 @@ class RecordingService {
         '${directory.path}/beeamvo_recording_$timestamp.wav';
 
     // Configure recording - WAV format for best Gemini compatibility
-    final config = RecordConfig(
+    final preferredConfig = RecordConfig(
       encoder: AudioEncoder.wav,
       sampleRate: 16000, // 16kHz as recommended for speech
       numChannels: 1, // Mono
-      device: _selectedDeviceId != null
-          ? InputDevice(id: _selectedDeviceId!, label: '')
-          : null,
+      device: _deviceForConfig(),
     );
 
     // Start recording. A throw can leave the native recorder partially
     // started; best-effort stop it so a failed start can never keep the
     // microphone hot, then surface the error to the caller as before.
+    //
+    // If a specific device fails (stale id / driver glitch), retry once with
+    // the system default so an empty/broken selection cannot hard-crash the
+    // session path.
     try {
-      await _recorder.start(config, path: _currentRecordingPath!);
+      await _recorder.start(preferredConfig, path: _currentRecordingPath!);
     } catch (e) {
+      debugPrint(
+        '[RecordingService] start with preferred device failed: $e '
+        '(device=${_selectedDeviceId ?? "default"})',
+      );
       await _bestEffortStopRecorder();
-      _currentRecordingPath = null;
-      rethrow;
+
+      if (_selectedDeviceId != null) {
+        debugPrint(
+          '[RecordingService] retrying start with System Default device',
+        );
+        _selectedDeviceId = null;
+        final fallbackConfig = RecordConfig(
+          encoder: AudioEncoder.wav,
+          sampleRate: 16000,
+          numChannels: 1,
+          device: null,
+        );
+        try {
+          await _recorder.start(fallbackConfig, path: _currentRecordingPath!);
+        } catch (fallbackError) {
+          debugPrint(
+            '[RecordingService] fallback start also failed: $fallbackError',
+          );
+          await _bestEffortStopRecorder();
+          _currentRecordingPath = null;
+          rethrow;
+        }
+      } else {
+        _currentRecordingPath = null;
+        rethrow;
+      }
     }
 
     _isRecording = true;
+    debugPrint(
+      '[RecordingService] file recording started → $_currentRecordingPath',
+    );
     return true;
   }
 
@@ -236,25 +332,28 @@ class RecordingService {
   /// Returns true if started successfully.
   Future<bool> startStreamRecording() async {
     if (_isRecording || _isStreamRecording) {
+      debugPrint(
+        '[RecordingService] startStreamRecording ignored: already active',
+      );
       return false;
     }
 
     // Check permission
     if (!await hasPermission()) {
+      debugPrint(
+        '[RecordingService] startStreamRecording blocked: no permission',
+      );
       return false;
     }
 
-    // Use native PCM16 stream mode to avoid file-system round-trips.
-    final config = RecordConfig(
-      encoder: AudioEncoder.pcm16bits,
-      sampleRate: 16000,
-      numChannels: 1,
-      device: _selectedDeviceId != null
-          ? InputDevice(id: _selectedDeviceId!, label: '')
-          : null,
-    );
+    Future<bool> tryStart({required bool usePreferredDevice}) async {
+      final config = RecordConfig(
+        encoder: AudioEncoder.pcm16bits,
+        sampleRate: 16000,
+        numChannels: 1,
+        device: usePreferredDevice ? _deviceForConfig() : null,
+      );
 
-    try {
       await _stopStreamRecording();
       _isStreamRecording = true;
       _isRecording = true;
@@ -266,6 +365,7 @@ class RecordingService {
       _audioStreamSub = stream.listen(
         _streamBuffer.add,
         onError: (Object error, StackTrace stackTrace) {
+          debugPrint('[RecordingService] stream error: $error');
           _streamError = error;
           _completeStreamDone();
         },
@@ -273,10 +373,18 @@ class RecordingService {
           _completeStreamDone();
         },
       );
+      return true;
+    }
 
+    try {
+      await tryStart(usePreferredDevice: true);
+      debugPrint('[RecordingService] stream recording started');
       return true;
     } catch (e) {
-      debugPrint('[RecordingService] stream start failed: $e');
+      debugPrint(
+        '[RecordingService] stream start failed: $e '
+        '(device=${_selectedDeviceId ?? "default"})',
+      );
       // The native recorder may have started before the stream became usable
       // (e.g. a platform error thrown mid-start). Stop it best-effort so a
       // partial start can never leave the microphone hot, then reset all of
@@ -284,6 +392,28 @@ class RecordingService {
       await _bestEffortStopRecorder();
       await _stopStreamRecording();
       _isRecording = false;
+
+      if (_selectedDeviceId != null) {
+        debugPrint(
+          '[RecordingService] retrying stream start with System Default',
+        );
+        _selectedDeviceId = null;
+        try {
+          await tryStart(usePreferredDevice: false);
+          debugPrint(
+            '[RecordingService] stream recording started via System Default',
+          );
+          return true;
+        } catch (fallbackError) {
+          debugPrint(
+            '[RecordingService] stream fallback start failed: $fallbackError',
+          );
+          await _bestEffortStopRecorder();
+          await _stopStreamRecording();
+          _isRecording = false;
+          return false;
+        }
+      }
       return false;
     }
   }
@@ -308,9 +438,23 @@ class RecordingService {
       final data = _streamBuffer.takeBytes();
       final hadError = _streamError != null;
       await _stopStreamRecording();
-      if (hadError || data.isEmpty) {
+      if (hadError) {
+        debugPrint(
+          '[RecordingService] stream stop discarded buffer after error '
+          '(${data.length} bytes)',
+        );
         return null;
       }
+      if (data.isEmpty) {
+        debugPrint(
+          '[RecordingService] stream stop produced empty PCM '
+          '(no audio frames received — check mic selection/permission)',
+        );
+        return null;
+      }
+      debugPrint(
+        '[RecordingService] stream stop ok: ${data.length} PCM bytes',
+      );
       return data;
     } catch (e) {
       debugPrint('[RecordingService] stream stop failed: $e');
@@ -344,10 +488,27 @@ class RecordingService {
     }
   }
 
-  void _completeStreamDone() {
-    final done = _streamDoneCompleter;
-    if (done != null && !done.isCompleted) {
-      done.complete();
+    void _completeStreamDone() {
+      final done = _streamDoneCompleter;
+      if (done != null && !done.isCompleted) {
+        done.complete();
+      }
     }
   }
-}
+
+  /// Result of [RecordingService.assessMicReadiness].
+  class MicReadiness {
+    const MicReadiness({
+      required this.hasPermission,
+      required this.devices,
+      required this.resolvedDeviceId,
+      required this.fellBackToDefault,
+    });
+
+    final bool hasPermission;
+    final List<InputDevice> devices;
+    final String? resolvedDeviceId;
+    final bool fellBackToDefault;
+
+    bool get hasAnyDeviceListed => devices.isNotEmpty;
+  }
