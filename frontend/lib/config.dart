@@ -166,6 +166,19 @@ class AppConfig {
         GeminiThinkingLevel.high,
       ],
     ),
+    GeminiModelConfig(
+      id: 'gemini-3.5-flash-lite',
+      name: 'Gemini 3.5 Flash Lite',
+      modelName: 'gemini-3.5-flash-lite',
+      vertexLocation: 'global',
+      thinkingLevel: GeminiThinkingLevel.minimal,
+      supportedThinkingLevels: [
+        GeminiThinkingLevel.minimal,
+        GeminiThinkingLevel.low,
+        GeminiThinkingLevel.medium,
+        GeminiThinkingLevel.high,
+      ],
+    ),
   ];
 
   static GeminiModelConfig getModelById(String id) {
@@ -222,7 +235,7 @@ class AppConfig {
     }
   }
 
-  static const String defaultModelId = 'gemini-3.1-flash-lite';
+  static const String defaultModelId = 'gemini-3.5-flash-lite';
   static const String defaultHotkey = 'ctrl+shift+v';
   static const String appName = 'Beeamvo';
   static const String audioFormat = 'wav';

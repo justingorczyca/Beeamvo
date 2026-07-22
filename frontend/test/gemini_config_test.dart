@@ -41,11 +41,11 @@ void main() {
   });
 
   group('AppConfig defaults', () {
-    test('default model is Gemini 3.1 Flash Lite', () {
-      expect(AppConfig.defaultModelId, equals('gemini-3.1-flash-lite'));
+    test('default model is Gemini 3.5 Flash Lite', () {
+      expect(AppConfig.defaultModelId, equals('gemini-3.5-flash-lite'));
 
       final defaultModel = AppConfig.getModelById(AppConfig.defaultModelId);
-      expect(defaultModel.modelName, equals('gemini-3.1-flash-lite'));
+      expect(defaultModel.modelName, equals('gemini-3.5-flash-lite'));
       expect(defaultModel.isPreview, isFalse);
       expect(defaultModel.vertexLocation, equals('global'));
     });
@@ -123,6 +123,19 @@ void main() {
       expect(model.isPreview, isFalse);
       expect(model.displayName, equals('Gemini 3.1 Flash Lite'));
       expect(model.supportedThinkingLevels, contains(GeminiThinkingLevel.high));
+    });
+
+    test('Gemini 3.5 Flash Lite matches the 3.1 Flash Lite settings', () {
+      final model = AppConfig.getModelById('gemini-3.5-flash-lite');
+      final reference = AppConfig.getModelById('gemini-3.1-flash-lite');
+
+      expect(model.modelName, equals('gemini-3.5-flash-lite'));
+      expect(model.isPreview, reference.isPreview);
+      expect(model.displayName, equals('Gemini 3.5 Flash Lite'));
+      expect(model.vertexLocation, reference.vertexLocation);
+      expect(model.thinkingBudget, reference.thinkingBudget);
+      expect(model.thinkingLevel, reference.thinkingLevel);
+      expect(model.supportedThinkingLevels, reference.supportedThinkingLevels);
     });
   });
 }
