@@ -31,7 +31,7 @@ jobs:
         working-directory: frontend
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Cache pub dependencies
         uses: actions/cache@v4
@@ -82,7 +82,7 @@ jobs:
         working-directory: frontend
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       # Linux is an "experimental" platform but ships a complete native runner
       # (frontend/linux/) and a whisper.cpp integration identical to Windows.
