@@ -34,7 +34,7 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Cache pub dependencies
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: ${{ runner.temp }}/.pub-cache
           key: pub-${{ runner.os }}-${{ hashFiles('frontend/pubspec.lock') }}
@@ -100,7 +100,7 @@ jobs:
         run: flutter config --enable-linux-desktop
 
       - name: Cache pub dependencies
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: ${{ runner.temp }}/.pub-cache
           key: pub-${{ runner.os }}-${{ hashFiles('frontend/pubspec.lock') }}
