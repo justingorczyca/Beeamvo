@@ -1,4 +1,11 @@
-# BeamVo — Workflow Visualization & Consolidated Audit
+# Beeamvo — Workflow Visualization & Consolidated Audit
+
+> **Status & history.** This document is an **internal engineering audit** (pre-release). It
+> consolidates the transcription-pipeline correctness audit and the cloud-switch dialog gating
+> audit by re-verifying every cited file:line against the then-current source. It is preserved as
+> design/architecture history; it is **not** end-user documentation. Code line numbers may drift
+> over time — treat the flowcharts and the logic described as the durable part. The product name in
+> the diagrams below uses an older spelling ("BeamVo"); the app is named **Beeamvo**.
 
 This is the **single consolidated deliverable** combining the two prior audits:
 

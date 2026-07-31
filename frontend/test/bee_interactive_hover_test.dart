@@ -20,66 +20,80 @@ void main() {
     (tester) async {
       await tester.pumpWidget(const _HoverToggler(enabled: true));
       await tester.pumpAndSettle();
-      expect(find.text('idle'), findsOneWidget,
-          reason: 'an enabled, un-hovered item starts idle');
+      expect(
+        find.text('idle'),
+        findsOneWidget,
+        reason: 'an enabled, un-hovered item starts idle',
+      );
 
       // Hover the pointer over the item — should go active.
-      final gesture =
-          await tester.createGesture(kind: PointerDeviceKind.mouse);
+      final gesture = await tester.createGesture(kind: PointerDeviceKind.mouse);
       await gesture.addPointer();
       await gesture.moveTo(tester.getCenter(find.byKey(_contentKey)));
       await tester.pumpAndSettle();
-      expect(find.text('active'), findsOneWidget,
-          reason: 'hovering an enabled item should report active');
+      expect(
+        find.text('active'),
+        findsOneWidget,
+        reason: 'hovering an enabled item should report active',
+      );
 
       // Simulate selection: onTap becomes null (the reed turns passive).
       await tester.pumpWidget(const _HoverToggler(enabled: false));
       await tester.pumpAndSettle();
-      expect(find.text('idle'), findsOneWidget,
-          reason: 'a disabled/selected item must pin to idle even while '
-              'the pointer is still hovering it — this is the `active` '
-              'gating contract');
+      expect(
+        find.text('idle'),
+        findsOneWidget,
+        reason:
+            'a disabled/selected item must pin to idle even while '
+            'the pointer is still hovering it — this is the `active` '
+            'gating contract',
+      );
 
       await gesture.removePointer();
     },
   );
 
-  testWidgets(
-    'no stale hover survives disable → pointer-out → re-enable',
-    (tester) async {
-      await tester.pumpWidget(const _HoverToggler(enabled: true));
-      await tester.pumpAndSettle();
+  testWidgets('no stale hover survives disable → pointer-out → re-enable', (
+    tester,
+  ) async {
+    await tester.pumpWidget(const _HoverToggler(enabled: true));
+    await tester.pumpAndSettle();
 
-      final gesture =
-          await tester.createGesture(kind: PointerDeviceKind.mouse);
-      await gesture.addPointer();
-      await gesture.moveTo(tester.getCenter(find.byKey(_contentKey)));
-      await tester.pumpAndSettle();
-      expect(find.text('active'), findsOneWidget,
-          reason: 'hovering an enabled item should report active');
+    final gesture = await tester.createGesture(kind: PointerDeviceKind.mouse);
+    await gesture.addPointer();
+    await gesture.moveTo(tester.getCenter(find.byKey(_contentKey)));
+    await tester.pumpAndSettle();
+    expect(
+      find.text('active'),
+      findsOneWidget,
+      reason: 'hovering an enabled item should report active',
+    );
 
-      // Select (disable) while the pointer is still over it.
-      await tester.pumpWidget(const _HoverToggler(enabled: false));
-      await tester.pumpAndSettle();
+    // Select (disable) while the pointer is still over it.
+    await tester.pumpWidget(const _HoverToggler(enabled: false));
+    await tester.pumpAndSettle();
 
-      // The user now moves the mouse off this item to pick a different
-      // category. With the bug, the MouseRegion was unmounted at "disable",
-      // so this pointer-out never cleared the frozen hover flag.
-      await gesture.moveTo(const Offset(-100, -100));
-      await tester.pumpAndSettle();
+    // The user now moves the mouse off this item to pick a different
+    // category. With the bug, the MouseRegion was unmounted at "disable",
+    // so this pointer-out never cleared the frozen hover flag.
+    await gesture.moveTo(const Offset(-100, -100));
+    await tester.pumpAndSettle();
 
-      // Deselect (re-enable). The pointer is no longer over the item, so it
-      // must read idle immediately — never a stale "highlighted" state.
-      await tester.pumpWidget(const _HoverToggler(enabled: true));
-      await tester.pumpAndSettle();
-      expect(find.text('idle'), findsOneWidget,
-          reason: 'after disable → pointer-out → re-enable the item must not '
-              'retain a stale "hovered" flag; it should read idle straight '
-              'away without needing a hover-off');
+    // Deselect (re-enable). The pointer is no longer over the item, so it
+    // must read idle immediately — never a stale "highlighted" state.
+    await tester.pumpWidget(const _HoverToggler(enabled: true));
+    await tester.pumpAndSettle();
+    expect(
+      find.text('idle'),
+      findsOneWidget,
+      reason:
+          'after disable → pointer-out → re-enable the item must not '
+          'retain a stale "hovered" flag; it should read idle straight '
+          'away without needing a hover-off',
+    );
 
-      await gesture.removePointer();
-    },
-  );
+    await gesture.removePointer();
+  });
 }
 
 const _contentKey = ValueKey('content');

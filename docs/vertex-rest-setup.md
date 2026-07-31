@@ -2,6 +2,8 @@
 
 Use this path if you want Beeamvo to call Vertex AI directly through your own Google Cloud project.
 
+> **Platforms:** Windows and macOS are supported; Linux is experimental. This is the **cloud** path — with **Whisper Local** selected, audio never leaves your machine. Audio is only sent to Vertex AI after you explicitly choose **Cloud** (or enable two-pass refinement), and the app shows a confirmation dialog the first time a cloud model enters an offline-only pipeline.
+
 ## How it works
 
 Beeamvo talks directly to the Vertex AI REST API using your machine's Application Default Credentials. No additional SDKs, config files, or service-account JSON files are required.

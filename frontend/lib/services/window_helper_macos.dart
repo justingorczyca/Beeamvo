@@ -50,7 +50,7 @@ class WindowHelperMacOS {
       if (result != null) {
         return (
           (result['width'] as num).toDouble(),
-          (result['height'] as num).toDouble()
+          (result['height'] as num).toDouble(),
         );
       }
     } catch (e) {
@@ -71,14 +71,20 @@ class WindowHelperMacOS {
   /// Set window size
   static Future<void> setSize(double width, double height) async {
     try {
-      await _channel.invokeMethod('setSize', {'width': width, 'height': height});
+      await _channel.invokeMethod('setSize', {
+        'width': width,
+        'height': height,
+      });
     } catch (e) {
       rethrow;
     }
   }
 
   /// Position and show window at bottom center of active screen
-  static Future<void> positionAtBottomCenter(double width, double height) async {
+  static Future<void> positionAtBottomCenter(
+    double width,
+    double height,
+  ) async {
     try {
       await _channel.invokeMethod('positionAtBottomCenter', {
         'width': width,

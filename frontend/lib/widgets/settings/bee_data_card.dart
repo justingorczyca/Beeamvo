@@ -30,9 +30,7 @@ class BeeDataCard extends StatelessWidget {
       decoration: BoxDecoration(
         color: beeSurfaceHighest(context),
         borderRadius: BorderRadius.circular(kBeeRadiusMd),
-        border: Border.all(
-          color: beeBorder(context).withValues(alpha: 0.5),
-        ),
+        border: Border.all(color: beeBorder(context).withValues(alpha: 0.5)),
       ),
       child: child,
     );

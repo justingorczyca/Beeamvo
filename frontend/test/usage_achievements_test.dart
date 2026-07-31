@@ -59,17 +59,22 @@ void main() {
 
     test('streak dimension measures longestStreak', () {
       final unbroken = _byId('unbroken'); // threshold 30
-      expect(unbroken.progress(_stats(longestStreak: 7)), closeTo(7 / 30, 1e-9));
+      expect(
+        unbroken.progress(_stats(longestStreak: 7)),
+        closeTo(7 / 30, 1e-9),
+      );
       expect(unbroken.isUnlocked(_stats(longestStreak: 30)), isTrue);
     });
 
     test('activeDays dimension uses totalSessionDays', () {
       final consistent = _byId('consistent'); // threshold 30
-      final stats = _stats(daily: {
-        '2025-01-01': 10,
-        '2025-01-02': 5,
-        '2025-01-03': 0, // counts as an active day (key present)
-      });
+      final stats = _stats(
+        daily: {
+          '2025-01-01': 10,
+          '2025-01-02': 5,
+          '2025-01-03': 0, // counts as an active day (key present)
+        },
+      );
       expect(stats.totalSessionDays, 3);
       expect(consistent.progress(stats), closeTo(3 / 30, 1e-9));
       expect(consistent.isUnlocked(stats), isFalse);

@@ -201,11 +201,11 @@ class WhisperModelDownloadService extends ChangeNotifier {
     _totalBytes = downloadModel.sizeBytes;
     _notifyListenersSafely();
 
-    // Default to the certificate-pinning client. huggingface.co ships with an
-    // empty pin allow-list, so this is identical to a plain http.Client() until a
-    // maintainer captures and pins a leaf hash. The injected seam is preserved:
-    // tests/production can still pass their own http.Client via the ctor.
-    _httpClient = _providedHttpClient ?? createPinnedHttpClient();
+    // Standard platform TLS (OS trust store) for the Hugging Face model mirror;
+    // no certificate pinning is active (see pinned_http_client.dart). The
+    // injected seam is preserved: tests/production can still pass their own
+    // http.Client via the ctor.
+    _httpClient = _providedHttpClient ?? createSecureHttpClient();
     _isCancelled = false;
 
     try {

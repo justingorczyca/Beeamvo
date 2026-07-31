@@ -19,8 +19,7 @@ class BeePageHeader extends StatelessWidget {
   const BeePageHeader({super.key, required this.title, this.description});
 
   /// The canonical settings-page content padding (sides 28, top 22, bottom 28).
-  static const EdgeInsets contentPadding =
-      EdgeInsets.fromLTRB(28, 22, 28, 28);
+  static const EdgeInsets contentPadding = EdgeInsets.fromLTRB(28, 22, 28, 28);
 
   /// The canonical inter-group gap between `BeeGroupLabel` sections.
   static const double groupGap = 24;
@@ -60,7 +59,5 @@ class BeePageHeader extends StatelessWidget {
 
 /// Convenience wrapper: a settings page body padded with the canonical
 /// [BeePageHeader.contentPadding] so pages need not redeclare insets.
-Padding beePageBody(Widget child) => Padding(
-      padding: BeePageHeader.contentPadding,
-      child: child,
-    );
+Padding beePageBody(Widget child) =>
+    Padding(padding: BeePageHeader.contentPadding, child: child);

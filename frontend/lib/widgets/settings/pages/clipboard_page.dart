@@ -149,9 +149,9 @@ class _ClipboardPageState extends State<ClipboardPage> {
                       child: SliderTheme(
                         data: SliderTheme.of(context).copyWith(
                           activeTrackColor: beeYellow(context),
-                          inactiveTrackColor: beeYellow(context).withValues(
-                            alpha: 0.15,
-                          ),
+                          inactiveTrackColor: beeYellow(
+                            context,
+                          ).withValues(alpha: 0.15),
                           thumbColor: beeYellow(context),
                           overlayColor: Colors.transparent,
                           trackHeight: 2,
@@ -212,34 +212,34 @@ class _ClipboardPageState extends State<ClipboardPage> {
                       ),
                     ],
                   ),
-                                                  // Unified history panel
-                                                  _buildHistoryPanel(items, settings),
+                  // Unified history panel
+                  _buildHistoryPanel(items, settings),
 
-                                                  const SizedBox(height: 16),
+                  const SizedBox(height: 16),
 
-                                                  // ── FOOTNOTE (moved from Privacy) ──────────────
-                                                  _buildSecretFilteringFootnote(),
-                                                ],
-                                              ),
-                                            ),
-                                          ),
-                                        ),
-                                      ],
-                                    );
-                                  }
+                  // ── FOOTNOTE (moved from Privacy) ──────────────
+                  _buildSecretFilteringFootnote(),
+                ],
+              ),
+            ),
+          ),
+        ),
+      ],
+    );
+  }
 
-                                  /// Plain text footnote — no bordered container.
-                                  Widget _buildSecretFilteringFootnote() {
-                                    return Text(
-                                      'Clipboard history automatically skips common API keys, bearer tokens, private keys, and password-style assignments before saving entries.',
-                                      style: GoogleFonts.inter(
-                                        fontSize: 11,
-                                        color: beeTextMuted(context),
-                                        height: 1.5,
-                                        fontStyle: FontStyle.italic,
-                                      ),
-                                    );
-                                  }
+  /// Plain text footnote — no bordered container.
+  Widget _buildSecretFilteringFootnote() {
+    return Text(
+      'Clipboard history automatically skips common API keys, bearer tokens, private keys, and password-style assignments before saving entries.',
+      style: GoogleFonts.inter(
+        fontSize: 11,
+        color: beeTextMuted(context),
+        height: 1.5,
+        fontStyle: FontStyle.italic,
+      ),
+    );
+  }
 
   Future<void> _pinPrompt(SettingsService settings) async {
     final text = _pinnedCtrl.text.trim();
@@ -347,15 +347,18 @@ class _ClipboardPageState extends State<ClipboardPage> {
             _searchQuery.isEmpty
                 ? '$total saved ${total == 1 ? 'entry' : 'entries'}'
                 : '${items.length} of $total matching',
-                style: GoogleFonts.inter(
-                  fontSize: 10,
-                  color: beeTextMuted(context),
-                  fontWeight: FontWeight.w500,
-                ),
-              ),
+            style: GoogleFonts.inter(
+              fontSize: 10,
+              color: beeTextMuted(context),
+              fontWeight: FontWeight.w500,
             ),
-            // Single 1px hairline divider (was gradient).
-            Container(height: 1, color: beeDivider(context).withValues(alpha: 0.55)),
+          ),
+        ),
+        // Single 1px hairline divider (was gradient).
+        Container(
+          height: 1,
+          color: beeDivider(context).withValues(alpha: 0.55),
+        ),
         // Entries
         if (items.isEmpty)
           BeeEmptyState(
@@ -495,35 +498,35 @@ class _ClipboardPageState extends State<ClipboardPage> {
     );
   }
 
-    void _showSnack(
-      String message, {
-      String? actionLabel,
-      Future<void> Function()? onAction,
-    }) {
-      if (!mounted) return;
-      final messenger = ScaffoldMessenger.of(context);
-      messenger.hideCurrentSnackBar();
-      messenger.showSnackBar(
-        SnackBar(
-          content: Text(message),
-          backgroundColor: beeSurfaceHighest(context),
-          behavior: SnackBarBehavior.floating,
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(kBeeRadiusMd),
-          ),
-          action: actionLabel == null || onAction == null
-              ? null
-              : SnackBarAction(
-                  label: actionLabel,
-                  textColor: beeYellow(context),
-                  onPressed: () {
-                    unawaited(onAction());
-                  },
-                ),
+  void _showSnack(
+    String message, {
+    String? actionLabel,
+    Future<void> Function()? onAction,
+  }) {
+    if (!mounted) return;
+    final messenger = ScaffoldMessenger.of(context);
+    messenger.hideCurrentSnackBar();
+    messenger.showSnackBar(
+      SnackBar(
+        content: Text(message),
+        backgroundColor: beeSurfaceHighest(context),
+        behavior: SnackBarBehavior.floating,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(kBeeRadiusMd),
         ),
-      );
-    }
+        action: actionLabel == null || onAction == null
+            ? null
+            : SnackBarAction(
+                label: actionLabel,
+                textColor: beeYellow(context),
+                onPressed: () {
+                  unawaited(onAction());
+                },
+              ),
+      ),
+    );
   }
+}
 
 class _EntryCard extends StatefulWidget {
   final ClipboardHistoryEntry entry;
@@ -555,7 +558,9 @@ class _EntryCardState extends State<_EntryCard> {
             ? beeText(context).withValues(alpha: 0.04)
             : Colors.transparent,
         border: Border(
-          bottom: BorderSide(color: beeDivider(context).withValues(alpha: 0.45)),
+          bottom: BorderSide(
+            color: beeDivider(context).withValues(alpha: 0.45),
+          ),
         ),
       ),
       child: Row(
@@ -572,8 +577,10 @@ class _EntryCardState extends State<_EntryCard> {
                   child: Focus(
                     child: Shortcuts(
                       shortcuts: const <ShortcutActivator, Intent>{
-                        SingleActivator(LogicalKeyboardKey.enter): ActivateIntent(),
-                        SingleActivator(LogicalKeyboardKey.space): ActivateIntent(),
+                        SingleActivator(LogicalKeyboardKey.enter):
+                            ActivateIntent(),
+                        SingleActivator(LogicalKeyboardKey.space):
+                            ActivateIntent(),
                       },
                       child: Actions(
                         actions: <Type, Action<Intent>>{
@@ -615,14 +622,14 @@ class _EntryCardState extends State<_EntryCard> {
                                   ),
                                 ),
                                 const SizedBox(width: 8),
-                                  Text(
-                                    _ago(entry.updatedAt),
-                                    style: GoogleFonts.inter(
-                                      fontSize: 10,
-                                      color: beeTextMuted(context),
-                                    ),
+                                Text(
+                                  _ago(entry.updatedAt),
+                                  style: GoogleFonts.inter(
+                                    fontSize: 10,
+                                    color: beeTextMuted(context),
                                   ),
-                                ],
+                                ),
+                              ],
                             ),
                           ),
                         ),
@@ -642,7 +649,9 @@ class _EntryCardState extends State<_EntryCard> {
                   icon: entry.isPinned
                       ? Icons.push_pin_rounded
                       : Icons.push_pin_outlined,
-                  color: entry.isPinned ? beeYellow(context) : beeTextMuted(context),
+                  color: entry.isPinned
+                      ? beeYellow(context)
+                      : beeTextMuted(context),
                   tooltip: entry.isPinned ? 'Unpin prompt' : 'Pin prompt',
                   onTap: widget.onTogglePin,
                 ),

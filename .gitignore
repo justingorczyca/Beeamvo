@@ -83,3 +83,13 @@ coverage/
 
 # Downloaded whisper model binaries (ggml-*.bin)
 **/ggml-*.bin
+
+# Accidentally committed scratch / diff / dump artifacts.
+# These were removed during the supply-chain audit
+# (see docs/open-source-supply-chain-audit.md). Gitignored so a stray
+# paste/save at the project root can never be re-tracked by accident.
+_maindiff.txt
+*_maindiff*.txt
+old_main.txt
+frontend/old_main*.txt
+*.diff.txt

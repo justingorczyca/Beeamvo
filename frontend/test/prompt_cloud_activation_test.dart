@@ -127,29 +127,33 @@ void main() {
   });
 
   group('switch-action helpers', () {
-    test('enableLocalTwoPassRefinement keeps whisper and turns two-pass on',
-        () async {
-      final s = _FakeSettings()
-        ..backend = TranscriptionBackend.cloud
-        ..twoPass = false;
+    test(
+      'enableLocalTwoPassRefinement keeps whisper and turns two-pass on',
+      () async {
+        final s = _FakeSettings()
+          ..backend = TranscriptionBackend.cloud
+          ..twoPass = false;
 
-      await s.enableLocalTwoPassRefinement();
+        await s.enableLocalTwoPassRefinement();
 
-      expect(s.backend, TranscriptionBackend.whisper);
-      expect(s.twoPass, isTrue);
-    });
+        expect(s.backend, TranscriptionBackend.whisper);
+        expect(s.twoPass, isTrue);
+      },
+    );
 
-    test('switchToCloudTranscription selects cloud and turns two-pass off',
-        () async {
-      final s = _FakeSettings()
-        ..backend = TranscriptionBackend.whisper
-        ..twoPass = true;
+    test(
+      'switchToCloudTranscription selects cloud and turns two-pass off',
+      () async {
+        final s = _FakeSettings()
+          ..backend = TranscriptionBackend.whisper
+          ..twoPass = true;
 
-      await s.switchToCloudTranscription();
+        await s.switchToCloudTranscription();
 
-      expect(s.backend, TranscriptionBackend.cloud);
-      expect(s.twoPass, isFalse);
-    });
+        expect(s.backend, TranscriptionBackend.cloud);
+        expect(s.twoPass, isFalse);
+      },
+    );
   });
 
   group('hasCloudCredentials', () {

@@ -60,7 +60,9 @@ class KeyboardService {
 
     // Fast synchronous pre-check before the channel round-trip.
     if (!KeyboardServiceMacOS.checkAccessibility()) {
-      _debugLog('KeyboardService: Accessibility permission MISSING — skipping paste.');
+      _debugLog(
+        'KeyboardService: Accessibility permission MISSING — skipping paste.',
+      );
       _debugLog(
         'Text is on the clipboard — manual Cmd+V available, or enable Accessibility.',
       );
@@ -158,9 +160,9 @@ class KeyboardService {
     return true;
   }
 
-      /// Open macOS System Settings to Accessibility
-      Future<void> openAccessibilitySettings() async {
-        if (!Platform.isMacOS) return;
-        await MacOsPermissionService.openSettings();
-      }
-    }
+  /// Open macOS System Settings to Accessibility
+  Future<void> openAccessibilitySettings() async {
+    if (!Platform.isMacOS) return;
+    await MacOsPermissionService.openSettings();
+  }
+}

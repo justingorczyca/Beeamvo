@@ -4,7 +4,9 @@ import 'package:flutter/widgets.dart';
 import 'package:screen_retriever/screen_retriever.dart';
 import 'package:window_manager/window_manager.dart';
 
-import 'window_helper_stub.dart' if (dart.library.ffi) 'window_helper_windows.dart' as win32_impl;
+import 'window_helper_stub.dart'
+    if (dart.library.ffi) 'window_helper_windows.dart'
+    as win32_impl;
 
 /// macOS method channel for native window control
 const _macOSChannel = MethodChannel('beeamvo/window');
@@ -115,9 +117,15 @@ class WindowHelper {
   }
 
   /// Position window at bottom center of the active monitor
-  static Future<void> positionAtActiveMonitorBottomCenter(int windowWidth, int windowHeight) async {
+  static Future<void> positionAtActiveMonitorBottomCenter(
+    int windowWidth,
+    int windowHeight,
+  ) async {
     if (Platform.isWindows) {
-      win32_impl.positionAtActiveMonitorBottomCenterWindows(windowWidth, windowHeight);
+      win32_impl.positionAtActiveMonitorBottomCenterWindows(
+        windowWidth,
+        windowHeight,
+      );
     } else if (Platform.isMacOS) {
       try {
         // Use native method for proper positioning
@@ -126,8 +134,12 @@ class WindowHelper {
           'height': windowHeight.toDouble(),
         });
       } catch (e) {
-        debugPrint('WindowHelper.positionAtActiveMonitorBottomCenter macOS fallback: $e');
-        await windowManager.setSize(Size(windowWidth.toDouble(), windowHeight.toDouble()));
+        debugPrint(
+          'WindowHelper.positionAtActiveMonitorBottomCenter macOS fallback: $e',
+        );
+        await windowManager.setSize(
+          Size(windowWidth.toDouble(), windowHeight.toDouble()),
+        );
         const screenHeight = 900.0;
         const screenWidth = 1440.0;
         final xPos = (screenWidth / 2) - (windowWidth / 2);
@@ -138,7 +150,9 @@ class WindowHelper {
       }
     } else {
       try {
-        await windowManager.setSize(Size(windowWidth.toDouble(), windowHeight.toDouble()));
+        await windowManager.setSize(
+          Size(windowWidth.toDouble(), windowHeight.toDouble()),
+        );
         // Use screen_retriever for actual display dimensions
         final cursorPos = await screenRetriever.getCursorScreenPoint();
         final displays = await screenRetriever.getAllDisplays();
@@ -165,7 +179,9 @@ class WindowHelper {
         await windowManager.setAlwaysOnTop(true);
         await windowManager.show();
       } catch (e) {
-        debugPrint('WindowHelper.positionAtActiveMonitorBottomCenter error: $e');
+        debugPrint(
+          'WindowHelper.positionAtActiveMonitorBottomCenter error: $e',
+        );
       }
     }
   }

@@ -9,8 +9,8 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/justingorczyca/Beeamvo/releases"><img src="https://img.shields.io/badge/Platform-Windows%20%7C%20macOS-blue" alt="Platform"></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/License-MIT-green.svg" alt="License"></a>
+  <img src="https://img.shields.io/badge/Platform-Windows%20%7C%20macOS-blue" alt="Platform: Windows / macOS (Linux experimental)">
   <img src="https://img.shields.io/badge/Flutter-3.44+-02569B?logo=flutter&logoColor=white" alt="Flutter">
   <img src="https://img.shields.io/badge/whisper.cpp-v1.8.4-FF6F00" alt="whisper.cpp v1.8.4">
 </p>
@@ -27,14 +27,23 @@ Press a global hotkey anywhere, speak, and your words are typed at the cursor �
 
 ## Quick Start
 
+### Supported platforms
+
+| Platform | Status | Runtime note |
+|----------|--------|--------------|
+| **Windows 10/11** | Supported | — |
+| **macOS 13.0 (Ventura) or later** | Supported | App Sandbox is **intentionally off** (see [Platform & build notes](#platform--build-notes)); signed/notarized binaries are a separate, not-yet-built release step. |
+| **Linux** | Experimental | A complete native runner exists and is built in CI, but it has not yet shipped to end users. Treat it as community-supported until it stabilizes. |
+
 ### Prerequisites
 
 | Platform | Requirements |
 |----------|--------------|
 | **Windows** | Flutter 3.44+ (stable), Visual Studio 2022 with the *Desktop development with C++* workload |
-| **macOS** | Flutter 3.44+ (stable), Xcode 15+, CocoaPods |
+| **macOS** | Flutter 3.44+ (stable), Xcode 15+, CocoaPods. Builds target macOS 13.0 (Ventura). |
+| **Linux** (experimental) | Flutter 3.44+ (stable) with Linux desktop enabled (`flutter config --enable-linux-desktop`), plus `clang`, `cmake`, `ninja-build`, `pkg-config`, `libgtk-3-dev`, `liblzma-dev`, `libstdc++-12-dev` |
 
-> **whisper.cpp build model.** On **macOS**, the app links a **bundled local copy** under `frontend/macos/Runner/whisper.cpp/` (no network needed to build). On **Windows and Linux**, the native runner downloads the whisper.cpp source from GitHub via CMake `FetchContent` at **build time**, pinned to upstream commit `9386f239401074690479731c1e41683fbbeac557` (**v1.8.4**) — so the first build for those platforms requires an internet connection. The pin lives in `frontend/windows/runner/CMakeLists.txt` and `frontend/linux/runner/CMakeLists.txt`.
+> **whisper.cpp build model.** On **macOS**, the app links a **bundled local copy** under `frontend/macos/Runner/whisper.cpp/` (no network needed to build). On **Windows and Linux**, the native runner downloads the whisper.cpp source from GitHub via CMake `FetchContent` at **build time**, pinned to upstream commit `9386f239401074690479731c1e41683fbbeac557` (**v1.8.4**) — so the first build for those platforms requires an internet connection. The pin lives in `frontend/windows/runner/CMakeLists.txt` and `frontend/linux/runner/CMakeLists.txt`. All three platforms end up building the **same whisper.cpp v1.8.4**.
 
 ### Build and run from source
 
@@ -42,15 +51,19 @@ Press a global hotkey anywhere, speak, and your words are typed at the cursor �
 git clone https://github.com/justingorczyca/Beeamvo.git
 cd Beeamvo/frontend
 flutter pub get
-flutter run -d windows    # or: flutter run -d macos
+flutter run -d windows    # or: flutter run -d macos | flutter run -d linux
 ```
+
+> The CI gate (`flutter pub get --enforce-lockfile`) resolves exactly the versions pinned in `frontend/pubspec.lock`, so it requires no network beyond `pub get` (and the whisper.cpp build fetch on Windows/Linux).
 
 ### Release build
 
 ```bash
 cd frontend
-flutter build windows --release    # or: flutter build macos --release
+flutter build windows --release    # or: flutter build macos --release | flutter build linux --release
 ```
+
+`flutter build` produces a raw executable/bundle per platform, **not** an installer. There is no `.dmg`/MSIX/installer or signed, notarized binary release yet — see [docs/open-source-release-checklist.md](docs/open-source-release-checklist.md).
 
 ## Transcription Engines
 
@@ -68,7 +81,7 @@ Available models: Tiny, Tiny English, Tiny Q5 (~32 MB), Base, Small. Models are 
 
 ### Gemini API key (cloud)
 
-The fastest cloud setup — no Google Cloud project needed.
+The fastest cloud setup — no Google Cloud project needed. Audio is sent to Google's Gemini API for transcription (and optional AI refinement); a confirmation dialog appears the first time you switch an offline-only prompt to a cloud pipeline.
 
 1. Create an API key in [Google AI Studio](https://aistudio.google.com/apikey)
 2. Settings → Intelligence → **Cloud Provider** → Gemini API Key
@@ -121,10 +134,13 @@ All hotkeys are configurable in **Settings → General**.
 ## Privacy & Security
 
 - **Offline by default** — with Whisper Local, audio never leaves your machine.
-- **API keys live in OS secure storage**, entered through the UI. They are sent to Google only via request headers, never logged or written to plaintext files.
+- **Cloud is opt-in** — Gemini API and Vertex AI only run when you choose Cloud (or enable two-pass refinement). The first time a cloud model enters the pipeline you get a confirmation dialog, so audio is never sent silently.
+- **API keys live in OS secure storage**, entered through the UI. They are sent to Google only via request headers, never logged or written to plaintext files. (Vertex AI uses Application Default Credentials — no stored secret.)
+- **Cloud connections use standard TLS** — Gemini API, Vertex AI, model downloads, and update checks go over HTTPS and are validated by your operating system's certificate trust store. Certificate pinning is **not** used; keep your OS and trusted root certificates up to date.
+- **Local storage** — settings, model files, usage statistics, and clipboard history live in your OS application-data directory under your user account. Clipboard history is stored as **plaintext**; enable a best-effort sensitive-text filter in Settings, and avoid enabling history for sensitive work.
 - **Development-only `.env`**: contributors can copy `frontend/.env.example` to `frontend/.env` to set `GEMINI_API_KEY` / `VERTEX_PROJECT_ID` during development. Release builds ignore dotenv files entirely, and `.env` is gitignored.
 
-If you find a security issue, please report it privately to the maintainer rather than opening a public issue, and never include API keys, transcripts, or logs in bug reports.
+For vulnerability reporting, see [SECURITY.md](SECURITY.md). See also [docs/security-privacy-audit.md](docs/security-privacy-audit.md) for the full security & privacy review.
 
 ## Development
 
@@ -135,7 +151,7 @@ flutter analyze          # static analysis
 flutter test             # unit & widget tests
 ```
 
-Before publishing source or binary releases, follow [docs/open-source-release-checklist.md](docs/open-source-release-checklist.md).
+The same steps (plus a per-platform `flutter build`) run in CI — see [`.github/workflows/ci.yml`](.github/workflows/ci.yml). See [CONTRIBUTING.md](CONTRIBUTING.md) for the contribution workflow, and [docs/open-source-release-checklist.md](docs/open-source-release-checklist.md) before publishing source or binary releases.
 
 ### Project structure
 
@@ -152,12 +168,36 @@ Before publishing source or binary releases, follow [docs/open-source-release-ch
 │   ├── linux/runner/         # Linux native layer (experimental); builds whisper.cpp from pinned upstream v1.8.4
 │   ├── assets/               # Icons & images
 │   └── test/                 # Tests
-└── docs/                     # Setup guides & release checklist
+└── docs/                     # Setup guides, audits & release checklist
 ```
+
+## Platform & build notes
+
+- **macOS — App Sandbox is intentionally off.** Beeamvo relies on Accessibility + cross-application keyboard event injection for auto-paste and on the legacy login-item API for launch-at-startup, both of which the sandbox restricts. Enabling it would require a product redesign. Source builds you run yourself inherit your own machine's trust boundary.
+- **macOS — signing/notarization is for distributed binaries only.** The committed macOS code-signing tooling (`frontend/macos/setup_codesign.sh`, `frontend/macos/CODESIGN_README.md`, `frontend/scripts/build_signed_macos.sh`) creates a **local self-signed certificate** and is **development-only, not for distribution**. A public `.app`/`.dmg` still needs Hardened Runtime, a Developer ID, and notarization — none of which exist yet.
+- **Linux is experimental.** It is built in CI but has not been distributed. If the CI Linux build turns out to be flaky on hosted runners, the honest fallback is "provided experimentally, community-maintained."
+- **No mobile or web targets.** This is a desktop-only app (no Android/iOS/web build config).
+
+## Troubleshooting
+
+- **macOS: auto-paste stops working after a rebuild** — ad-hoc signed builds get a new signature each time, so the Accessibility permission goes stale. Rebuild with a stable self-signed identity (see [frontend/macos/CODESIGN_README.md](frontend/macos/CODESIGN_README.md)) or use **Settings → Troubleshooting → Auto-repair**, which resets only Beeamvo's TCC entry.
+- **Cloud says "no API key" or "no project ID"** — set the Gemini key or Vertex project ID in **Settings → Intelligence**. See [docs/gemini-api-setup.md](docs/gemini-api-setup.md) / [docs/vertex-rest-setup.md](docs/vertex-rest-setup.md).
+- **First Windows/Linux build needs the internet** — whisper.cpp is fetched from the pinned upstream commit at build time (see the note above).
+- **A non-default prompt "has no effect"** — on the offline Whisper backend with two-pass refinement off, only verbatim transcription runs. Switch to Cloud or enable two-pass refinement to apply prompts and the Rephraser. The app surfaces this in the mode popup and Settings.
+- More help is available in **Settings → Troubleshooting**.
+
+## Known limitations
+
+- No installer/artifact packaging, SBOM, or signed, notarized binary release yet (source-only at present).
+- First-time transcription has a short warm-up while the Whisper model loads.
+- Inline audio requests for cloud providers have a size cap; very long recordings should use a shorter duration limit.
+- Cloud transcription is not cancelled mid-request; pressing escape finishes any in-flight network call.
 
 ## License
 
 MIT — see [LICENSE](LICENSE). Third-party notices are collected in [docs/THIRD_PARTY_NOTICES.md](docs/THIRD_PARTY_NOTICES.md). Version history lives in [CHANGELOG.md](CHANGELOG.md).
+
+> **What the MIT license covers.** The MIT license applies to Beeamvo's own source code and to the bundled/vendored **whisper.cpp** source (also MIT). The **Whisper model weights** that Beeamvo downloads at runtime are derived from OpenAI's Whisper models and are **also MIT-licensed** — [verify the current terms on the model card](https://huggingface.co/ggerganov/whisper.cpp). Typefaces loaded at runtime via `google_fonts` are **not** covered by this license — each font has its own terms on [Google Fonts](https://fonts.google.com/).
 
 ## Acknowledgments
 

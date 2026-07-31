@@ -165,9 +165,7 @@ class _FrostedOrbState extends State<FrostedOrb> with TickerProviderStateMixin {
         // Theme-aware frosted chrome. In light mode this is warm-white;
         // in dark mode the surface-highest graphite (`#2D2D2D`) so the
         // orb reads as a raised disk against any OS desktop background.
-        color: orbSurface.withValues(
-          alpha: Platform.isMacOS ? 0.92 : 0.82,
-        ),
+        color: orbSurface.withValues(alpha: Platform.isMacOS ? 0.92 : 0.82),
         border: Border.all(
           color: orbBorder.withValues(alpha: 0.80),
           width: 0.5,

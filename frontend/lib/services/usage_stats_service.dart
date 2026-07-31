@@ -34,7 +34,8 @@ class UsageStatsService extends ChangeNotifier {
     // Crash-safe load: try the live file, then `.bak`, then the leftover
     // `.tmp`, before resetting — the read-side counterpart to the atomic
     // write in `_save()` below.
-    final map = await _readJsonMap(_file) ??
+    final map =
+        await _readJsonMap(_file) ??
         await _readJsonMap(File('${_file.path}.bak')) ??
         await _readJsonMap(File('${_file.path}.tmp'));
     if (map != null) {
@@ -62,8 +63,9 @@ class UsageStatsService extends ChangeNotifier {
 
   Future<void> _save() async {
     try {
-      final encoded =
-          const JsonEncoder.withIndent('  ').convert(_stats.toMap());
+      final encoded = const JsonEncoder.withIndent(
+        '  ',
+      ).convert(_stats.toMap());
       await _writeAtomic(_file, encoded);
     } catch (e) {
       debugPrint('[UsageStatsService] save error: $e');
@@ -104,16 +106,18 @@ class UsageStatsService extends ChangeNotifier {
 
     // Recalculate streak
     final newStreak = _calculateStreak(todayKey: today, daily: newDaily);
-    final newLongest =
-        newStreak > _stats.longestStreak ? newStreak : _stats.longestStreak;
+    final newLongest = newStreak > _stats.longestStreak
+        ? newStreak
+        : _stats.longestStreak;
 
     _stats = _stats.copyWith(
       totalWords: _stats.totalWords + wordCount,
       totalRecordings: _stats.totalRecordings + 1,
       totalRecordingDurationSeconds:
           _stats.totalRecordingDurationSeconds + seconds,
-      longestRecordingSeconds:
-          seconds > _stats.longestRecordingSeconds ? seconds : _stats.longestRecordingSeconds,
+      longestRecordingSeconds: seconds > _stats.longestRecordingSeconds
+          ? seconds
+          : _stats.longestRecordingSeconds,
       currentStreak: newStreak,
       longestStreak: newLongest,
       lastRecordingDate: today,

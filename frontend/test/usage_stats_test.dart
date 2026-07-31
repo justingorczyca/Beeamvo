@@ -23,9 +23,10 @@ void main() {
       final stats = UsageStats.fromMap({
         'dailyWordCount': {'2025-01-01': 10},
       });
-      final copy = stats.copyWith(totalWords: 5, dailyWordCount: {
-        '2025-01-01': 10,
-      });
+      final copy = stats.copyWith(
+        totalWords: 5,
+        dailyWordCount: {'2025-01-01': 10},
+      );
 
       // Mutating the source's map view must be rejected…
       expect(

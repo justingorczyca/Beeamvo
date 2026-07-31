@@ -953,10 +953,31 @@ class SettingsService extends ChangeNotifier {
     await _setBool(_kDurationLimitEnabled, value);
   }
 
-  int get durationLimit => _getInt(_kDurationLimit, defaultValue: 300);
+  /// Smallest auto-stop duration the duration-limit dialog accepts.
+  static const int minDurationLimitSeconds = 5;
+
+  /// Largest auto-stop duration the duration-limit dialog accepts.
+  static const int maxDurationLimitSeconds = 3600;
+
+  /// Clamps a recording auto-stop value to `[5, 3600]` — the same range the
+  /// duration-limit dialog (`general_settings_page.dart`) already enforces.
+  ///
+  /// Mirrors the defensive clamp already applied to
+  /// [clipboardHistoryMaxItems]. Guarding at this getter/setter means a
+  /// corrupt, hand-edited, or pre-clamp persisted value can never arm a
+  /// `Duration(seconds: 0)` timer (which would stop a recording the instant it
+  /// started once auto-stop is enabled) or allow an absurd multi-day cap.
+  static int clampDurationLimit(int seconds) {
+    if (seconds < minDurationLimitSeconds) return minDurationLimitSeconds;
+    if (seconds > maxDurationLimitSeconds) return maxDurationLimitSeconds;
+    return seconds;
+  }
+
+  int get durationLimit =>
+      clampDurationLimit(_getInt(_kDurationLimit, defaultValue: 300));
 
   Future<void> setDurationLimit(int seconds) async {
-    await _setInt(_kDurationLimit, seconds);
+    await _setInt(_kDurationLimit, clampDurationLimit(seconds));
   }
 
   // ── Theme Mode ────────────────────────────────────────────────────────────

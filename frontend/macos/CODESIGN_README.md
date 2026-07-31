@@ -62,6 +62,13 @@ To check which certificate is being used:
 codesign -dv build/macos/Build/Products/Release/Beeamvo.app
 ```
 
-With persistent signing, you should see `Authority=com.beeamvo.codesign`.
+With persistent signing, you should see `Authority=com.beamvo.codesign` (the
+common name the `setup_codesign.sh` script writes — note the shortened `beamvo`
+spelling). With ad-hoc signing, you'll see no Authority (just a hash).
 
-With ad-hoc signing, you'll see no Authority (just a hash).
+> **Scope.** This self-signed certificate is a **local development convenience**
+> — it keeps the macOS Accessibility permission stable across rebuilds. It is
+> **not** for distribution. A public `.app`/`.dmg` requires App Store/Direct
+> Developer ID signing with Hardened Runtime enabled and notarization performed —
+> separate steps that do not use this flow (see
+> [`docs/open-source-release-checklist.md`](../../docs/open-source-release-checklist.md)).

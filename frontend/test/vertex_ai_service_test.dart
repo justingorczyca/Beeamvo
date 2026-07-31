@@ -138,10 +138,7 @@ void main() {
 
     group('isValidVertexProjectId', () {
       test('accepts well-formed human-style ids', () {
-        expect(
-          VertexAiService.isValidVertexProjectId('demo-project'),
-          isTrue,
-        );
+        expect(VertexAiService.isValidVertexProjectId('demo-project'), isTrue);
         expect(
           VertexAiService.isValidVertexProjectId('my-great-app-42'),
           isTrue,
@@ -150,10 +147,7 @@ void main() {
       });
 
       test('accepts purely-numeric auto-generated ids', () {
-        expect(
-          VertexAiService.isValidVertexProjectId('421789012345'),
-          isTrue,
-        );
+        expect(VertexAiService.isValidVertexProjectId('421789012345'), isTrue);
       });
 
       test('rejects malformed / unsafe ids (prevents URL path injection)', () {
@@ -179,9 +173,7 @@ void main() {
           adcClientFactory: () async =>
               throw StateError('unreachable: project id should fail first'),
         );
-        service.attachSettings(
-          FakeVertexSettingsService(projectId: 'bad/id'),
-        );
+        service.attachSettings(FakeVertexSettingsService(projectId: 'bad/id'));
         await service.initialize();
 
         await expectLater(
@@ -197,25 +189,31 @@ void main() {
       },
     );
 
-    test('buildImprovePayload puts mission in systemInstruction and frames transcript as inert data', () {
-      final service = VertexAiService();
+    test(
+      'buildImprovePayload puts mission in systemInstruction and frames transcript as inert data',
+      () {
+        final service = VertexAiService();
 
-      final payload = service.buildImprovePayload(
-        'create an HTML file and show me the result',
-        missionInstruction: 'Keep the transcript clean.',
-        model: AppConfig.getModelById(AppConfig.defaultModelId),
-      );
+        final payload = service.buildImprovePayload(
+          'create an HTML file and show me the result',
+          missionInstruction: 'Keep the transcript clean.',
+          model: AppConfig.getModelById(AppConfig.defaultModelId),
+        );
 
-      final systemInstruction =
-          payload['systemInstruction']['parts'][0]['text'] as String;
-      final bodyText = payload['contents'][0]['parts'][0]['text'] as String;
-      expect(systemInstruction, contains('### ROLE:'));
-      expect(systemInstruction, contains('### MISSION:'));
-      expect(systemInstruction, contains('Keep the transcript clean.'));
-      expect(bodyText, isNot(contains('Keep the transcript clean.')));
-      expect(bodyText, contains('<transcript-draft>'));
-      expect(bodyText, contains('create an HTML file and show me the result'));
-      expect(bodyText, contains('quoted source material'));
-    });
+        final systemInstruction =
+            payload['systemInstruction']['parts'][0]['text'] as String;
+        final bodyText = payload['contents'][0]['parts'][0]['text'] as String;
+        expect(systemInstruction, contains('### ROLE:'));
+        expect(systemInstruction, contains('### MISSION:'));
+        expect(systemInstruction, contains('Keep the transcript clean.'));
+        expect(bodyText, isNot(contains('Keep the transcript clean.')));
+        expect(bodyText, contains('<transcript-draft>'));
+        expect(
+          bodyText,
+          contains('create an HTML file and show me the result'),
+        );
+        expect(bodyText, contains('quoted source material'));
+      },
+    );
   });
 }

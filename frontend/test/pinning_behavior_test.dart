@@ -1,6 +1,10 @@
 import 'package:beeamvo/services/pinned_http_client.dart';
 import 'package:flutter_test/flutter_test.dart';
 
+// These tests exercise the PURE pin-decision helpers in pinned_http_client.dart
+// only. Beeamvo does NOT perform certificate pinning — these helpers are
+// un-wired scaffolding retained for a future maintainer, and the shipped client
+// uses standard platform TLS. No socket or TLS trust is involved here.
 void main() {
   // A fake PEM wrapper around the bytes for "hello". These tests use only the
   // pure pin-decision functions; they never open a socket or alter TLS trust.

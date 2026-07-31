@@ -1370,45 +1370,45 @@ class _BeeamvoHomeState extends State<BeeamvoHome>
           scope: HotKeyScope.system,
           onPressed: _stopRecordingAndProcess,
         );
-        } else {
-          _activeRecordingBackend = null;
-          _recordingStopwatch
-            ..stop()
-            ..reset();
-          setState(() {
-            _lastErrorMessage =
-                'Could not start the microphone. Check the input device in '
-                'Settings → General → Audio Input Device.';
-            _state = RecordingState.error;
-          });
-          _hideAfterDelay(3);
-        }
-      } catch (e) {
-        debugPrint('Recording start failed: $e');
-        // A platform start may have succeeded before this exception (e.g. the
-        // recorder is running but the subsequent cancel/commit hotkey
-        // registration threw). Best-effort abort/stop it so a failed start can
-        // never strand a hot microphone, and tear down the session-scoped
-        // hotkeys/timers/backend pin captured so far. _abortStartedRecorder is
-        // non-throwing, so it never masks the original error or leaves the mic on.
-        await _abortStartedRecorder();
+      } else {
+        _activeRecordingBackend = null;
         _recordingStopwatch
           ..stop()
           ..reset();
-        _holdTimer?.cancel();
-        _holdTimer = null;
-        _isHotkeyHeld = false;
+        setState(() {
+          _lastErrorMessage =
+              'Could not start the microphone. Check the input device in '
+              'Settings → General → Audio Input Device.';
+          _state = RecordingState.error;
+        });
+        _hideAfterDelay(3);
+      }
+    } catch (e) {
+      debugPrint('Recording start failed: $e');
+      // A platform start may have succeeded before this exception (e.g. the
+      // recorder is running but the subsequent cancel/commit hotkey
+      // registration threw). Best-effort abort/stop it so a failed start can
+      // never strand a hot microphone, and tear down the session-scoped
+      // hotkeys/timers/backend pin captured so far. _abortStartedRecorder is
+      // non-throwing, so it never masks the original error or leaves the mic on.
+      await _abortStartedRecorder();
+      _recordingStopwatch
+        ..stop()
+        ..reset();
+      _holdTimer?.cancel();
+      _holdTimer = null;
+      _isHotkeyHeld = false;
 
-        if (sessionToken == _sessionToken) {
-          // We still own this session: surface a recoverable error state.
-          setState(() {
-            _lastErrorMessage =
-                'Microphone failed to start. Try System Default in '
-                'Settings → General → Audio Input Device.';
-            _state = RecordingState.error;
-          });
-          _hideAfterDelay(3);
-        }
+      if (sessionToken == _sessionToken) {
+        // We still own this session: surface a recoverable error state.
+        setState(() {
+          _lastErrorMessage =
+              'Microphone failed to start. Try System Default in '
+              'Settings → General → Audio Input Device.';
+          _state = RecordingState.error;
+        });
+        _hideAfterDelay(3);
+      }
       // If a superseding transition (e.g. Settings opened) won the race while
       // we were starting, leave the winning transition's UI state intact — it
       // already set the correct state and we must not overwrite it with error.

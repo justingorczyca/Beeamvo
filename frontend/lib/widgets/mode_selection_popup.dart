@@ -35,7 +35,9 @@ class _ModeSelectionPopupState extends State<ModeSelectionPopup> {
   void initState() {
     super.initState();
     _lastKnownIndex = widget.selectedIndex;
-    WidgetsBinding.instance.addPostFrameCallback((_) => _ensureSelectedVisible());
+    WidgetsBinding.instance.addPostFrameCallback(
+      (_) => _ensureSelectedVisible(),
+    );
   }
 
   @override
@@ -43,7 +45,9 @@ class _ModeSelectionPopupState extends State<ModeSelectionPopup> {
     super.didUpdateWidget(oldWidget);
     if (widget.selectedIndex != _lastKnownIndex) {
       _lastKnownIndex = widget.selectedIndex;
-      WidgetsBinding.instance.addPostFrameCallback((_) => _ensureSelectedVisible());
+      WidgetsBinding.instance.addPostFrameCallback(
+        (_) => _ensureSelectedVisible(),
+      );
     }
   }
 
@@ -223,52 +227,58 @@ class _PromptTileState extends State<_PromptTile>
         child: Opacity(
           opacity: isBlocked ? 0.5 : 1.0,
           child: Row(
-          children: [
-            AnimatedContainer(
-              duration: const Duration(milliseconds: 150),
-              width: 14,
-              height: 14,
-              decoration: BoxDecoration(
-                shape: BoxShape.circle,
-                color: widget.isSelected ? beeYellow(context) : Colors.transparent,
-                border: Border.all(
-                  color: widget.isSelected ? beeYellow(context) : beeBorder(context),
-                  width: 1.5,
+            children: [
+              AnimatedContainer(
+                duration: const Duration(milliseconds: 150),
+                width: 14,
+                height: 14,
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  color: widget.isSelected
+                      ? beeYellow(context)
+                      : Colors.transparent,
+                  border: Border.all(
+                    color: widget.isSelected
+                        ? beeYellow(context)
+                        : beeBorder(context),
+                    width: 1.5,
+                  ),
                 ),
-              ),
-              child: widget.isSelected
-                  ? Center(
-                      child: Container(
-                        width: 5,
-                        height: 5,
-                        decoration: BoxDecoration(
-                          shape: BoxShape.circle,
+                child: widget.isSelected
+                    ? Center(
+                        child: Container(
+                          width: 5,
+                          height: 5,
+                          decoration: BoxDecoration(
+                            shape: BoxShape.circle,
                             color: beeBlack(context),
                           ),
-                      ),
-                    )
-                  : null,
-            ),
-            const SizedBox(width: 10),
-            Expanded(
-              child: Text(
-                widget.prompt.name,
-                style: GoogleFonts.inter(
-                  fontSize: 13,
-                  fontWeight: widget.isSelected
-                      ? FontWeight.w600
-                      : FontWeight.w500,
-                  color: widget.isSelected ? beeText(context) : beeTextSub(context),
+                        ),
+                      )
+                    : null,
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Text(
+                  widget.prompt.name,
+                  style: GoogleFonts.inter(
+                    fontSize: 13,
+                    fontWeight: widget.isSelected
+                        ? FontWeight.w600
+                        : FontWeight.w500,
+                    color: widget.isSelected
+                        ? beeText(context)
+                        : beeTextSub(context),
+                  ),
                 ),
               ),
-            ),
-            if (widget.isDefault)
-              Container(
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 6,
-                  vertical: 2,
-                ),
-                    decoration: BoxDecoration(
+              if (widget.isDefault)
+                Container(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 6,
+                    vertical: 2,
+                  ),
+                  decoration: BoxDecoration(
                     color: beeYellow(context).withValues(alpha: 0.12),
                     borderRadius: BorderRadius.circular(kBeeRadiusXs),
                   ),
@@ -278,40 +288,44 @@ class _PromptTileState extends State<_PromptTile>
                       fontSize: 8,
                       fontWeight: FontWeight.w800,
                       color: beeYellow(context),
-                    letterSpacing: 0.5,
+                      letterSpacing: 0.5,
+                    ),
                   ),
                 ),
-              ),
-            if (hasOverrides) ...[
-              if (widget.isDefault) const SizedBox(width: 4),
-              Container(
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 5,
-                  vertical: 2,
-                ),
-                decoration: BoxDecoration(
-                  color: beeSuccess(context).withValues(alpha: 0.12),
-                  borderRadius: BorderRadius.circular(kBeeRadiusXs),
-                ),
-                child: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Icon(Icons.tune_rounded, size: 10, color: beeSuccess(context)),
-                    const SizedBox(width: 2),
-                    Text(
-                      '${overrides.overrideCount}',
-                      style: GoogleFonts.inter(
-                        fontSize: 8,
-                        fontWeight: FontWeight.w700,
+              if (hasOverrides) ...[
+                if (widget.isDefault) const SizedBox(width: 4),
+                Container(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 5,
+                    vertical: 2,
+                  ),
+                  decoration: BoxDecoration(
+                    color: beeSuccess(context).withValues(alpha: 0.12),
+                    borderRadius: BorderRadius.circular(kBeeRadiusXs),
+                  ),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(
+                        Icons.tune_rounded,
+                        size: 10,
                         color: beeSuccess(context),
                       ),
-                    ),
-                  ],
+                      const SizedBox(width: 2),
+                      Text(
+                        '${overrides.overrideCount}',
+                        style: GoogleFonts.inter(
+                          fontSize: 8,
+                          fontWeight: FontWeight.w700,
+                          color: beeSuccess(context),
+                        ),
+                      ),
+                    ],
+                  ),
                 ),
-              ),
+              ],
             ],
-          ],
-        ),
+          ),
         ),
       ),
     );

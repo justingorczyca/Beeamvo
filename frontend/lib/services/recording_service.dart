@@ -452,9 +452,7 @@ class RecordingService {
         );
         return null;
       }
-      debugPrint(
-        '[RecordingService] stream stop ok: ${data.length} PCM bytes',
-      );
+      debugPrint('[RecordingService] stream stop ok: ${data.length} PCM bytes');
       return data;
     } catch (e) {
       debugPrint('[RecordingService] stream stop failed: $e');
@@ -488,27 +486,27 @@ class RecordingService {
     }
   }
 
-    void _completeStreamDone() {
-      final done = _streamDoneCompleter;
-      if (done != null && !done.isCompleted) {
-        done.complete();
-      }
+  void _completeStreamDone() {
+    final done = _streamDoneCompleter;
+    if (done != null && !done.isCompleted) {
+      done.complete();
     }
   }
+}
 
-  /// Result of [RecordingService.assessMicReadiness].
-  class MicReadiness {
-    const MicReadiness({
-      required this.hasPermission,
-      required this.devices,
-      required this.resolvedDeviceId,
-      required this.fellBackToDefault,
-    });
+/// Result of [RecordingService.assessMicReadiness].
+class MicReadiness {
+  const MicReadiness({
+    required this.hasPermission,
+    required this.devices,
+    required this.resolvedDeviceId,
+    required this.fellBackToDefault,
+  });
 
-    final bool hasPermission;
-    final List<InputDevice> devices;
-    final String? resolvedDeviceId;
-    final bool fellBackToDefault;
+  final bool hasPermission;
+  final List<InputDevice> devices;
+  final String? resolvedDeviceId;
+  final bool fellBackToDefault;
 
-    bool get hasAnyDeviceListed => devices.isNotEmpty;
-  }
+  bool get hasAnyDeviceListed => devices.isNotEmpty;
+}

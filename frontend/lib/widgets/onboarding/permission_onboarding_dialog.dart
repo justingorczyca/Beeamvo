@@ -163,9 +163,7 @@ class _PermissionOnboardingDialogState extends State<PermissionOnboardingDialog>
               alignment: Alignment.center,
               children: [
                 Icon(
-                  success
-                      ? Icons.check_rounded
-                      : Icons.content_paste_rounded,
+                  success ? Icons.check_rounded : Icons.content_paste_rounded,
                   size: 32,
                   color: accent,
                 ),
@@ -177,11 +175,7 @@ class _PermissionOnboardingDialogState extends State<PermissionOnboardingDialog>
                         curve: Curves.elasticOut,
                       ),
                     ),
-                    child: Icon(
-                      Icons.check_rounded,
-                      size: 32,
-                      color: accent,
-                    ),
+                    child: Icon(Icons.check_rounded, size: 32, color: accent),
                   ),
               ],
             ),
@@ -427,8 +421,11 @@ class _GrantedBody extends StatelessWidget {
           ),
           child: Row(
             children: [
-              Icon(Icons.check_circle_rounded,
-                  size: 18, color: beeSuccess(context)),
+              Icon(
+                Icons.check_circle_rounded,
+                size: 18,
+                color: beeSuccess(context),
+              ),
               const SizedBox(width: 10),
               Expanded(
                 child: Text(
@@ -461,7 +458,11 @@ class _StepTile extends StatelessWidget {
   final String text;
   final bool isLast;
 
-  const _StepTile({required this.number, required this.text, this.isLast = false});
+  const _StepTile({
+    required this.number,
+    required this.text,
+    this.isLast = false,
+  });
 
   @override
   Widget build(BuildContext context) {

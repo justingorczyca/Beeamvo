@@ -822,11 +822,7 @@ class _BeeChoiceIcon extends StatelessWidget {
         borderRadius: BorderRadius.circular(kBeeRadiusSm),
         border: Border.all(color: beeDivider(context)),
       ),
-      child: Icon(
-        icon,
-        size: 14,
-        color: beeTextSub(context),
-      ),
+      child: Icon(icon, size: 14, color: beeTextSub(context)),
     );
   }
 }

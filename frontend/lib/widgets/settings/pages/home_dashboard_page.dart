@@ -73,7 +73,8 @@ class _HomeDashboardPageState extends State<HomeDashboardPage> {
       child: BeeEmptyState(
         icon: Icons.mic_none_outlined,
         title: 'No recordings yet',
-        subtitle: 'Press your hotkey and start speaking.\n'
+        subtitle:
+            'Press your hotkey and start speaking.\n'
             'Your stats will appear here automatically.',
         size: BeeEmptySize.prominent,
       ),
@@ -120,11 +121,7 @@ class _HomeDashboardPageState extends State<HomeDashboardPage> {
         // Time saved subtitle
         Row(
           children: [
-            Icon(
-              Icons.bolt_rounded,
-              size: 13,
-              color: beeYellow(context),
-            ),
+            Icon(Icons.bolt_rounded, size: 13, color: beeYellow(context)),
             const SizedBox(width: 4),
             Text(
               _formatTimeSaved(stats.totalTypingTimeSavedMinutes),
@@ -250,7 +247,9 @@ class _HomeDashboardPageState extends State<HomeDashboardPage> {
   String _streakDescription(UsageStats stats) {
     if (stats.currentStreak == 0) return 'Record today to start your streak';
     if (stats.currentStreak == 1) return 'Keep going — record again tomorrow';
-    if (stats.currentStreak < 7) return 'Your best is ${stats.longestStreak} days';
+    if (stats.currentStreak < 7) {
+      return 'Your best is ${stats.longestStreak} days';
+    }
     return 'Personal best: ${stats.longestStreak} days';
   }
 
@@ -258,9 +257,9 @@ class _HomeDashboardPageState extends State<HomeDashboardPage> {
     if (n >= 1000000) return '${(n / 1000000).toStringAsFixed(1)}M';
     if (n >= 10000) return '${(n / 1000).toStringAsFixed(1)}k';
     return n.toString().replaceAllMapped(
-          RegExp(r'\B(?=(\d{3})+(?!\d))'),
-          (m) => ',',
-        );
+      RegExp(r'\B(?=(\d{3})+(?!\d))'),
+      (m) => ',',
+    );
   }
 
   String _formatTimeSaved(double minutes) {
@@ -285,10 +284,7 @@ class _HomeDashboardPageState extends State<HomeDashboardPage> {
   /// The single highest daily word count across the whole history.
   int _bestDayWords(UsageStats stats) {
     if (stats.dailyWordCount.isEmpty) return 0;
-    return stats.dailyWordCount.values.fold<int>(
-      0,
-      (a, b) => a > b ? a : b,
-    );
+    return stats.dailyWordCount.values.fold<int>(0, (a, b) => a > b ? a : b);
   }
 
   /// Human-readable label for the best day (prettiest day so far).
@@ -306,8 +302,18 @@ class _HomeDashboardPageState extends State<HomeDashboardPage> {
     try {
       final d = DateTime.parse(bestKey!);
       const months = [
-        'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
-        'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec',
+        'Jan',
+        'Feb',
+        'Mar',
+        'Apr',
+        'May',
+        'Jun',
+        'Jul',
+        'Aug',
+        'Sep',
+        'Oct',
+        'Nov',
+        'Dec',
       ];
       return '${months[d.month - 1]} ${d.day}, ${d.year}';
     } catch (_) {
@@ -344,11 +350,7 @@ class _StatBadge extends StatelessWidget {
         mainAxisSize: MainAxisSize.min,
         children: [
           if (isActive) ...[
-            Icon(
-              Icons.local_fire_department_rounded,
-              size: 12,
-              color: accent,
-            ),
+            Icon(Icons.local_fire_department_rounded, size: 12, color: accent),
             const SizedBox(width: 3),
           ],
           Text(

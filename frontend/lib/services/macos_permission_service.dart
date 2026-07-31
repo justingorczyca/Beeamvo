@@ -55,48 +55,49 @@ class MacOsPermissionService {
     }
   }
 
-    /// Synthesize a Cmd+V keystroke via native CGEvent.
-    ///
-    /// Requires Accessibility permission (NOT Automation). Returns true if the
-    /// keystroke was posted. If Accessibility is missing this returns false and
-    /// the caller should fall back to the clipboard (manual paste).
-    static Future<bool> pasteCmdV() async {
-      if (!Platform.isMacOS) return false;
-      try {
-        final result = await _channel.invokeMethod<bool>('pasteWithCmdV');
-        return result ?? false;
-      } catch (e) {
-        debugPrint('MacOsPermissionService.pasteCmdV error: $e');
-        return false;
-      }
-    }
-
-    /// Reset ONLY this app's Accessibility entry in the TCC privacy database.
-    ///
-    /// Clears a stale "stuck" toggle (e.g. leftover from a prior ad-hoc build
-    /// whose CDHash no longer matches) so a fresh native prompt can fire. Scoped
-    /// to our bundle id — other apps are untouched. Pair with [request] to
-    /// re-surface the system prompt immediately afterwards.
-    static Future<bool> resetEntry() async {
-      if (!Platform.isMacOS) return true;
-      try {
-        final result =
-            await _channel.invokeMethod<bool>('resetAccessibilityEntry');
-        return result ?? false;
-      } catch (e) {
-        debugPrint('MacOsPermissionService.resetEntry error: $e');
-        return false;
-      }
-    }
-
-    /// Convenience: clear the stale entry and immediately re-fire the native
-    /// prompt. Returns true if Accessibility is granted afterwards.
-    static Future<bool> autoRepair() async {
-      if (!Platform.isMacOS) return true;
-      await resetEntry();
-      // Brief pause so the TCC database settles before re-prompting.
-      await Future<void>.delayed(const Duration(milliseconds: 400));
-      final granted = await request();
-      return granted;
+  /// Synthesize a Cmd+V keystroke via native CGEvent.
+  ///
+  /// Requires Accessibility permission (NOT Automation). Returns true if the
+  /// keystroke was posted. If Accessibility is missing this returns false and
+  /// the caller should fall back to the clipboard (manual paste).
+  static Future<bool> pasteCmdV() async {
+    if (!Platform.isMacOS) return false;
+    try {
+      final result = await _channel.invokeMethod<bool>('pasteWithCmdV');
+      return result ?? false;
+    } catch (e) {
+      debugPrint('MacOsPermissionService.pasteCmdV error: $e');
+      return false;
     }
   }
+
+  /// Reset ONLY this app's Accessibility entry in the TCC privacy database.
+  ///
+  /// Clears a stale "stuck" toggle (e.g. leftover from a prior ad-hoc build
+  /// whose CDHash no longer matches) so a fresh native prompt can fire. Scoped
+  /// to our bundle id — other apps are untouched. Pair with [request] to
+  /// re-surface the system prompt immediately afterwards.
+  static Future<bool> resetEntry() async {
+    if (!Platform.isMacOS) return true;
+    try {
+      final result = await _channel.invokeMethod<bool>(
+        'resetAccessibilityEntry',
+      );
+      return result ?? false;
+    } catch (e) {
+      debugPrint('MacOsPermissionService.resetEntry error: $e');
+      return false;
+    }
+  }
+
+  /// Convenience: clear the stale entry and immediately re-fire the native
+  /// prompt. Returns true if Accessibility is granted afterwards.
+  static Future<bool> autoRepair() async {
+    if (!Platform.isMacOS) return true;
+    await resetEntry();
+    // Brief pause so the TCC database settles before re-prompting.
+    await Future<void>.delayed(const Duration(milliseconds: 400));
+    final granted = await request();
+    return granted;
+  }
+}

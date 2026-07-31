@@ -87,10 +87,10 @@ class UpdateCheckService {
   /// lets background callers retry a failed network request instead of treating
   /// it as a successful up-to-date result for the next 24 hours.
   Future<UpdateCheckResult> checkWithStatus({bool force = false}) async {
-    // api.github.com has no configured pins in the shipped configuration, so
-    // this currently uses normal OS certificate trust. The client is scoped to
-    // a single request and always closed below.
-    final client = createPinnedHttpClient();
+    // Standard platform TLS (OS trust store); no certificate pinning is active
+    // (see pinned_http_client.dart). The client is scoped to a single request
+    // and always closed below.
+    final client = createSecureHttpClient();
     try {
       final installed = (await PackageInfo.fromPlatform()).version;
       final res = await client

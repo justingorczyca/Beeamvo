@@ -48,10 +48,16 @@ class OnboardingStepShell extends StatelessWidget {
             decoration: BoxDecoration(
               color: beeYellow(context).withValues(alpha: 0.10),
               borderRadius: BorderRadius.circular(_kRadiusMd),
-              border: Border.all(color: beeYellow(context).withValues(alpha: 0.22)),
+              border: Border.all(
+                color: beeYellow(context).withValues(alpha: 0.22),
+              ),
             ),
             child: Center(
-              child: Icon(icon, size: iconSize * 0.72, color: beeYellow(context)),
+              child: Icon(
+                icon,
+                size: iconSize * 0.72,
+                color: beeYellow(context),
+              ),
             ),
           ),
           const SizedBox(height: 10),
@@ -170,9 +176,7 @@ class _OnboardingPrimaryButtonState extends State<OnboardingPrimaryButton> {
       child: Container(
         padding: const EdgeInsets.symmetric(horizontal: 28, vertical: 12),
         decoration: BoxDecoration(
-          gradient: LinearGradient(
-            colors: [accent, beeYellowDim(context)],
-          ),
+          gradient: LinearGradient(colors: [accent, beeYellowDim(context)]),
           borderRadius: BorderRadius.circular(_kRadiusMd),
           boxShadow: [
             BoxShadow(
@@ -214,7 +218,7 @@ class _OnboardingPrimaryButtonState extends State<OnboardingPrimaryButton> {
   }
 }
 
-      // ─── Secondary Button ───────────────────────────────────────────────────
+// ─── Secondary Button ───────────────────────────────────────────────────
 
 class OnboardingSecondaryButton extends StatefulWidget {
   final String label;

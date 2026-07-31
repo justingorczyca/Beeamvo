@@ -206,7 +206,9 @@ class _PromptsPageState extends State<PromptsPage> {
                 description: _rephraseLevel.description,
                 showDivider: false,
                 warningBadge: blocked
-                    ? _LocalOnlyBadge(hasCloudCredentials: s.hasCloudCredentials)
+                    ? _LocalOnlyBadge(
+                        hasCloudCredentials: s.hasCloudCredentials,
+                      )
                     : null,
                 // Dim the control when the rephraser can't take
                 // effect (local-only), while keeping it tappable so a
@@ -794,12 +796,12 @@ class _PromptsPageState extends State<PromptsPage> {
                     },
                     decoration: beeInputDecoration(context, label: 'Name')
                         .copyWith(
-                      errorText: nameError,
-                      errorStyle: GoogleFonts.inter(
-                        color: beeError(context),
-                        fontSize: 11,
-                      ),
-                    ),
+                          errorText: nameError,
+                          errorStyle: GoogleFonts.inter(
+                            color: beeError(context),
+                            fontSize: 11,
+                          ),
+                        ),
                   ),
                   const SizedBox(height: 16),
                   TextField(
@@ -819,17 +821,18 @@ class _PromptsPageState extends State<PromptsPage> {
                         }
                       });
                     },
-                    decoration: beeInputDecoration(
-                      context,
-                      label: 'Instruction',
-                    ).copyWith(
-                      errorText: instrError,
-                      errorStyle: GoogleFonts.inter(
-                        color: beeError(context),
-                        fontSize: 11,
-                      ),
-                      alignLabelWithHint: true,
-                    ),
+                    decoration:
+                        beeInputDecoration(
+                          context,
+                          label: 'Instruction',
+                        ).copyWith(
+                          errorText: instrError,
+                          errorStyle: GoogleFonts.inter(
+                            color: beeError(context),
+                            fontSize: 11,
+                          ),
+                          alignLabelWithHint: true,
+                        ),
                   ),
                   const SizedBox(height: 6),
                   Align(
@@ -1037,11 +1040,11 @@ class _LocalOnlyBadgeState extends State<_LocalOnlyBadge> {
     final tooltipMessage = label == 'Rephraser'
         ? 'Rephraser has no effect on offline-only Whisper. Tap to learn more.'
         : 'This ${label.toLowerCase()} has no effect on offline-only '
-            'Whisper. Tap to learn more.';
+              'Whisper. Tap to learn more.';
     final semanticLabel = label == 'Rephraser'
         ? 'Rephraser unavailable on local-only Whisper'
         : '${label[0].toUpperCase()}${label.substring(1).toLowerCase()} '
-            'unavailable on local-only Whisper';
+              'unavailable on local-only Whisper';
     return CompositedTransformTarget(
       link: _layerLink,
       child: Tooltip(
@@ -1180,10 +1183,10 @@ class _LocalOnlyPopoverState extends State<_LocalOnlyPopover>
     // not-ready guidance copy below is shared (it is generic enough).
     final bodyText = widget.featureLabel == 'Rephraser'
         ? 'You\u2019re on offline transcription only. The rephraser rewrites '
-            'your transcript with a cloud AI model, so it has no effect in '
-            'this mode.'
+              'your transcript with a cloud AI model, so it has no effect in '
+              'this mode.'
         : 'You\u2019re on offline transcription only. This prompt is applied '
-            'by a cloud AI model, so it has no effect in this mode.';
+              'by a cloud AI model, so it has no effect in this mode.';
 
     return Material(
       type: MaterialType.transparency,

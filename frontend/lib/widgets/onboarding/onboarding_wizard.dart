@@ -100,7 +100,7 @@ class _OnboardingWizardState extends State<OnboardingWizard>
   Widget build(BuildContext context) {
     final isCloud =
         widget.settingsService.transcriptionBackend ==
-            TranscriptionBackend.cloud;
+        TranscriptionBackend.cloud;
 
     return Material(
       color: Colors.transparent,
@@ -110,9 +110,7 @@ class _OnboardingWizardState extends State<OnboardingWizard>
         decoration: BoxDecoration(
           color: beeSurfaceHighest(context),
           borderRadius: BorderRadius.circular(AppTheme.radiusXl),
-          border: Border.all(
-            color: beeBorder(context).withValues(alpha: 0.7),
-          ),
+          border: Border.all(color: beeBorder(context).withValues(alpha: 0.7)),
           boxShadow: AppTheme.windowShadow,
         ),
         clipBehavior: Clip.antiAlias,
@@ -169,8 +167,7 @@ class _OnboardingWizardState extends State<OnboardingWizard>
                     ],
                   ),
                 ),
-              if (_currentStep == 0)
-                const SizedBox(height: 16),
+              if (_currentStep == 0) const SizedBox(height: 16),
               if (_currentStep == _kTotalSteps - 1)
                 Padding(
                   padding: const EdgeInsets.fromLTRB(48, 0, 48, 20),
@@ -221,10 +218,7 @@ class _OnboardingWizardState extends State<OnboardingWizard>
           ),
           const Spacer(),
           if (_currentStep > 0 && _currentStep < _kTotalSteps - 1)
-            OnboardingSecondaryButton(
-              label: 'Skip All',
-              onTap: _finish,
-            ),
+            OnboardingSecondaryButton(label: 'Skip All', onTap: _finish),
           const SizedBox(width: 8),
         ],
       ),

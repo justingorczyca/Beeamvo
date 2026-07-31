@@ -117,9 +117,9 @@ String achievementProgressCaption(Achievement a, UsageStats stats) {
   String fmt(double v) {
     final n = v.round();
     return n.toString().replaceAllMapped(
-          RegExp(r'\B(?=(\d{3})+(?!\d))'),
-          (m) => ',',
-        );
+      RegExp(r'\B(?=(\d{3})+(?!\d))'),
+      (m) => ',',
+    );
   }
 
   final shown = value > a.threshold ? a.threshold : value;

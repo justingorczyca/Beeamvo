@@ -12,11 +12,10 @@ import 'settings_service.dart';
 import 'transcription_result_guard.dart';
 
 class GeminiApiService implements CloudTranscriptionClient {
-  // The default client currently uses normal OS certificate trust. The pin
-  // configuration ships empty and enforcement remains disabled; the injected
-  // client seam is retained for tests.
+  // Standard platform TLS (OS trust store). No certificate pinning is active;
+  // see pinned_http_client.dart. The injected client seam is retained for tests.
   GeminiApiService({http.Client? httpClient})
-    : _httpClient = httpClient ?? createPinnedHttpClient();
+    : _httpClient = httpClient ?? createSecureHttpClient();
 
   static const int maxInlineRequestBytes = 20 * 1024 * 1024;
   static const String _apiVersion = 'v1beta';

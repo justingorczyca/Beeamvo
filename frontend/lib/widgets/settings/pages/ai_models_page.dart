@@ -174,7 +174,7 @@ class _AiModelsPageState extends State<AiModelsPage> {
     final settings = SettingsProviderScope.of(context).settingsService;
     await settings.setTranscriptionBackend(backend);
     // The SettingsService.notifyListeners() call from
-    // setTranscriptionBackend now propagates to _BeamVoHomeState's
+    // setTranscriptionBackend now propagates to _BeeamvoHomeState's
     // listener, which calls _onBackendChanged (Whisper init/teardown).
     // No need to fire widget.onBackendChanged manually here — it
     // would just double-trigger the handler.

@@ -81,11 +81,11 @@ class UsageStats {
       longestStreak: (map['longestStreak'] as num?)?.toInt() ?? 0,
       lastRecordingDate: map['lastRecordingDate'] as String?,
       firstRecordingDate: map['firstRecordingDate'] as String?,
-          // Unmodifiable so an instance's per-day counts can't be mutated through
-          // one reference while another `copyWith`/`toMap` shares it.
-          dailyWordCount: Map<String, int>.unmodifiable(daily),
-        );
-      }
+      // Unmodifiable so an instance's per-day counts can't be mutated through
+      // one reference while another `copyWith`/`toMap` shares it.
+      dailyWordCount: Map<String, int>.unmodifiable(daily),
+    );
+  }
 
   /// Create a copy with optional field overrides.
   UsageStats copyWith({
@@ -110,9 +110,9 @@ class UsageStats {
       longestStreak: longestStreak ?? this.longestStreak,
       lastRecordingDate: lastRecordingDate ?? this.lastRecordingDate,
       firstRecordingDate: firstRecordingDate ?? this.firstRecordingDate,
-          dailyWordCount: dailyWordCount != null
-              ? Map<String, int>.unmodifiable(dailyWordCount)
-              : this.dailyWordCount,
-        );
-      }
+      dailyWordCount: dailyWordCount != null
+          ? Map<String, int>.unmodifiable(dailyWordCount)
+          : this.dailyWordCount,
+    );
+  }
 }

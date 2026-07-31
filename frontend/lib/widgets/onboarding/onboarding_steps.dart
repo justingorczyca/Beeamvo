@@ -68,7 +68,9 @@ class _WelcomeStepState extends State<WelcomeStep>
                 ),
                 boxShadow: [
                   BoxShadow(
-                    color: beeYellow(context).withValues(alpha: 0.15 + 0.10 * t),
+                    color: beeYellow(
+                      context,
+                    ).withValues(alpha: 0.15 + 0.10 * t),
                     blurRadius: 40,
                     spreadRadius: 4,
                   ),
@@ -87,7 +89,9 @@ class _WelcomeStepState extends State<WelcomeStep>
                     ),
                     boxShadow: [
                       BoxShadow(
-                        color: beeYellow(context).withValues(alpha: 0.4 + 0.2 * t),
+                        color: beeYellow(
+                          context,
+                        ).withValues(alpha: 0.4 + 0.2 * t),
                         blurRadius: 16,
                       ),
                     ],
@@ -481,7 +485,8 @@ class _ApiKeyStepState extends State<ApiKeyStep> {
   @override
   Widget build(BuildContext context) {
     final isGemini = _provider == CloudProvider.geminiApiKey;
-    final showPrefixWarning = isGemini &&
+    final showPrefixWarning =
+        isGemini &&
         _apiKeyController.text.trim().isNotEmpty &&
         !_hasValidPrefix;
 
@@ -532,7 +537,8 @@ class _ApiKeyStepState extends State<ApiKeyStep> {
           if (showPrefixWarning) ...[
             const SizedBox(height: 8),
             OnboardingStatusBadge(
-              label: 'Gemini API keys start with "AIza" — double-check your key',
+              label:
+                  'Gemini API keys start with "AIza" — double-check your key',
               isError: false,
               isSuccess: false,
             ),
@@ -765,8 +771,9 @@ class _ModelStepState extends State<ModelStep> {
                                         vertical: 2,
                                       ),
                                       decoration: BoxDecoration(
-                                        color: beeSurfaceHighest(context)
-                                            .withValues(alpha: 0.6),
+                                        color: beeSurfaceHighest(
+                                          context,
+                                        ).withValues(alpha: 0.6),
                                         borderRadius: BorderRadius.circular(
                                           AppTheme.radiusXs,
                                         ),
@@ -905,8 +912,9 @@ class _ModelStepState extends State<ModelStep> {
                                         vertical: 2,
                                       ),
                                       decoration: BoxDecoration(
-                                        color: beeSurfaceHighest(context)
-                                            .withValues(alpha: 0.6),
+                                        color: beeSurfaceHighest(
+                                          context,
+                                        ).withValues(alpha: 0.6),
                                         borderRadius: BorderRadius.circular(
                                           AppTheme.radiusXs,
                                         ),
@@ -936,8 +944,9 @@ class _ModelStepState extends State<ModelStep> {
                                     borderRadius: BorderRadius.circular(3),
                                     child: LinearProgressIndicator(
                                       value: _downloadProgress,
-                                      backgroundColor:
-                                          beeSurfaceHighest(context),
+                                      backgroundColor: beeSurfaceHighest(
+                                        context,
+                                      ),
                                       valueColor: AlwaysStoppedAnimation(
                                         beeYellow(context),
                                       ),
@@ -969,16 +978,20 @@ class _ModelStepState extends State<ModelStep> {
                                 ),
                                 decoration: BoxDecoration(
                                   color: _downloadingModelId == null
-                                      ? beeYellow(context).withValues(alpha: 0.12)
-                                      : beeSurfaceHighest(context).withValues(
-                                          alpha: 0.3,
-                                        ),
+                                      ? beeYellow(
+                                          context,
+                                        ).withValues(alpha: 0.12)
+                                      : beeSurfaceHighest(
+                                          context,
+                                        ).withValues(alpha: 0.3),
                                   borderRadius: BorderRadius.circular(
                                     AppTheme.radiusSm,
                                   ),
                                   border: Border.all(
                                     color: _downloadingModelId == null
-                                        ? beeYellow(context).withValues(alpha: 0.65)
+                                        ? beeYellow(
+                                            context,
+                                          ).withValues(alpha: 0.65)
                                         : beeBorder(context),
                                   ),
                                 ),
@@ -1164,9 +1177,13 @@ class _TranscriptionModeStepState extends State<TranscriptionModeStep> {
                       height: 16,
                       decoration: BoxDecoration(
                         shape: BoxShape.circle,
-                        color: isSelected ? beeYellow(context) : Colors.transparent,
+                        color: isSelected
+                            ? beeYellow(context)
+                            : Colors.transparent,
                         border: Border.all(
-                          color: isSelected ? beeYellow(context) : beeBorder(context),
+                          color: isSelected
+                              ? beeYellow(context)
+                              : beeBorder(context),
                           width: 1.5,
                         ),
                       ),
@@ -1343,7 +1360,9 @@ class _TwoPassRephraseStepState extends State<TwoPassRephraseStep> {
                         : beeSurfaceHighest(context),
                     borderRadius: BorderRadius.circular(11),
                     border: Border.all(
-                      color: _twoPassEnabled ? beeYellow(context) : beeBorder(context),
+                      color: _twoPassEnabled
+                          ? beeYellow(context)
+                          : beeBorder(context),
                     ),
                   ),
                   child: AnimatedAlign(
@@ -1376,7 +1395,9 @@ class _TwoPassRephraseStepState extends State<TwoPassRephraseStep> {
             decoration: BoxDecoration(
               color: beeSurfaceRaised(context),
               borderRadius: BorderRadius.circular(AppTheme.radiusLg),
-              border: Border.all(color: beeBorder(context).withValues(alpha: 0.6)),
+              border: Border.all(
+                color: beeBorder(context).withValues(alpha: 0.6),
+              ),
             ),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
@@ -1578,9 +1599,9 @@ class _RecordingModeStepState extends State<RecordingModeStep> {
                           vertical: 3,
                         ),
                         decoration: BoxDecoration(
-                          color: beeSurfaceHighest(context).withValues(
-                            alpha: 0.5,
-                          ),
+                          color: beeSurfaceHighest(
+                            context,
+                          ).withValues(alpha: 0.5),
                           borderRadius: BorderRadius.circular(
                             AppTheme.radiusXs,
                           ),
@@ -1644,9 +1665,9 @@ class _RecordingModeStepState extends State<RecordingModeStep> {
                           vertical: 3,
                         ),
                         decoration: BoxDecoration(
-                          color: beeSurfaceHighest(context).withValues(
-                            alpha: 0.5,
-                          ),
+                          color: beeSurfaceHighest(
+                            context,
+                          ).withValues(alpha: 0.5),
                           borderRadius: BorderRadius.circular(
                             AppTheme.radiusXs,
                           ),
@@ -1831,7 +1852,9 @@ class _HotkeyStepState extends State<HotkeyStep>
                           : beeSurfaceRaised(context),
                       borderRadius: BorderRadius.circular(_kRadiusMd),
                       border: Border.all(
-                        color: _isRecording ? beeYellow(context) : beeBorder(context),
+                        color: _isRecording
+                            ? beeYellow(context)
+                            : beeBorder(context),
                         width: 1.5,
                       ),
                       boxShadow: _isRecording
@@ -1972,7 +1995,8 @@ class _ReadyStepState extends State<ReadyStep>
     if (isWhisper) {
       isReady = WhisperService.listDownloadedModels().isNotEmpty;
     } else {
-      isReady = s.hasGeminiApiKey ||
+      isReady =
+          s.hasGeminiApiKey ||
           (s.cloudProvider == CloudProvider.vertexAi &&
               s.vertexProjectId != null);
     }
@@ -2024,9 +2048,7 @@ class _ReadyStepState extends State<ReadyStep>
                   ],
                 ),
                 child: Icon(
-                  isReady
-                      ? Icons.check_rounded
-                      : Icons.warning_amber_rounded,
+                  isReady ? Icons.check_rounded : Icons.warning_amber_rounded,
                   color: Colors.white,
                   size: 28,
                 ),

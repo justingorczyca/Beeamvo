@@ -96,8 +96,10 @@ class PromptSettings {
       whisperModelId: _asString(map, 'whisperModelId'),
       whisperLanguage: _asString(map, 'whisperLanguage'),
       twoPassTranscriptionEnabled: _asBool(map, 'twoPassTranscriptionEnabled'),
-      twoPassTranscriptionModelId:
-          _asString(map, 'twoPassTranscriptionModelId'),
+      twoPassTranscriptionModelId: _asString(
+        map,
+        'twoPassTranscriptionModelId',
+      ),
       twoPassRefinementModelId: _asString(map, 'twoPassRefinementModelId'),
       rephraseLevel: _rephraseLevelFromString(_asString(map, 'rephraseLevel')),
       thinkingLevel: GeminiThinkingLevelExtension.fromString(

@@ -8,6 +8,7 @@ import 'package:package_info_plus/package_info_plus.dart';
 import '../../../providers/settings_provider.dart';
 import '../../../services/keyboard_service.dart';
 import '../../../services/macos_permission_service.dart';
+import '../../../services/macos_tcc_reset.dart';
 import '../../../services/recording_service.dart';
 import '../../../services/settings_service.dart';
 import '../../../services/whisper_service.dart';
@@ -89,24 +90,40 @@ class _TroubleshootingPageState extends State<TroubleshootingPage> {
 
     setState(() => _isResetting = true);
     try {
-      await Process.run('tccutil', ['reset', 'Accessibility']);
-      await Process.run('tccutil', ['reset', 'AppleEvents']);
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(
-              'Permissions reset. Restart Beeamvo to grant access again.',
-            ),
-            backgroundColor: beeSurfaceHighest(context),
-            behavior: SnackBarBehavior.floating,
-            shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(kBeeRadiusMd),
-            ),
-          ),
-        );
-        await _checkPermissions();
-        await _runDiagnostics();
+      // Scope the reset to Beeamvo's OWN bundle id so this troubleshooting
+      // button can never revoke Accessibility / Automation privacy permission
+      // for OTHER applications, and use the absolute path to tccutil (no PATH
+      // lookup) to avoid PATH-hijack risk. If the bundle id cannot be resolved
+      // we fail safe (skip the reset) rather than silently clearing every app's
+      // TCC entries.
+      final bundleId = (await PackageInfo.fromPlatform()).packageName.trim();
+      final services = const ['Accessibility', 'AppleEvents'];
+      final didReset = <String>[];
+      for (final service in services) {
+        final args = scopedTccutilArgs(service: service, bundleId: bundleId);
+        if (args == null) continue;
+        await Process.run(tccutilExecutable, args);
+        didReset.add(service);
       }
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            didReset.isEmpty
+                ? 'Could not identify Beeamvo to reset its permissions. '
+                      'Run the Auto-repair action instead, or restart the app.'
+                : 'Beeamvo permissions reset. Restart Beeamvo to grant '
+                      'access again.',
+          ),
+          backgroundColor: beeSurfaceHighest(context),
+          behavior: SnackBarBehavior.floating,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(kBeeRadiusMd),
+          ),
+        ),
+      );
+      await _checkPermissions();
+      await _runDiagnostics();
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -296,7 +313,9 @@ class _TroubleshootingPageState extends State<TroubleshootingPage> {
       );
 
       if (savedDeviceId != null) {
-        final stillPresent = readiness.devices.any((d) => d.id == savedDeviceId);
+        final stillPresent = readiness.devices.any(
+          (d) => d.id == savedDeviceId,
+        );
         items.add(
           _DiagnosticItem(
             label: 'Selected input device',
@@ -543,7 +562,9 @@ class _TroubleshootingPageState extends State<TroubleshootingPage> {
                     const BeeGroupLabel(label: 'Reset'),
                     _buildCallout(
                       Icons.warning_amber_outlined,
-                      'Resetting permissions will revoke all macOS access. You will need to re-grant them after restarting the app.',
+                      'Resetting permissions revokes Beeamvo\'s Accessibility '
+                      '(and Automation) entries — other apps are unaffected. '
+                      'You will need to re-grant them after restarting the app.',
                     ),
                     Align(
                       alignment: Alignment.centerLeft,

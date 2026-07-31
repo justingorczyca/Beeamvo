@@ -60,35 +60,35 @@ void main() {
           restored.twoPassRefinementThinkingLevel,
           equals(settings.twoPassRefinementThinkingLevel),
         );
-                expect(restored.overrideCount, equals(11));
-                expect(restored.hasAnyOverride, isTrue);
-              },
-            );
+        expect(restored.overrideCount, equals(11));
+        expect(restored.hasAnyOverride, isTrue);
+      },
+    );
 
-            // Regression: previously `fromMap` used `as String?` / `as bool?` casts,
-            // so a manually edited or partially written settings file (an int where a
-            // string is expected, etc.) threw _TypeError and could crash the app on
-            // launch. It now defaults mistyped values instead of throwing.
-            test('tolerates mistyped JSON values without throwing', () {
-              expect(
-                () => PromptSettings.fromMap({
-                  'modelId': 123,
-                  'transcriptionBackend': ['cloud'],
-                  'cloudProvider': 'vertexAi',
-                  'twoPassTranscriptionEnabled': 'yes',
-                  'thinkingLevel': 5,
-                }),
-                returnsNormally,
-              );
+    // Regression: previously `fromMap` used `as String?` / `as bool?` casts,
+    // so a manually edited or partially written settings file (an int where a
+    // string is expected, etc.) threw _TypeError and could crash the app on
+    // launch. It now defaults mistyped values instead of throwing.
+    test('tolerates mistyped JSON values without throwing', () {
+      expect(
+        () => PromptSettings.fromMap({
+          'modelId': 123,
+          'transcriptionBackend': ['cloud'],
+          'cloudProvider': 'vertexAi',
+          'twoPassTranscriptionEnabled': 'yes',
+          'thinkingLevel': 5,
+        }),
+        returnsNormally,
+      );
 
-              final settings = PromptSettings.fromMap({
-                'modelId': 123, // mistyped → null
-                'cloudProvider': 'geminiApiKey', // valid
-                'twoPassTranscriptionEnabled': 'true', // mistyped → null
-              });
-              expect(settings.modelId, isNull);
-              expect(settings.cloudProvider, equals('geminiApiKey'));
-              expect(settings.twoPassTranscriptionEnabled, isNull);
-            });
-          });
-        }
+      final settings = PromptSettings.fromMap({
+        'modelId': 123, // mistyped → null
+        'cloudProvider': 'geminiApiKey', // valid
+        'twoPassTranscriptionEnabled': 'true', // mistyped → null
+      });
+      expect(settings.modelId, isNull);
+      expect(settings.cloudProvider, equals('geminiApiKey'));
+      expect(settings.twoPassTranscriptionEnabled, isNull);
+    });
+  });
+}

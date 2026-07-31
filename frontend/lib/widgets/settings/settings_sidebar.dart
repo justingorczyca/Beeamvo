@@ -51,8 +51,9 @@ class _SettingsSidebarState extends State<SettingsSidebar> {
                       final i = pair.$1;
                       final cat = pair.$2;
                       // Add a gap before items that start a new group
-                      final prevGroup =
-                          i > 0 ? provider.availableCategories[i - 1].group : -1;
+                      final prevGroup = i > 0
+                          ? provider.availableCategories[i - 1].group
+                          : -1;
                       final addGap = cat.group != prevGroup && i > 0;
 
                       return Padding(
@@ -89,20 +90,23 @@ class _SettingsSidebarState extends State<SettingsSidebar> {
                           padding: const EdgeInsets.only(bottom: 8),
                           child: InkWell(
                             borderRadius: BorderRadius.circular(6),
-                            onTap: () => provider
-                                .selectCategory(SettingsCategory.general),
+                            onTap: () => provider.selectCategory(
+                              SettingsCategory.general,
+                            ),
                             child: Container(
                               padding: const EdgeInsets.symmetric(
                                 horizontal: 7,
                                 vertical: 3,
                               ),
                               decoration: BoxDecoration(
-                                color:
-                                    beeSuccess(context).withValues(alpha: 0.16),
+                                color: beeSuccess(
+                                  context,
+                                ).withValues(alpha: 0.16),
                                 borderRadius: BorderRadius.circular(5),
                                 border: Border.all(
-                                  color: beeSuccess(context)
-                                      .withValues(alpha: 0.42),
+                                  color: beeSuccess(
+                                    context,
+                                  ).withValues(alpha: 0.42),
                                 ),
                               ),
                               child: Row(
@@ -192,8 +196,8 @@ class _SidebarBrand extends StatelessWidget {
                 style: GoogleFonts.spaceGrotesk(
                   fontSize: 12,
                   fontWeight: FontWeight.w700,
-                    color: beeText(context),
-                    letterSpacing: -0.1,
+                  color: beeText(context),
+                  letterSpacing: -0.1,
                 ),
               ),
             ),
@@ -271,7 +275,9 @@ class _NavItem extends StatelessWidget {
                       overflow: TextOverflow.ellipsis,
                       style: GoogleFonts.inter(
                         fontSize: fontSize,
-                        fontWeight: isSelected ? FontWeight.w600 : FontWeight.w500,
+                        fontWeight: isSelected
+                            ? FontWeight.w600
+                            : FontWeight.w500,
                         color: beeText(context).withValues(alpha: textAlpha),
                         letterSpacing: -0.05,
                       ),

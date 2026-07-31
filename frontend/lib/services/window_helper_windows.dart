@@ -16,7 +16,10 @@ void showWithoutFocusWindows() {
     SetWindowPos(
       hwnd,
       HWND_TOPMOST,
-      0, 0, 0, 0,
+      0,
+      0,
+      0,
+      0,
       SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE | SWP_SHOWWINDOW,
     );
   }
@@ -56,17 +59,20 @@ bool isVisibleWindows() {
 }
 
 /// Position window at bottom center of the active monitor
-void positionAtActiveMonitorBottomCenterWindows(int windowWidth, int windowHeight) {
+void positionAtActiveMonitorBottomCenterWindows(
+  int windowWidth,
+  int windowHeight,
+) {
   final hwnd = _getWindowHandle();
   if (hwnd == 0) return;
-  
+
   final bounds = _getActiveMonitorBounds();
-  
+
   final xPos = bounds.$1 + (bounds.$3 ~/ 2) - (windowWidth ~/ 2);
   final yPos = bounds.$2 + bounds.$4 - 60 - windowHeight;
-  
+
   ShowWindow(hwnd, SW_SHOWNOACTIVATE);
-  
+
   SetWindowPos(
     hwnd,
     HWND_TOPMOST,
@@ -82,11 +88,14 @@ void positionAtActiveMonitorBottomCenterWindows(int windowWidth, int windowHeigh
 /// Returns (left, top, width, height)
 (int, int, int, int) _getActiveMonitorBounds() {
   final foregroundWindow = GetForegroundWindow();
-  final hMonitor = MonitorFromWindow(foregroundWindow, MONITOR_DEFAULTTONEAREST);
-  
+  final hMonitor = MonitorFromWindow(
+    foregroundWindow,
+    MONITOR_DEFAULTTONEAREST,
+  );
+
   final monitorInfo = calloc<MONITORINFO>();
   monitorInfo.ref.cbSize = sizeOf<MONITORINFO>();
-  
+
   try {
     if (GetMonitorInfo(hMonitor, monitorInfo) != 0) {
       final rcMonitor = monitorInfo.ref.rcMonitor;
@@ -100,6 +109,6 @@ void positionAtActiveMonitorBottomCenterWindows(int windowWidth, int windowHeigh
   } finally {
     calloc.free(monitorInfo);
   }
-  
+
   return (0, 0, GetSystemMetrics(SM_CXSCREEN), GetSystemMetrics(SM_CYSCREEN));
 }

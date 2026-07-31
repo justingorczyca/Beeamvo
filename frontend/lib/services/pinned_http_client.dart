@@ -1,42 +1,42 @@
-/// Certificate-pinning HTTP infrastructure for Beeamvo.
+/// HTTPS transport for Beeamvo, plus (un-wired) pinning scaffolding.
 ///
-/// ## What this provides
-/// [createPinnedHttpClient] builds an [`http.Client`] backed by a `dart:io`
-/// [`HttpClient`] whose `badCertificateCallback` validates every TLS peer that
-/// fails the OS trust store against a per-host allow-list of **leaf certificate
-/// SHA-256 hashes**. [createTrustingHttpClient] preserves the legacy "trust the
-/// OS store" behaviour for call sites that want the original semantics.
+/// ## TLS posture — READ THIS (it is intentionally plain)
+/// The shipped [createSecureHttpClient] performs **standard platform TLS
+/// validation only**. It trusts the operating system's root certificate store
+/// and rejects any peer that fails that validation — exactly like a plain
+/// `http.Client()`.
 ///
-/// ## Decide-once, enforce-later
-/// All hosts ship with **empty** allow-lists ([_kPinnedHostAllowLists]). With an
-/// empty allow-list a host has *no* pins configured, so the callback defers to
-/// the OS trust store — pinning is a strict no-op until a maintainer deliberately
-/// captures and pastes real hashes (see [captureLeafCertificateDescription]).
-/// This means shipping this client is **zero risk**: every connection behaves
-/// exactly as it did with a plain `http.Client()`.
+/// **No certificate pinning is active, enforced, or wired into outbound
+/// traffic.** Every HTTPS request from this app (Gemini, Vertex via
+/// `googleapis_auth`, the Hugging Face model mirror, the GitHub update check)
+/// is validated solely by the OS trust store. Keep the operating system and its
+/// trusted roots current.
 ///
-/// A separate global switch, [kCertificatePinningEnforced] (default `false`),
-/// controls what happens once pins *are* populated and a host presents a cert
-/// that is **not** in the allow-list:
-///   * `false` (fail-open, default) — the mismatch is *logged but tolerated*,
-///     so a Google certificate rotation can never lock users out while we are
-///     still pinning in observe-only mode.
-///   * `true`  (enforced) — the mismatch is fatal: the connection is rejected.
+/// ## Why the pinning machinery below is NOT connected
+/// The remainder of this file (`PinnedHostConfig`, [evaluateCertificatePin],
+/// [computeLeafPinHash], [PinDecision], [badCertificateCallbackResult],
+/// [captureLeafCertificateDescription]) is a small, **pure, unit-tested**
+/// representation of the pinning design space. It is deliberately **not**
+/// referenced by [createSecureHttpClient]. It is retained so a future
+/// maintainer can implement pinning *correctly* — but reconnecting it through
+/// Dart's `HttpClient.badCertificateCallback` would be **unsafe**, because that
+/// callback is only invoked after standard OS validation has **already failed**.
 ///
-/// ## Honest limitation of the `badCertificateCallback` approach
-/// Dart's `badCertificateCallback` is only invoked when standard OS validation
-/// has **already failed**. Consequences:
-///   * For a host with configured pins, a *matching* hash lets us override the
-///     failure and trust a cert the OS might not (this is the core value, e.g.
-///     for self-signed / internally-issued certificates).
-///   * We **cannot** reject an OS-trusted-yet-wrong certificate through this
-///     callback alone, because the callback never fires for a cert the OS
-///     already trusts. Full fail-closed pinning against compromised-but-valid
-///     CAs would require disabling OS validation entirely and verifying the
-///     chain manually (a deeper integration task, intentionally out of scope).
-/// The design above — deferred-to-OS until pins exist, then fail-open by
-/// default — is the safe, correct use of `badCertificateCallback` and is exactly
-/// what protects users today while leaving a clear, testable upgrade path.
+/// Concrete consequences of that limitation:
+///   * The callback can only *override* an OS-trust failure (the only real value
+///     is trusting a self-signed / internally-issued leaf). It can **never**
+///     reject an OS-trusted-but-impersonating certificate, because the callback
+///     simply never fires for a cert the OS already trusts.
+///   * Worse: the pure helper [badCertificateCallbackResult] defines a fail-open
+///     branch (`rejectPin` while enforcement is disabled → return `true`, i.e.
+///     **accept a certificate that already failed OS validation**). Wiring that
+///     into a live client with populated pins would make HTTPS *weaker* than
+///     standard TLS. That branch is intentionally never used in production.
+///
+/// Sound, fail-closed pinning would require disabling OS validation entirely and
+/// verifying the chain in native code (e.g. a TLS intercept/proxy or a custom
+/// `SecurityContext` per platform). That is a larger, platform-specific
+/// integration task and is intentionally out of scope for this release.
 library;
 
 import 'dart:convert';
@@ -47,24 +47,45 @@ import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 import 'package:http/io_client.dart' show IOClient;
 
-/// Master switch for certificate pinning enforcement.
+/// Builds the [http.Client] used for all outbound HTTPS traffic.
 ///
-/// While `false` (the shipped default), a host that HAS configured pins but
-/// presents a non-matching certificate will have the mismatch **logged** but the
-/// connection is still allowed (fail-open). This guarantees we never break a
-/// real user on a routine Google certificate rotation.
+/// The client is a `dart:io` [HttpClient] wrapped in [IOClient] and trusts the
+/// operating-system certificate store. It deliberately installs **no**
+/// `badCertificateCallback`, so there is no code path that can weaken standard
+/// platform TLS validation. Certificate pinning is intentionally not
+/// implemented — see the library-level docs for why a Dart
+/// `badCertificateCallback` cannot soundly enforce it.
 ///
-/// Flip to `true` only AFTER you have:
-///   1. Populated real leaf SHA-256 hashes in [_kPinnedHostAllowLists].
-///   2. Shipped at least one release with this flag still `false` to observe the
-///      `PIN MISMATCH` log lines in the wild and confirm no legitimate Google
-///      rotation is being caught.
-const bool kCertificatePinningEnforced = false;
+/// Callers that already own an [http.Client] (e.g. tests) may inject one; this
+/// factory is only the default.
+http.Client createSecureHttpClient() {
+  return IOClient(HttpClient());
+}
 
 // ═════════════════════════════════════════════════════════════════════════════
-// PIN CONSTANTS
+// PIN-EVALUATION SCAFFOLDING — pure, unit-tested, AND INTENTIONALLY UNUSED.
+//
+// These symbols model how pin matching *would* work. They are kept so the logic
+// stays documented and covered by tests, but [createSecureHttpClient] does NOT
+// reference them. See the library-level docs before reconnecting anything here.
 // ═════════════════════════════════════════════════════════════════════════════
+
+/// Sentinel enforcement flag referenced by [badCertificateCallbackResult].
+///
+/// Kept at the shipped default of `false` purely so the pure helper below has a
+/// stable, testable contract. It is NOT consumed by any live TLS path in the
+/// app, because wiring pinning through `badCertificateCallback` is unsafe (see
+/// the library-level docs). Do not flip this to `true` expecting pinning to take
+/// effect: nothing reads it from the network layer today.
+const bool kCertificatePinningEnforced = false;
+
+// ─────────────────────────────────────────────────────────────────────────────
 // Per-host allow-lists of accepted **leaf** certificate SHA-256 hashes.
+//
+// These are SCAFFOLDING ONLY: with no live pinning wiring (see
+// [createSecureHttpClient]) they have zero runtime effect. They are retained so
+// a future maintainer who implements native fail-closed pinning has a tested
+// matching layer and a capture workflow ready.
 //
 // The map key is matched against the tail of the request host (domain-suffix
 // matching on label boundaries): a key of `googleapis.com` matches both
@@ -72,61 +93,54 @@ const bool kCertificatePinningEnforced = false;
 //
 // Each value is a list so you can pin several leaves at once (current +
 // rotation-rollover cert) to ride out rotation without an outage.
-//
-// TO POPULATE A PIN:
-//   1. From a trusted machine, run (e.g. in a Dart debug session):
-//        print(await captureLeafCertificateDescription('generativelanguage.googleapis.com'));
-//   2. Copy the printed `SHA-256` value into the list below.
-//   3. Repeat after a Google rotation to capture the new leaf, then remove the
-//      old hash once every client has rotated.
-//
-// Until a host has a non-empty list here, it is NOT pinned and behaves exactly
-// like a plain OS-trusting client.
-// ═════════════════════════════════════════════════════════════════════════════
-const Map<String, List<String>> _kPinnedHostAllowLists =
-    <String, List<String>>{
-      // Google AI Gemini API (generativelanguage.googleapis.com).
-      'generativelanguage.googleapis.com': <String>[
-        // e.g. 'AbCd...leaf-sha256-hash...==',
-      ],
+// ─────────────────────────────────────────────────────────────────────────────
+const Map<String, List<String>> _kPinnedHostAllowLists = <String, List<String>>{
+  // Google AI Gemini API (generativelanguage.googleapis.com).
+  'generativelanguage.googleapis.com': <String>[
+    // e.g. 'AbCd...leaf-sha256-hash...==',
+  ],
 
-      // Google Cloud Vertex AI GLOBAL endpoint (aiplatform.googleapis.com).
-      // NOTE: regional Vertex endpoints use a HYPHENATED host, e.g.
-      //   us-central1-aiplatform.googleapis.com
-      // which is NOT matched by this dot-suffix key. If you pin while using a
-      // regional location, add a broad 'googleapis.com' key or a per-region key.
-      'aiplatform.googleapis.com': <String>[
-        // e.g. 'Ef01...leaf-sha256-hash...==',
-      ],
+  // Google Cloud Vertex AI GLOBAL endpoint (aiplatform.googleapis.com).
+  // NOTE: regional Vertex endpoints use a HYPHENATED host, e.g.
+  //   us-central1-aiplatform.googleapis.com
+  // which is NOT matched by this dot-suffix key. If you pin while using a
+  // regional location, add a broad 'googleapis.com' key or a per-region key.
+  'aiplatform.googleapis.com': <String>[
+    // e.g. 'Ef01...leaf-sha256-hash...==',
+  ],
 
-      // Whisper.cpp model downloads (Hugging Face).
-      'huggingface.co': <String>[
-        // e.g. '2345...leaf-sha256-hash...==',
-      ],
-    };
+  // Whisper.cpp model downloads (Hugging Face).
+  'huggingface.co': <String>[
+    // e.g. '2345...leaf-sha256-hash...==',
+  ],
+};
 
-/// Per-host pinning configuration.
+/// Per-host pinning configuration (scaffolding).
 ///
-/// [kDefault] holds the live allow-lists shipped with the app. Use
-/// [allowListForHost] to resolve which hashes apply to a given request host
-/// (returns `null` when the host is unconfigured / not pinned).
+/// [kDefault] holds the allow-lists above. As long as this layer is not wired
+/// into the live client (it is not — see [createSecureHttpClient]) it performs
+/// no TLS validation of any kind. [allowListForHost] returns the hashes that
+/// *would* apply to a given request host (`null` when none are configured).
 class PinnedHostConfig {
   /// Map of allow-list keys → accepted leaf SHA-256 hashes (lowercase hex).
   const PinnedHostConfig(this.pins);
 
-  /// The shipped allow-lists. As long as every entry is empty this performs no
-  /// pinning — all hosts defer to the OS trust store.
+  /// The shipped allow-lists. These exist for documentation and for a future
+  /// maintainer; they have no runtime effect until a sound pinning layer is
+  /// built on top of them.
   static const PinnedHostConfig kDefault = PinnedHostConfig(
     _kPinnedHostAllowLists,
   );
 
-  /// A config with no pins at all — every host defers to the OS trust store.
-  static const PinnedHostConfig empty = PinnedHostConfig(<String, List<String>>{});
+  /// A config with no pins at all.
+  static const PinnedHostConfig empty = PinnedHostConfig(
+    <String, List<String>>{},
+  );
 
   final Map<String, List<String>> pins;
 
-  /// Returns the pin allow-list that applies to [host], or `null` when no pin
-  /// rule is configured for [host] (meaning: defer to the OS trust store).
+  /// Returns the pin allow-list that *would* apply to [host], or `null` when no
+  /// pin rule is configured for [host].
   ///
   /// Matching is domain-suffix on label boundaries:
   /// key `googleapis.com` matches `googleapis.com` and `*.googleapis.com`.
@@ -142,21 +156,24 @@ class PinnedHostConfig {
   }
 }
 
-/// Outcome of evaluating a presented certificate against the pin config.
+/// Pure outcome of evaluating a presented certificate against a pin config.
 ///
-/// Pure (no I/O, no network) so it is trivially unit-testable via
-/// [evaluateCertificatePin]. The boolean the `badCertificateCallback` should
-/// actually return is derived by [badCertificateCallbackResult].
+/// Pure (no I/O, no network) so it is unit-testable via
+/// [evaluateCertificatePin]. NOTE: this type is part of the un-wired scaffolding;
+/// no live TLS path consumes it. See the library-level docs.
 enum PinDecision {
   /// No pins are configured for this host → defer to the OS trust store.
   deferToSystem,
 
   /// The presented leaf hash matches a configured pin → accept (override any
-  /// OS-trust failure).
+  /// OS-trust failure). Only meaningful if pinning were wired in.
   acceptPin,
 
   /// Pins are configured for this host but the presented leaf hash does not
   /// match any of them → reject when enforced, otherwise tolerate (fail-open).
+  ///
+  /// The fail-open branch is deliberately never wired into production because
+  /// accepting an OS-trust failure is strictly weaker than standard TLS.
   rejectPin,
 }
 
@@ -189,16 +206,16 @@ List<int> _pemToDerBytes(String pem) {
 /// against [config] without any network access or I/O.
 ///
 /// - [certPem] is the PEM text of the **leaf** certificate the peer presented.
-/// - [config] defaults to the shipped [PinnedHostConfig.kDefault].
+/// - [config] defaults to [PinnedHostConfig.kDefault] (the un-wired scaffolding
+///   allow-lists; they have no runtime effect today).
 ///
 /// Returns:
-/// - [PinDecision.deferToSystem] when [host] has no configured pins (defer to
-///   the OS trust store — the only path that runs while allow-lists are empty).
+/// - [PinDecision.deferToSystem] when [host] has no configured pins.
 /// - [PinDecision.acceptPin] when the leaf hash is in the allow-list.
 /// - [PinDecision.rejectPin] when pins exist but none match.
 ///
-/// Note: whether a [PinDecision.rejectPin] is actually fatal is decided later by
-/// [badCertificateCallbackResult] using [kCertificatePinningEnforced].
+/// NOTE: this function is part of the un-wired scaffolding. It does not gate any
+/// real connection in the shipped app. See the library-level docs.
 @visibleForTesting
 PinDecision evaluateCertificatePin({
   required String host,
@@ -217,12 +234,18 @@ PinDecision evaluateCertificatePin({
   return PinDecision.rejectPin;
 }
 
-/// Translates a [PinDecision] into the boolean `HttpClient.badCertificateCallback`
-/// must return, honouring [kCertificatePinningEnforced].
+/// Translates a [PinDecision] into the boolean a `HttpClient.badCertificateCallback`
+/// *would* have to return, honouring [kCertificatePinningEnforced].
 ///
 /// - `deferToSystem` → `false`  (standard OS validation runs, unchanged).
 /// - `acceptPin`     → `true`   (override the failure, trust the pinned cert).
 /// - `rejectPin`     → enforced ? `false` (fatal) : `true` (tolerated / fail-open).
+///
+/// **This helper is kept for documentation/testing only and is deliberately NOT
+/// referenced by [createSecureHttpClient].** The `rejectPin`/fail-open branch
+/// (`true`) would ACCEPT a certificate that already failed OS validation — which
+/// is strictly weaker than standard TLS. Wiring it in is unsafe; see the
+/// library-level docs.
 @visibleForTesting
 bool badCertificateCallbackResult(PinDecision decision, {bool? enforced}) {
   final effectiveEnforced = enforced ?? kCertificatePinningEnforced;
@@ -234,63 +257,19 @@ bool badCertificateCallbackResult(PinDecision decision, {bool? enforced}) {
     case PinDecision.rejectPin:
       // Enforced → reject (return false so the failed standard validation
       // stands and the connection is refused). Fail-open → tolerate (return
-      // true) and rely on the PIN MISMATCH log line for visibility.
+      // true). Documented here precisely to make the danger visible; not wired.
       return effectiveEnforced ? false : true;
   }
 }
 
-void _debugLog(String message) {
-  if (kDebugMode) debugPrint(message);
-}
-
-bool _onBadCertificate(X509Certificate cert, String host, int port) {
-  final decision = evaluateCertificatePin(
-    host: host,
-    certPem: cert.pem,
-    config: PinnedHostConfig.kDefault,
-  );
-
-  if (decision == PinDecision.rejectPin) {
-    final presentedHash = computeLeafPinHash(cert.pem);
-    final allowList = PinnedHostConfig.kDefault.allowListForHost(host);
-    _debugLog(
-      '[PinnedHttpClient] PIN MISMATCH for "$host:$port" '
-      '(enforced=$kCertificatePinningEnforced). '
-      'Presented leaf SHA-256: $presentedHash. '
-      'Allowed: ${allowList ?? const <String>[]}. '
-      '${kCertificatePinningEnforced ? 'Connection rejected.' : 'Tolerated (fail-open).'}',
-    );
-  }
-
-  return badCertificateCallbackResult(decision);
-}
-
-/// Builds an [http.Client] that applies certificate pinning (observe-only by
-/// default; see [kCertificatePinningEnforced]).
-///
-/// Hosts with no configured pins defer to the OS trust store and are
-/// indistinguishable from a plain client — so this is safe to use as the default
-/// for every outbound HTTPS call. Hosts WITH pins are validated against their
-/// allow-list before the connection is accepted.
-http.Client createPinnedHttpClient() {
-  final ioClient = HttpClient()..badCertificateCallback = _onBadCertificate;
-  return IOClient(ioClient);
-}
-
-/// Builds an [http.Client] with the legacy "trust the OS store" behaviour —
-/// identical to a plain `http.Client()`. Provided for call sites that
-/// deliberately want no pin validation.
-http.Client createTrustingHttpClient() => http.Client();
-
 /// Connects to `https://[host]:[port]`, reads the peer's leaf certificate, and
 /// returns a human-readable description including its **SHA-256 pin hash**.
 ///
-/// This is a maintainer capture helper: run it once from a trusted machine for
-/// each host listed in [_kPinnedHostAllowLists], copy the printed `SHA-256`
-/// value into the allow-list, and only THEN consider flipping
-/// [kCertificatePinningEnforced] to `true`.
-///
-/// Requires network access — never call this from unit tests.
+/// **Maintainer capture helper only.** It uses a plain, OS-trusting connection
+/// to inspect a certificate. It is useful ONLY if a future maintainer implements
+/// sound fail-closed pinning in native code and needs to capture real leaf
+/// hashes — it has no effect on the shipped app's TLS behaviour and is never
+/// called from production paths. Requires network access; never call from tests.
 Future<String> captureLeafCertificateDescription(
   String host, {
   int port = 443,
@@ -316,8 +295,11 @@ Future<String> captureLeafCertificateDescription(
       ..writeln('  issuer  : ${cert.issuer}')
       ..writeln('  SHA-256 : $hash')
       ..writeln(
-        'Add the SHA-256 value above to PinnedHostConfig under a host key '
-        'matching "$host" (or a domain suffix such as "googleapis.com").',
+        'This capture is only meaningful if you later implement SOUND, '
+        'fail-closed pinning in native code (a Dart `badCertificateCallback` '
+        'cannot enforce it — see pinned_http_client.dart). Add the SHA-256 '
+        'value above to PinnedHostConfig under a host key matching "$host" '
+        '(or a domain suffix such as "googleapis.com").',
       );
     return buffer.toString().trim();
   } finally {

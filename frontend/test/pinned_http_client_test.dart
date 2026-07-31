@@ -1,9 +1,15 @@
-// Logic-only unit tests for the certificate-pinning infrastructure.
+// Logic-only unit tests for the (UN-WIRED) certificate-pinning scaffolding.
 //
-// These tests exercise the PURE decision/hash functions only — no sockets, no
-// TLS handshake, no `dart:io` HttpClient. The only "certificate" used is a fake
-// PEM blob wrapping the bytes of "hello", whose SHA-256 is a well-known vector,
-// so we can assert correctness independently of any real cert machinery.
+// NOTE: Beeamvo does NOT perform certificate pinning. These pin/decision helpers
+// in pinned_http_client.dart are pure, documented scaffolding retained for a
+// future maintainer and are NOT referenced by the shipped HTTP client (which
+// uses standard platform TLS; see the library docs). These tests keep that
+// scaffolding's logic green; they do not imply any active pinning behaviour.
+//
+// They exercise the PURE decision/hash functions only — no sockets, no TLS
+// handshake, no `dart:io` HttpClient. The only "certificate" used is a fake PEM
+// blob wrapping the bytes of "hello", whose SHA-256 is a well-known vector, so
+// we can assert correctness independently of any real cert machinery.
 
 import 'package:beeamvo/services/pinned_http_client.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -82,23 +88,26 @@ void main() {
       );
     });
 
-    test('rejectPin also becomes acceptPin once a real match is configured', () {
-      // Same wrong-pin config as (c), but now the real hash is present.
-      const config = PinnedHostConfig({
-        'generativelanguage.googleapis.com': <String>[
-          '0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef',
-          helloSha256,
-        ],
-      });
-      expect(
-        evaluateCertificatePin(
-          host: 'generativelanguage.googleapis.com',
-          certPem: helloPem,
-          config: config,
-        ),
-        equals(PinDecision.acceptPin),
-      );
-    });
+    test(
+      'rejectPin also becomes acceptPin once a real match is configured',
+      () {
+        // Same wrong-pin config as (c), but now the real hash is present.
+        const config = PinnedHostConfig({
+          'generativelanguage.googleapis.com': <String>[
+            '0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef',
+            helloSha256,
+          ],
+        });
+        expect(
+          evaluateCertificatePin(
+            host: 'generativelanguage.googleapis.com',
+            certPem: helloPem,
+            config: config,
+          ),
+          equals(PinDecision.acceptPin),
+        );
+      },
+    );
 
     test('allow-list keys match by domain suffix on label boundaries', () {
       // A `googleapis.com` key must cover regional Vertex hosts too…
@@ -142,10 +151,7 @@ void main() {
 
   group('badCertificateCallbackResult', () {
     test('deferToSystem → false (standard OS validation runs)', () {
-      expect(
-        badCertificateCallbackResult(PinDecision.deferToSystem),
-        isFalse,
-      );
+      expect(badCertificateCallbackResult(PinDecision.deferToSystem), isFalse);
     });
 
     test('acceptPin → true (override the failure, trust the pinned cert)', () {
@@ -179,9 +185,12 @@ void main() {
   });
 
   group('shipped default state', () {
-    test('kCertificatePinningEnforced ships false (observe-only / fail-open)', () {
-      expect(kCertificatePinningEnforced, isFalse);
-    });
+    test(
+      'kCertificatePinningEnforced ships false (observe-only / fail-open)',
+      () {
+        expect(kCertificatePinningEnforced, isFalse);
+      },
+    );
 
     test('target hosts ship with EMPTY allow-lists (zero breakage)', () {
       const config = PinnedHostConfig.kDefault;
@@ -214,7 +223,8 @@ void main() {
         expect(
           evaluateCertificatePin(host: host, certPem: helloPem, config: config),
           equals(PinDecision.deferToSystem),
-          reason: '$host must defer to the OS store while its allow-list is '
+          reason:
+              '$host must defer to the OS store while its allow-list is '
               'empty',
         );
       }
