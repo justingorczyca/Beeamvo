@@ -256,6 +256,11 @@ class _ClipboardPageState extends State<ClipboardPage> {
   Future<void> _pinPrompt(SettingsService settings) async {
     final text = _pinnedCtrl.text.trim();
     if (text.isEmpty) return;
+    const maxLen = 2000;
+    if (text.length > maxLen) {
+      _showSnack('Snippets must be $maxLen characters or fewer');
+      return;
+    }
 
     await settings.addPinnedClipboardPrompt(text);
     _pinnedCtrl.clear();
@@ -303,6 +308,7 @@ class _ClipboardPageState extends State<ClipboardPage> {
         Expanded(
           child: TextField(
             controller: _pinnedCtrl,
+            maxLength: 2000,
             textInputAction: TextInputAction.done,
             onChanged: (_) => setState(() {}),
             onSubmitted: (_) => _pinPrompt(settings),

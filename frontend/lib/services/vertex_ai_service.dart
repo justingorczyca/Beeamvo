@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:convert';
+import 'dart:math';
 
 import 'package:flutter/foundation.dart';
 import 'package:googleapis_auth/auth_io.dart';
@@ -87,7 +88,7 @@ class VertexAiService implements CloudTranscriptionClient {
   static Future<http.Client> _defaultAdcClientFactory() {
     return clientViaApplicationDefaultCredentials(
       scopes: [_cloudPlatformScope],
-    );
+    ).timeout(const Duration(seconds: 30));
   }
 
   GeminiModelConfig _resolveModel(String? modelOverrideId) {
@@ -429,6 +430,44 @@ class VertexAiService implements CloudTranscriptionClient {
     return _postWithAdcRetry(projectId, model, payload, isRetry: false);
   }
 
+  /// Retries the POST for transient failures (429, 5xx, TimeoutException)
+  /// with bounded exponential backoff. ADC-refresh logic is handled by the
+  /// caller [_postWithAdcRetry]; this method only handles genuinely transient
+  /// network/rate errors.
+  Future<http.Response> _postWithTransientRetry(
+    Uri uri,
+    Map<String, String> headers,
+    String body,
+  ) async {
+    const maxAttempts = 3;
+    final random = Random();
+    for (var attempt = 0;; attempt++) {
+      try {
+        final response = await (await _resolveHttpClient())
+            .post(uri, headers: headers, body: body)
+            .timeout(const Duration(seconds: 60));
+
+        if ((response.statusCode == 429 || response.statusCode >= 500) &&
+            attempt < maxAttempts - 1) {
+          final retryAfterHeader = response.headers['retry-after'];
+          final retryAfterMs = retryAfterHeader != null
+              ? int.tryParse(retryAfterHeader)
+              : null;
+          final delayMs = retryAfterMs ??
+              (500 * (1 << attempt) + random.nextInt(500));
+          await Future<void>.delayed(Duration(milliseconds: delayMs));
+          continue;
+        }
+        return response;
+      } on TimeoutException {
+        if (attempt >= maxAttempts - 1) rethrow;
+        await Future<void>.delayed(
+          Duration(milliseconds: 500 * (1 << attempt) + random.nextInt(500)),
+        );
+      }
+    }
+  }
+
   /// Performs a single request attempt and — on a 401/403 — recycles the cached
   /// ADC client and retries exactly ONCE with a fresh credential refresh before
   /// surfacing the error.
@@ -442,13 +481,11 @@ class VertexAiService implements CloudTranscriptionClient {
     Map<String, dynamic> payload, {
     required bool isRetry,
   }) async {
-    final response = await (await _resolveHttpClient())
-        .post(
-          buildUri(projectId: projectId, model: model),
-          headers: await _buildHeaders(),
-          body: jsonEncode(payload),
-        )
-        .timeout(const Duration(seconds: 60));
+    final response = await _postWithTransientRetry(
+      buildUri(projectId: projectId, model: model),
+      await _buildHeaders(),
+      jsonEncode(payload),
+    );
 
     // Auth failure: the cached ADC token may be stale. Drop the cached client
     // (so googleapis_auth performs a refresh) and retry exactly once before
@@ -469,9 +506,12 @@ class VertexAiService implements CloudTranscriptionClient {
       // Never echo raw upstream bodies to the user. Log the full detail only in
       // debug builds; surface a generic, actionable message instead.
       if (kDebugMode) {
+        final bodyPreview = response.body.length > 200
+            ? '${response.body.substring(0, 200)}...'
+            : response.body;
         debugPrint(
           '[VertexAiService] request failed: HTTP ${response.statusCode}; '
-          'body=${response.body}',
+          'body=$bodyPreview',
         );
       }
       throw CloudTranscriptionException(
@@ -500,7 +540,30 @@ class VertexAiService implements CloudTranscriptionClient {
     }
 
     final text = buffer.toString().trim();
+
+    // Check prompt-level safety block first.
+    final promptFeedback = decoded['promptFeedback'];
+    final blockReason = promptFeedback is Map<String, dynamic>
+        ? promptFeedback['blockReason'] as String?
+        : null;
+    if (blockReason != null) {
+      throw CloudTranscriptionException(
+        'Vertex blocked this request ($blockReason). Try rephrasing or a different model.',
+      );
+    }
+
+    // Distinguish "did not finish" from truly empty.
+    final firstCandidate = candidates.first;
+    final finishReason = firstCandidate is Map<String, dynamic>
+        ? firstCandidate['finishReason'] as String?
+        : null;
+
     if (text.isEmpty) {
+      if (finishReason != null && finishReason != 'STOP') {
+        throw CloudTranscriptionException(
+          'Vertex stopped generating ($finishReason). Try rephrasing or a different model.',
+        );
+      }
       throw CloudTranscriptionException('Vertex returned an empty response.');
     }
     return text;

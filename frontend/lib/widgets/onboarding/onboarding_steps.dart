@@ -466,6 +466,7 @@ class _ApiKeyStepState extends State<ApiKeyStep> {
     });
     try {
       await widget.onVerifyCloudProvider!(_provider);
+      if (!mounted) return;
       setState(() {
         _isVerifying = false;
         _statusMessage = _provider == CloudProvider.geminiApiKey
@@ -474,6 +475,7 @@ class _ApiKeyStepState extends State<ApiKeyStep> {
         _statusIsError = false;
       });
     } catch (e) {
+      if (!mounted) return;
       setState(() {
         _isVerifying = false;
         _statusMessage = e.toString();
@@ -1788,16 +1790,16 @@ class _HotkeyStepState extends State<HotkeyStep>
       modifiers.add(HotKeyModifier.meta);
     }
 
+    if (key == LogicalKeyboardKey.escape) {
+      _stopRecording();
+      return;
+    }
+
     if (modifiers.isEmpty) {
       setState(() {
         _errorMessage =
             'Include at least one modifier (Ctrl, Alt, Shift, or Win)';
       });
-      return;
-    }
-
-    if (key == LogicalKeyboardKey.escape) {
-      _stopRecording();
       return;
     }
 

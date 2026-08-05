@@ -71,6 +71,8 @@ extension WhisperPlugin: FlutterPlugin {
     }
 
     private func handleTranscribeRaw(_ call: FlutterMethodCall, result: @escaping FlutterResult) {
+        // 1. Validate arguments and set busy flag (same checks as before,
+        //    but send early-return errors immediately — no need to background these).
         guard let args = call.arguments as? [String: Any] else {
             result(FlutterError(code: "invalid_args", message: "Missing arguments", details: nil))
             return
@@ -117,7 +119,8 @@ extension WhisperPlugin: FlutterPlugin {
         }
         contextLock.unlock()
 
-        // Convert PCM-16LE to float32 samples
+        // 2. Convert PCM-16LE to float32 samples on the calling thread
+        //    (fast, bounded work — no need to background this).
         let data = pcmBytes.data
         let sampleCount = data.count / 2 / channels
         var samples = [Float]()
@@ -132,14 +135,28 @@ extension WhisperPlugin: FlutterPlugin {
 
         NSLog("[Whisper] Transcribing \(samples.count) samples, sr=\(sampleRate), ch=\(channels), lang=\(language)")
 
-        let text = transcribePcm(samples: samples, sampleRate: sampleRate, language: language)
+        // 3. Dispatch the CPU-intensive whisper_full call to a background queue.
+        //    Running this off the main thread keeps the UI/tray responsive while
+        //    whisper_full (the heavy C inference) executes.
+        DispatchQueue.global(qos: .userInitiated).async { [weak self] in
+            guard let self = self else { return }
 
-        NSLog("[Whisper] Transcription completed, characters=\(text.count)")
+            // transcribePcm owns contextLock internally; the `busy` guard above
+            // prevents re-entry, so there is no deadlock risk here.
+            let text = self.transcribePcm(samples: samples, sampleRate: sampleRate, language: language)
 
-        contextLock.lock()
-        busy = false
-        contextLock.unlock()
-        result(text)
+            NSLog("[Whisper] Transcription completed, characters=\(text.count)")
+
+            self.contextLock.lock()
+            self.busy = false
+            self.contextLock.unlock()
+
+            // 4. Invoke the result callback back on the main thread.
+            //    FlutterMethodChannel hops are main-thread-affine on macOS.
+            DispatchQueue.main.async {
+                result(text)
+            }
+        }
     }
 
     private func handleCleanup(result: @escaping FlutterResult) {

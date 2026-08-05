@@ -281,9 +281,13 @@ Future<String> captureLeafCertificateDescription(
       // preserved so capture works against non-standard endpoints too.
       Uri(scheme: 'https', host: host, port: port, path: '/'),
     );
-    final response = await request.close();
+    // Every outbound network operation is bounded by an explicit timeout so a
+    // dead/unreachable host fails fast instead of waiting up to the platform's
+    // multi-minute default socket timeout. Any TimeoutException propagates to
+    // the caller after the `finally` block below closes the client.
+    final response = await request.close().timeout(const Duration(seconds: 10));
     final cert = response.certificate;
-    await response.drain<void>();
+    await response.drain<void>().timeout(const Duration(seconds: 10));
     if (cert == null) {
       return 'No certificate presented by $host:$port '
           '(TLS was not negotiated).';

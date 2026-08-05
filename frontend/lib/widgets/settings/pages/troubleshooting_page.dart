@@ -68,21 +68,41 @@ class _TroubleshootingPageState extends State<TroubleshootingPage> {
     final settings = SettingsProviderScope.of(context).settingsService;
     setState(() => _diagnosticsLoading = true);
 
-    final items = <_DiagnosticItem>[
-      _platformDiagnostic(),
-      _backendDiagnostic(settings),
-      _clipboardDiagnostic(settings),
-    ];
+    try {
+      final items = <_DiagnosticItem>[
+        _platformDiagnostic(),
+        _backendDiagnostic(settings),
+        _clipboardDiagnostic(settings),
+      ];
 
-    await _appendMacOSPermissionDiagnostics(items);
-    await _appendMicrophoneDiagnostics(items);
+      await _appendMacOSPermissionDiagnostics(items);
+      await _appendMicrophoneDiagnostics(items);
 
-    if (!mounted) return;
-    setState(() {
-      _diagnostics = items;
-      _diagnosticsUpdatedAt = DateTime.now();
-      _diagnosticsLoading = false;
-    });
+      if (!mounted) return;
+      setState(() {
+        _diagnostics = items;
+        _diagnosticsUpdatedAt = DateTime.now();
+      });
+    } catch (e) {
+      debugPrint('TroubleshootingPage._runDiagnostics error: $e');
+      if (!mounted) return;
+      setState(() {
+        _diagnostics = [
+          ..._diagnostics,
+          _DiagnosticItem(
+            label: 'Diagnostics Error',
+            detail: 'Failed to run diagnostics: $e',
+            icon: Icons.error_outline,
+            status: _DiagnosticStatus.error,
+          ),
+        ];
+        _diagnosticsUpdatedAt = DateTime.now();
+      });
+    } finally {
+      if (mounted) {
+        setState(() => _diagnosticsLoading = false);
+      }
+    }
   }
 
   Future<void> _resetPermissions() async {

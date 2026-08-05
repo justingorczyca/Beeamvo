@@ -41,10 +41,10 @@ class KeyboardService {
         );
       }
     } finally {
-      // Reset flag after a short delay to allow for any lingering inputs
-      Future.delayed(const Duration(milliseconds: 500), () {
-        _isPasting = false;
-      });
+      // Reset the guard immediately rather than via a delayed Future.
+      // A delayed-callback reset can fail silently (process exit, isolate stall,
+      // GC before firing), permanently locking out all future pastes.
+      _isPasting = false;
     }
   }
 

@@ -86,7 +86,7 @@ class UpdateCheckService {
   /// Unlike [check], this preserves whether the lookup itself succeeded. This
   /// lets background callers retry a failed network request instead of treating
   /// it as a successful up-to-date result for the next 24 hours.
-  Future<UpdateCheckResult> checkWithStatus({bool force = false}) async {
+  Future<UpdateCheckResult> checkWithStatus() async {
     // Standard platform TLS (OS trust store); no certificate pinning is active
     // (see pinned_http_client.dart). The client is scoped to a single request
     // and always closed below.
@@ -134,8 +134,8 @@ class UpdateCheckService {
 
   /// Compatibility wrapper for UI paths that only need an available update.
   /// Use [checkWithStatus] when retry/rate-limit decisions depend on success.
-  Future<UpdateInfo?> check({bool force = false}) async {
-    return (await checkWithStatus(force: force)).update;
+  Future<UpdateInfo?> check() async {
+    return (await checkWithStatus()).update;
   }
 
   /// Strips a leading `v`/`V` and any build/pre-release suffix, returning the
@@ -150,26 +150,25 @@ class UpdateCheckService {
     return v.trim();
   }
 
-  /// Returns the first 3 numeric components of [version] (defaulting missing
-  /// parts to 0), e.g. `'1.2'` → `[1, 2, 0]`.
+  /// Returns the integer components of [version] (defaulting unparseable
+  /// parts to 0), e.g. `'1.2'` → `[1, 2]`, `'1.2.3.4'` → `[1, 2, 3, 4]`.
   List<int> _components(String version) {
     final clean = _normalizeVersion(version);
     final parts = clean.split('.');
-    final nums = <int>[];
-    for (var i = 0; i < 3; i++) {
-      nums.add(i < parts.length ? (int.tryParse(parts[i]) ?? 0) : 0);
-    }
-    return nums;
+    return parts.map((p) => int.tryParse(p) ?? 0).toList();
   }
 
-  /// Splits both versions into `[major, minor, patch]` and compares element by
+  /// Splits both versions into component lists and compares element by
   /// element. Returns `true` only if [latest] is strictly greater than
   /// [installed].
   bool _isVersionNewer(String installed, String latest) {
     final a = _components(installed);
     final b = _components(latest);
-    for (var i = 0; i < 3; i++) {
-      if (b[i] != a[i]) return b[i] > a[i];
+    final n = a.length > b.length ? a.length : b.length;
+    for (var i = 0; i < n; i++) {
+      final av = i < a.length ? a[i] : 0;
+      final bv = i < b.length ? b[i] : 0;
+      if (bv != av) return bv > av;
     }
     return false;
   }

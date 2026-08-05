@@ -478,10 +478,42 @@ class MainFlutterWindow: NSWindow {
       }
     }
 
-    /// Post a Cmd+V keystroke using CGEvent. kVK_ANSI_V == 9.
+    /// Post a Cmd+V keystroke via CGEvent, preceded by a modifier-release
+    /// sweep that mirrors the Windows path (keyboard_service_windows.dart).
+    ///
+    /// Without the sweep, a physically- or sticky-held modifier from the
+    /// user's hotkey (e.g., Shift in Cmd+Shift+V) rides along on the posted
+    /// CGEvent because `.combinedSessionState` includes live hardware state.
+    /// This causes “Paste and Match Style” (Safari/Notes/TextEdit) instead of
+    /// a normal paste, or a no-op in other apps.
     private func pasteWithCmdV() -> Bool {
-      let source = CGEventSource(stateID: .combinedSessionState)
+      guard let source = CGEventSource(stateID: .combinedSessionState) else {
+        debugLog("[Permission] pasteWithCmdV: failed to create CGEventSource")
+        return false
+      }
 
+      let tap = CGEventTapLocation.cghidEventTap
+
+      // (1) Modifier-release sweep — release every modifier that is currently
+      //     physically held so it cannot combine with the Cmd+V that follows.
+      //     Using both left & right virtual keycodes guarantees the generic flag
+      //     is cleared regardless of which side the user holds.
+      let held = source.flagsState
+      let modifiers: [(flag: CGEventFlags, keys: [CGKeyCode])] = [
+        (.maskShift,       [56, 60]), // L/R shift
+        (.maskControl,     [59, 62]), // L/R control
+        (.maskAlternate,   [58, 61]), // L/R option
+        (.maskCommand,     [55, 54]), // L/R command
+        (.maskSecondaryFn, [63]),     // fn
+      ]
+      for mod in modifiers where held.contains(mod.flag) {
+        for vKey in mod.keys {
+          guard let up = CGEvent(keyboardEventSource: source, virtualKey: vKey, keyDown: false) else { continue }
+          up.post(tap: tap)
+        }
+      }
+
+      // (2) The actual Cmd+V. kVK_ANSI_V == 9.
       guard let keyDown = CGEvent(keyboardEventSource: source, virtualKey: 9, keyDown: true),
             let keyUp = CGEvent(keyboardEventSource: source, virtualKey: 9, keyDown: false) else {
         debugLog("[Permission] pasteWithCmdV: failed to create CGEvents")
@@ -490,8 +522,6 @@ class MainFlutterWindow: NSWindow {
 
       keyDown.flags = .maskCommand
       keyUp.flags = .maskCommand
-
-      let tap = CGEventTapLocation.cghidEventTap
       keyDown.post(tap: tap)
       keyUp.post(tap: tap)
       return true
@@ -500,7 +530,7 @@ class MainFlutterWindow: NSWindow {
     // MARK: - Launch at Login Helpers
 
   private func getBundleID() -> String {
-    return Bundle.main.bundleIdentifier ?? "com.beamvo.Beeamvo"
+    return Bundle.main.bundleIdentifier ?? "com.beeamvo.app"
   }
 
   private func getAppURL() -> URL? {
@@ -508,100 +538,37 @@ class MainFlutterWindow: NSWindow {
   }
 
   func isLaunchAtLoginEnabled() -> Bool {
-    guard let appURL = getAppURL() else {
-      debugLog("[LaunchAtLogin] ERROR: Could not get app URL")
-      return false
-    }
-
-    debugLog("[LaunchAtLogin] Checking login item")
-
-    // Use LSSharedFileList to check if app is in login items
-    guard let loginItemsUnmanaged = LSSharedFileListCreate(
-      nil,
-      kLSSharedFileListSessionLoginItems.takeRetainedValue() as CFString,
-      nil
-    ) else {
-      debugLog("[LaunchAtLogin] ERROR: Could not create login items list")
-      return false
-    }
-    let loginItems = loginItemsUnmanaged.takeRetainedValue()
-
-    guard let itemSnapshotUnmanaged = LSSharedFileListCopySnapshot(loginItems, nil) else {
-      debugLog("[LaunchAtLogin] ERROR: Could not copy snapshot")
-      return false
-    }
-    let itemSnapshot = itemSnapshotUnmanaged.takeRetainedValue() as NSArray
-
-    for case let item as LSSharedFileListItem in itemSnapshot {
-      guard let itemURLUnmanaged = LSSharedFileListItemCopyResolvedURL(item, 0, nil) else { continue }
-      let itemURL = itemURLUnmanaged.takeRetainedValue() as URL
-
-      if itemURL.path == appURL.path {
-        debugLog("[LaunchAtLogin] Found matching login item")
-        return true
-      }
-    }
-
-    debugLog("[LaunchAtLogin] No matching login item found")
-    return false
+    // SMAppService.mainApp manages launch-at-login registration as part of
+    // the app's service requirements (macOS 13.0+). This replaces the
+    // deprecated LSSharedFileList API.
+    let service = SMAppService.mainApp
+    let status = service.status
+    debugLog("[LaunchAtLogin] SMAppService status: \(status.rawValue)")
+    return status == .requiresApproval || status == .enabled
   }
 
   func setLaunchAtLoginEnabled(_ enabled: Bool) -> Bool {
-    guard let appURL = getAppURL() else {
-      debugLog("[LaunchAtLogin] ERROR: Could not get app URL")
-      return false
-    }
-
-    let bundleID = getBundleID()
+    let service = SMAppService.mainApp
     debugLog("[LaunchAtLogin] Setting launch at login to \(enabled)")
 
-    guard let loginItemsUnmanaged = LSSharedFileListCreate(
-      nil,
-      kLSSharedFileListSessionLoginItems.takeRetainedValue() as CFString,
-      nil
-    ) else {
-      debugLog("[LaunchAtLogin] ERROR: Could not create login items list")
-      return false
-    }
-    let loginItems = loginItemsUnmanaged.takeRetainedValue()
-
-    // First, remove any existing entry for this app
-    if let itemSnapshotUnmanaged = LSSharedFileListCopySnapshot(loginItems, nil) {
-      let itemSnapshot = itemSnapshotUnmanaged.takeRetainedValue() as NSArray
-      for case let item as LSSharedFileListItem in itemSnapshot {
-        if let itemURLUnmanaged = LSSharedFileListItemCopyResolvedURL(item, 0, nil) {
-          let itemURL = itemURLUnmanaged.takeRetainedValue() as URL
-          if itemURL.path == appURL.path {
-            LSSharedFileListItemRemove(loginItems, item)
-            debugLog("[LaunchAtLogin] Removed existing login item")
-            break
-          }
-        }
-      }
-    }
-
-    // Add new entry if enabled
     if enabled {
-      let item = LSSharedFileListInsertItemURL(
-        loginItems,
-        kLSSharedFileListItemLast.takeRetainedValue(),
-        bundleID as CFString,
-        nil,
-        appURL as CFURL,
-        nil,
-        nil
-      )
-
-      if item != nil {
-        debugLog("[LaunchAtLogin] ✓ Successfully added login item")
+      do {
+        try service.register()
+        debugLog("[LaunchAtLogin] \u{2713} Successfully registered for launch at login")
         return true
-      } else {
-        debugLog("[LaunchAtLogin] ✗ Failed to add login item")
+      } catch {
+        debugLog("[LaunchAtLogin] \u{2717} Failed to register: \(error)")
         return false
       }
     } else {
-      debugLog("[LaunchAtLogin] ✓ Successfully removed login item")
-      return true
+      do {
+        try service.unregister()
+        debugLog("[LaunchAtLogin] \u{2713} Successfully unregistered from launch at login")
+        return true
+      } catch {
+        debugLog("[LaunchAtLogin] \u{2717} Failed to unregister: \(error)")
+        return false
+      }
     }
   }
 

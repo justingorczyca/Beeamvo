@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:convert';
+import 'dart:math';
 
 import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
@@ -266,21 +267,54 @@ class GeminiApiService implements CloudTranscriptionClient {
     };
   }
 
+  /// Posts to Gemini with bounded retry for transient failures (429, 5xx, timeouts).
+  Future<http.Response> _postWithRetry(
+    Uri uri,
+    Map<String, String> headers,
+    String body,
+  ) async {
+    const maxAttempts = 3;
+    final random = Random();
+    for (var attempt = 0;; attempt++) {
+      try {
+        final response = await _httpClient
+            .post(uri, headers: headers, body: body)
+            .timeout(const Duration(seconds: 60));
+
+        if ((response.statusCode == 429 || response.statusCode >= 500) &&
+            attempt < maxAttempts - 1) {
+          final retryAfterHeader = response.headers['retry-after'];
+          final retryAfterMs = retryAfterHeader != null
+              ? int.tryParse(retryAfterHeader)
+              : null;
+          final delayMs = retryAfterMs ??
+              (500 * (1 << attempt) + random.nextInt(500));
+          await Future<void>.delayed(Duration(milliseconds: delayMs));
+          continue;
+        }
+        return response;
+      } on TimeoutException {
+        if (attempt >= maxAttempts - 1) rethrow;
+        await Future<void>.delayed(
+          Duration(milliseconds: 500 * (1 << attempt) + random.nextInt(500)),
+        );
+      }
+    }
+  }
+
   Future<String> _postGenerateContent(
     String apiKey,
     String modelName,
     Map<String, dynamic> payload,
   ) async {
-    final response = await _httpClient
-        .post(
-          _buildUri(modelName),
-          headers: {
-            'Content-Type': 'application/json',
-            'x-goog-api-key': apiKey,
-          },
-          body: jsonEncode(payload),
-        )
-        .timeout(const Duration(seconds: 60));
+    final response = await _postWithRetry(
+      _buildUri(modelName),
+      {
+        'Content-Type': 'application/json',
+        'x-goog-api-key': apiKey,
+      },
+      jsonEncode(payload),
+    );
 
     final decoded = _decodeResponse(response);
     if (response.statusCode >= 400) {
@@ -318,7 +352,30 @@ class GeminiApiService implements CloudTranscriptionClient {
     }
 
     final text = buffer.toString().trim();
+
+    // Check prompt-level safety block first.
+    final promptFeedback = decoded['promptFeedback'];
+    final blockReason = promptFeedback is Map<String, dynamic>
+        ? promptFeedback['blockReason'] as String?
+        : null;
+    if (blockReason != null) {
+      throw CloudTranscriptionException(
+        'Gemini blocked this request ($blockReason). Try rephrasing or a different model.',
+      );
+    }
+
+    // Distinguish "did not finish" (SAFETY/RECITATION/etc.) from truly empty.
+    final firstCandidate = candidates.first;
+    final finishReason = firstCandidate is Map<String, dynamic>
+        ? firstCandidate['finishReason'] as String?
+        : null;
+
     if (text.isEmpty) {
+      if (finishReason != null && finishReason != 'STOP') {
+        throw CloudTranscriptionException(
+          'Gemini stopped generating ($finishReason). Try rephrasing or a different model.',
+        );
+      }
       throw CloudTranscriptionException('Gemini returned an empty response.');
     }
     return text;

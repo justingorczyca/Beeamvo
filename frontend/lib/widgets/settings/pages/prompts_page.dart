@@ -19,6 +19,10 @@ class PromptsPage extends StatefulWidget {
 }
 
 class _PromptsPageState extends State<PromptsPage> {
+  /// Monotonic counter to guarantee unique prompt IDs even when two prompts
+  /// are created within the same microsecond.
+  static int _promptIdCounter = 0;
+
   String _selectedPromptId = '';
   List<SystemPrompt> _customPrompts = [];
   RephraseLevel _rephraseLevel = RephraseLevel.off;
@@ -637,6 +641,15 @@ class _PromptsPageState extends State<PromptsPage> {
     );
   }
 
+  /// Generates a collision-resistant unique ID for a custom prompt using a
+  /// high-resolution microsecond timestamp plus a monotonic counter, so two
+  /// prompts created within the same microsecond can never collide.
+  String _generatePromptId() {
+    final ts = DateTime.now().microsecondsSinceEpoch;
+    final seq = _promptIdCounter++;
+    return 'custom_${ts}_$seq';
+  }
+
   Future<void> _duplicatePrompt(
     SystemPrompt source,
     SettingsService settings,
@@ -655,7 +668,7 @@ class _PromptsPageState extends State<PromptsPage> {
     }
 
     final dup = SystemPrompt(
-      id: 'custom_${DateTime.now().millisecondsSinceEpoch}',
+      id: _generatePromptId(),
       name: name,
       instruction: source.instruction,
       settings: const PromptSettings(),
@@ -888,17 +901,19 @@ class _PromptsPageState extends State<PromptsPage> {
                       settings: const PromptSettings(),
                     );
                     await settings.updateCustomPrompt(updated);
+                    if (!mounted) return;
                     setState(() => _customPrompts = settings.customPrompts);
                     widget.onPromptChanged?.call(existingPrompt.id);
                   } else {
                     final p = SystemPrompt(
-                      id: 'custom_${DateTime.now().millisecondsSinceEpoch}',
+                      id: _generatePromptId(),
                       name: promptName,
                       instruction: promptInstruction,
                       settings: const PromptSettings(),
                     );
                     await settings.addCustomPrompt(p);
                     await settings.setSelectedPromptId(p.id);
+                    if (!mounted) return;
                     setState(() {
                       _customPrompts = settings.customPrompts;
                       _selectedPromptId = p.id;

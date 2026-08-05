@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io';
 import 'dart:convert';
 import 'package:flutter/material.dart';
@@ -287,12 +288,12 @@ class SettingsService extends ChangeNotifier {
       }
     }
 
-    if (dirty) {
-      _save(); // fire-and-forget OK here
+      if (dirty) {
+        unawaited(_save()); // fire-and-forget OK here
+      }
     }
-  }
 
-  // ── custom prompts ────────────────────────────────────────────────────────
+    // ── custom prompts ────────────────────────────────────────────────────────
   void _loadCustomPrompts() {
     final raw = _getString(_kCustomPrompts);
     if (raw != null) {
@@ -356,8 +357,8 @@ class SettingsService extends ChangeNotifier {
       }
     }
     if (changed) {
-      _saveCustomPrompts(); // fire-and-forget
-      _savePromptOverrides();
+      unawaited(_saveCustomPrompts()); // fire-and-forget
+      unawaited(_savePromptOverrides());
     }
   }
 
@@ -433,6 +434,7 @@ class SettingsService extends ChangeNotifier {
         await launchAtStartup.disable();
       }
     }
+    notifyListeners();
   }
 
   static const _launchAtLoginChannel = MethodChannel('beeamvo/launch_at_login');
@@ -951,6 +953,7 @@ class SettingsService extends ChangeNotifier {
 
   Future<void> setDurationLimitEnabled(bool value) async {
     await _setBool(_kDurationLimitEnabled, value);
+    notifyListeners();
   }
 
   /// Smallest auto-stop duration the duration-limit dialog accepts.
@@ -978,6 +981,7 @@ class SettingsService extends ChangeNotifier {
 
   Future<void> setDurationLimit(int seconds) async {
     await _setInt(_kDurationLimit, clampDurationLimit(seconds));
+    notifyListeners();
   }
 
   // ── Theme Mode ────────────────────────────────────────────────────────────

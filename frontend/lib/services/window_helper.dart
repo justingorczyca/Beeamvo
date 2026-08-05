@@ -91,16 +91,6 @@ class WindowHelper {
     }
   }
 
-  /// Get screen dimensions
-  static (int, int) getScreenSize() {
-    if (Platform.isWindows) {
-      return win32_impl.getScreenSizeWindows();
-    } else {
-      // Fallback for synchronous call; async callers should use getScreenSizeAsync
-      return (1920, 1080);
-    }
-  }
-
   /// Async screen size using screen_retriever (works on all platforms)
   static Future<(int, int)> getScreenSizeAsync() async {
     if (Platform.isWindows) {
@@ -140,11 +130,37 @@ class WindowHelper {
         await windowManager.setSize(
           Size(windowWidth.toDouble(), windowHeight.toDouble()),
         );
-        const screenHeight = 900.0;
-        const screenWidth = 1440.0;
-        final xPos = (screenWidth / 2) - (windowWidth / 2);
-        final yPos = screenHeight - 120.0;
-        await windowManager.setPosition(Offset(xPos, yPos));
+        // Use screen_retriever for actual display dimensions instead of
+        // hardcoded 1440x900 which is wrong for most displays.
+        try {
+          final cursorPos = await screenRetriever.getCursorScreenPoint();
+          final displays = await screenRetriever.getAllDisplays();
+          Display? activeDisplay;
+          for (final display in displays) {
+            final bounds = display.visiblePosition ?? Offset.zero;
+            final size = display.size;
+            if (cursorPos.dx >= bounds.dx &&
+                cursorPos.dx < bounds.dx + size.width &&
+                cursorPos.dy >= bounds.dy &&
+                cursorPos.dy < bounds.dy + size.height) {
+              activeDisplay = display;
+              break;
+            }
+          }
+          activeDisplay ??= await screenRetriever.getPrimaryDisplay();
+          final displayPos = activeDisplay.visiblePosition ?? Offset.zero;
+          final screenWidth = activeDisplay.size.width;
+          final screenHeight = activeDisplay.size.height;
+          final xPos = displayPos.dx + (screenWidth / 2) - (windowWidth / 2);
+          final yPos = displayPos.dy + screenHeight - 120.0;
+          await windowManager.setPosition(Offset(xPos, yPos));
+        } catch (e2) {
+          debugPrint(
+            'WindowHelper.positionAtActiveMonitorBottomCenter screenRetriever fallback failed: $e2',
+          );
+          // Ultimate fallback: primary display via windowManager default.
+          await windowManager.setAlignment(Alignment.bottomCenter);
+        }
         await windowManager.setAlwaysOnTop(true);
         await windowManager.show();
       }

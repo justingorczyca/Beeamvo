@@ -147,10 +147,12 @@ class _SettingsWindowState extends State<SettingsWindow> {
               Expanded(
                 child: GestureDetector(
                   behavior: HitTestBehavior.opaque,
-                  onPanStart: (_) => widget.provider.setDragging(true),
+                  onPanStart: (_) {
+                    widget.provider.setDragging(true);
+                    windowManager.startDragging();
+                  },
                   onPanEnd: (_) => widget.provider.setDragging(false),
                   onPanCancel: () => widget.provider.setDragging(false),
-                  onPanUpdate: (_) async => await windowManager.startDragging(),
                   child: Row(
                     children: [
                       if (showTitle) ...[

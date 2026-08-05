@@ -17,13 +17,31 @@ class TranscriptionResultGuard {
       }
     }
 
+  /// Maximum characters allowed in a transcription result.
+  static const int maxTranscriptLength = 10000;
+
+  /// Unicode ranges considered unsafe for direct paste:
+  /// - BiDi control characters (U+202A–U+202E, U+2066–U+2069)
+  /// - BiDi marks (U+200E, U+200F)
+  /// - Zero-width / join characters (U+200B–U+200D, U+FEFF)
+  static final RegExp _unsafeChars = RegExp(
+    '[\u200B-\u200F\u202A-\u202E\u2066-\u2069\uFEFF]',
+  );
+
   static String requireTranscript(String text) {
-    final normalized = text.trim();
+    // Strip BiDi / invisible control characters that could be used to
+    // disguise text direction or interfere with the paste target.
+    final cleaned = text.replaceAll(_unsafeChars, '');
+    final normalized = cleaned.trim();
     final marker = normalized.toUpperCase();
     if (normalized.isEmpty ||
         marker == noTranscriptMarker ||
         marker == 'NO_TRANSCRIPT') {
       throw CloudTranscriptionException(noTranscriptMessage);
+    }
+    // Enforce a length cap to protect against runaway/hallucinated output.
+    if (normalized.length > maxTranscriptLength) {
+      return normalized.substring(0, maxTranscriptLength);
     }
     return normalized;
   }

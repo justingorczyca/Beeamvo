@@ -106,7 +106,7 @@ class _GeneralSettingsPageState extends State<GeneralSettingsPage> {
     final settings = SettingsProviderScope.of(context).settingsService;
     setState(() => _isCheckingUpdate = true);
     try {
-      final result = await UpdateCheckService().checkWithStatus(force: true);
+      final result = await UpdateCheckService().checkWithStatus();
       if (!result.succeeded) {
         if (!mounted) return;
         _showUpdateCheckFailedDialog();
@@ -992,7 +992,7 @@ class _GeneralSettingsPageState extends State<GeneralSettingsPage> {
             ),
             ElevatedButton(
               style: beePrimaryButtonStyle(context),
-              onPressed: () {
+              onPressed: () async {
                 final v = int.tryParse(ctrl.text);
                 if (v == null) {
                   setDialogState(() => error = 'Enter a valid number');
@@ -1001,8 +1001,10 @@ class _GeneralSettingsPageState extends State<GeneralSettingsPage> {
                 } else if (v > 3600) {
                   setDialogState(() => error = 'Maximum is 3600 seconds');
                 } else {
-                  settings.setDurationLimit(v);
+                  await settings.setDurationLimit(v);
+                  if (!mounted) return;
                   setState(() => _durationLimit = v);
+                  if (!context.mounted) return;
                   Navigator.of(context).pop();
                 }
               },

@@ -12,6 +12,18 @@ class UsageStatsService extends ChangeNotifier {
   UsageStats _stats = const UsageStats();
   late File _file;
 
+  /// Serializes [recordTranscription] so concurrent calls (e.g. back-to-back
+  /// recording completions) run strictly one at a time. The `await _save()`
+  /// inside the body is an interleaving point on the event loop: without this
+  /// mutex, two near-simultaneous calls both read the same pre-update [_stats]
+  /// snapshot and the loser's increment is silently lost — the lost-update
+  /// race (see `BACKEND_SERVICES_AUDIT.md`, finding H-2). This is a simple
+  /// chained-future lock; the chain is shielded with [Future.catchError] so a
+  /// failed recording still surfaces its error to the caller while never
+  /// leaving this future in an error state that would permanently block later
+  /// recordings.
+  Future<void> _recordLock = Future<void>.value();
+
   /// The current aggregated stats (read-only).
   UsageStats get stats => _stats;
 
@@ -92,7 +104,26 @@ class UsageStatsService extends ChangeNotifier {
   // ── Public API ────────────────────────────────────────────────────────────
 
   /// Call after a successful transcription.
-  Future<void> recordTranscription(
+  ///
+  /// Serialized via [_recordLock]: concurrent invocations are queued onto a
+  /// single chained future and never interleave across the `await _save()`
+  /// inside the body — the interleaving that previously caused a lost update
+  /// of [_stats], streaks, and achievement thresholds.
+  Future<void> recordTranscription(String text, Duration recordingDuration) {
+    // Chain onto the lock so this call only runs once the previous recording
+    // has fully completed its read-modify-write + persist. The returned `run`
+    // future still surfaces any error to the caller; we feed `_recordLock`
+    // from `run.catchError(...)` instead so a single failure never leaves the
+    // chain in an error state that would permanently block later recordings.
+    final run = _recordLock
+        .then((_) => _recordTranscriptionInternal(text, recordingDuration));
+    _recordLock = run.catchError((Object _) {});
+    return run;
+  }
+
+  /// The actual read-modify-write of [_stats] + persist + notify, executed
+  /// exclusively from [recordTranscription] under the [_recordLock] mutex.
+  Future<void> _recordTranscriptionInternal(
     String text,
     Duration recordingDuration,
   ) async {
@@ -153,9 +184,19 @@ class UsageStatsService extends ChangeNotifier {
   // ── Helpers ───────────────────────────────────────────────────────────────
 
   /// Count words in a transcription string.
-  /// Splits on whitespace, filters empty tokens.
+  /// Splits on whitespace for Latin/Cyrillic scripts, and counts each CJK
+  /// ideograph as a separate 'word' for unsegmented scripts.
   int _countWords(String text) {
-    return text.split(RegExp(r'\s+')).where((t) => t.isNotEmpty).length;
+    const cjkPattern =
+        r'[\u3400-\u9FFF\uF900-\uFAFF\u3040-\u30FF\uAC00-\uD7AF]';
+    final cjkCount = RegExp(cjkPattern).allMatches(text).length;
+    // Split on whitespace AND CJK ranges to separate Latin words from CJK runs.
+    final spaced = text
+        .split(RegExp(
+            r'[\s\u3400-\u9FFF\uF900-\uFAFF\u3040-\u30FF\uAC00-\uD7AF]+'))
+        .where((t) => t.isNotEmpty)
+        .length;
+    return spaced + cjkCount;
   }
 
   /// Today's date as "YYYY-MM-DD".
