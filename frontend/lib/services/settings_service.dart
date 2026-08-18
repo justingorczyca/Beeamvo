@@ -997,18 +997,18 @@ class SettingsService extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// Namespaces the override key per provider. Reuses the credential account
+  /// validation so a provider id can never escape its own settings key.
   String _openAiCompatibleBaseUrlKey(String providerId) {
-    openAiCompatibleApiKeyAccount(providerId);
-    return '$_kOpenAiCompatibleBaseUrlPrefix${providerId.trim()}';
+    final normalized = providerId.trim();
+    openAiCompatibleApiKeyAccount(normalized);
+    return '$_kOpenAiCompatibleBaseUrlPrefix$normalized';
   }
 
-  String? readOpenAiCompatibleBaseUrl(String providerId) =>
+  String? getOpenAiCompatibleBaseUrlOverride(String providerId) =>
       _getString(_openAiCompatibleBaseUrlKey(providerId));
 
-  String? getOpenAiCompatibleBaseUrlOverride(String providerId) =>
-      readOpenAiCompatibleBaseUrl(providerId);
-
-  Future<void> setOpenAiCompatibleBaseUrl(
+  Future<void> setOpenAiCompatibleBaseUrlOverride(
     String providerId,
     String? baseUrl,
   ) async {
@@ -1019,13 +1019,6 @@ class SettingsService extends ChangeNotifier {
       await _setString(key, baseUrl.trim());
     }
     notifyListeners();
-  }
-
-  Future<void> setOpenAiCompatibleBaseUrlOverride(
-    String providerId,
-    String? baseUrl,
-  ) {
-    return setOpenAiCompatibleBaseUrl(providerId, baseUrl);
   }
 
   Future<String?> readOpenAiCompatibleApiKey(String providerId) async {
