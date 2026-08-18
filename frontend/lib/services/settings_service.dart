@@ -56,6 +56,7 @@ class SettingsService extends ChangeNotifier {
   static const _kWhisperLanguage = 'whisper_language';
   static const _kTranscriptionBackend = 'transcription_backend';
   static const _kCloudProvider = 'cloud_provider';
+  static const _kGeminiApiSurface = 'gemini_api_surface';
 
   // Update notifications
   static const _kLastUpdateCheckAt = 'last_update_check_at';
@@ -198,6 +199,9 @@ class SettingsService extends ChangeNotifier {
 
     if (_getString(_kCloudProvider) == null) {
       _data[_kCloudProvider] = CloudProvider.geminiApiKey.name;
+    }
+    if (_getString(_kGeminiApiSurface) == null) {
+      _data[_kGeminiApiSurface] = GeminiApiSurface.generateContent.name;
     }
 
     await _save();
@@ -854,6 +858,14 @@ class SettingsService extends ChangeNotifier {
 
   Future<void> setCloudProvider(CloudProvider provider) async {
     await _setString(_kCloudProvider, provider.name);
+    notifyListeners();
+  }
+
+  GeminiApiSurface get geminiApiSurface =>
+      GeminiApiSurfaceExtension.fromValue(_getString(_kGeminiApiSurface));
+
+  Future<void> setGeminiApiSurface(GeminiApiSurface surface) async {
+    await _setString(_kGeminiApiSurface, surface.name);
     notifyListeners();
   }
 

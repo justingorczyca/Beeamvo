@@ -15,8 +15,10 @@ class FakeCloudClient implements CloudTranscriptionClient {
   final String _response;
   GeminiModelConfig _currentModel;
   bool _isInitialized = false;
+  bool settingsAttached = false;
   int initializeCalls = 0;
   int verifyCalls = 0;
+  int disposeCalls = 0;
   int improveCalls = 0;
   int transcribeCalls = 0;
   int transcribeAndImproveCalls = 0;
@@ -28,7 +30,9 @@ class FakeCloudClient implements CloudTranscriptionClient {
   String? lastTranscribeModelOverrideId;
 
   @override
-  void attachSettings(SettingsService settings) {}
+  void attachSettings(SettingsService settings) {
+    settingsAttached = true;
+  }
 
   @override
   GeminiModelConfig get currentModel => _currentModel;
@@ -59,7 +63,9 @@ class FakeCloudClient implements CloudTranscriptionClient {
   }
 
   @override
-  void dispose() {}
+  void dispose() {
+    disposeCalls += 1;
+  }
 
   @override
   Future<String> improveTranscription(
@@ -103,14 +109,19 @@ class FakeCloudClient implements CloudTranscriptionClient {
 class FakeCloudSettingsService extends SettingsService {
   FakeCloudSettingsService({
     this.provider = CloudProvider.geminiApiKey,
+    this.surface = GeminiApiSurface.generateContent,
     this.modelId = AppConfig.defaultModelId,
   }) : super(credentialStore: InMemorySecureCredentialStore());
 
   CloudProvider provider;
+  GeminiApiSurface surface;
   String modelId;
 
   @override
   CloudProvider get cloudProvider => provider;
+
+  @override
+  GeminiApiSurface get geminiApiSurface => surface;
 
   @override
   String get selectedModelId => modelId;
@@ -270,4 +281,49 @@ void main() {
       );
     });
   });
+
+  test(
+    'Gemini surface selection routes calls and propagates lifecycle',
+    () async {
+      final generateContentClient = FakeCloudClient(response: 'legacy');
+      final interactionsClient = FakeCloudClient(response: 'interactions');
+      final vertexClient = FakeCloudClient(response: 'vertex');
+      final settings = FakeCloudSettingsService(
+        surface: GeminiApiSurface.interactions,
+      );
+
+      final service = CloudTranscriptionService(
+        geminiApiService: generateContentClient,
+        geminiInteractionsService: interactionsClient,
+        vertexAiService: vertexClient,
+      );
+
+      service.attachSettings(settings);
+      await service.initialize();
+      expect(generateContentClient.settingsAttached, isTrue);
+      expect(interactionsClient.settingsAttached, isTrue);
+      expect(vertexClient.settingsAttached, isTrue);
+      expect(interactionsClient.initializeCalls, equals(1));
+      expect(generateContentClient.initializeCalls, equals(0));
+      expect(interactionsClient.selectedModelIds, contains(settings.modelId));
+      expect(
+        generateContentClient.selectedModelIds,
+        contains(settings.modelId),
+      );
+      expect(vertexClient.selectedModelIds, contains(settings.modelId));
+
+      expect(await service.improveTranscription('raw'), equals('interactions'));
+      settings.surface = GeminiApiSurface.generateContent;
+      expect(await service.improveTranscription('raw'), equals('legacy'));
+
+      settings.surface = GeminiApiSurface.interactions;
+      await service.verifyProvider(CloudProvider.geminiApiKey);
+      expect(interactionsClient.verifyCalls, equals(1));
+
+      service.dispose();
+      expect(generateContentClient.disposeCalls, equals(1));
+      expect(interactionsClient.disposeCalls, equals(1));
+      expect(vertexClient.disposeCalls, equals(1));
+    },
+  );
 }

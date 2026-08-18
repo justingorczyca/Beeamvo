@@ -87,6 +87,10 @@ The fastest cloud setup — no Google Cloud project needed. Audio is sent to Goo
 2. Settings → Intelligence → **Cloud Provider** → Gemini API Key
 3. Click **Add API Key**, paste the key, save, then **Verify**
 
+In the Gemini API Key settings, choose the recommended **Interactions** API
+surface or the legacy `generateContent` surface. The legacy option remains the
+default for existing installations.
+
 Your key is stored in **OS secure storage** (Keychain on macOS, platform secure storage on Windows) — never in plaintext files. See [docs/gemini-api-setup.md](docs/gemini-api-setup.md).
 
 ### Vertex AI (cloud, Google Cloud)

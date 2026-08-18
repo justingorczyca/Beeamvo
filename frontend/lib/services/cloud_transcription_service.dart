@@ -3,6 +3,7 @@ import 'dart:typed_data';
 import '../config.dart';
 import 'cloud_transcription_client.dart';
 import 'gemini_api_service.dart';
+import 'gemini_interactions_service.dart';
 import 'settings_service.dart';
 import 'transcription_result_guard.dart';
 import 'vertex_ai_service.dart';
@@ -10,11 +11,15 @@ import 'vertex_ai_service.dart';
 class CloudTranscriptionService {
   CloudTranscriptionService({
     CloudTranscriptionClient? geminiApiService,
+    CloudTranscriptionClient? geminiInteractionsService,
     CloudTranscriptionClient? vertexAiService,
   }) : _geminiApiService = geminiApiService ?? GeminiApiService(),
+       _geminiInteractionsService =
+           geminiInteractionsService ?? GeminiInteractionsService(),
        _vertexAiService = vertexAiService ?? VertexAiService();
 
   final CloudTranscriptionClient _geminiApiService;
+  final CloudTranscriptionClient _geminiInteractionsService;
   final CloudTranscriptionClient _vertexAiService;
   SettingsService? _settingsService;
   CloudProvider? _providerOverride;
@@ -23,6 +28,7 @@ class CloudTranscriptionService {
   void attachSettings(SettingsService settings) {
     _settingsService = settings;
     _geminiApiService.attachSettings(settings);
+    _geminiInteractionsService.attachSettings(settings);
     _vertexAiService.attachSettings(settings);
     setModelById(settings.selectedModelId);
   }
@@ -39,6 +45,7 @@ class CloudTranscriptionService {
     if (_isDisposed) return;
     _isDisposed = true;
     _geminiApiService.dispose();
+    _geminiInteractionsService.dispose();
     _vertexAiService.dispose();
   }
 
@@ -64,7 +71,10 @@ class CloudTranscriptionService {
   CloudTranscriptionClient _clientFor(CloudProvider provider) {
     switch (provider) {
       case CloudProvider.geminiApiKey:
-        return _geminiApiService;
+        return _settingsService?.geminiApiSurface ==
+                GeminiApiSurface.interactions
+            ? _geminiInteractionsService
+            : _geminiApiService;
       case CloudProvider.vertexAi:
         return _vertexAiService;
     }
@@ -82,6 +92,7 @@ class CloudTranscriptionService {
 
   void setModelById(String modelId) {
     _geminiApiService.setModelById(modelId);
+    _geminiInteractionsService.setModelById(modelId);
     _vertexAiService.setModelById(modelId);
   }
 

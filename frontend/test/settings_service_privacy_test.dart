@@ -48,4 +48,12 @@ void main() {
       }
     });
   });
+
+  test('Gemini API surface defaults to legacy and persists changes', () async {
+    final settings = SettingsService();
+    expect(settings.geminiApiSurface, equals(GeminiApiSurface.generateContent));
+
+    await settings.setGeminiApiSurface(GeminiApiSurface.interactions);
+    expect(settings.geminiApiSurface, equals(GeminiApiSurface.interactions));
+  });
 }

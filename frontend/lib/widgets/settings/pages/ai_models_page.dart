@@ -36,6 +36,7 @@ class _AiModelsPageState extends State<AiModelsPage> {
   String _selectedModelId = '';
   TranscriptionBackend _transcriptionBackend = TranscriptionBackend.cloud;
   CloudProvider _cloudProvider = CloudProvider.geminiApiKey;
+  GeminiApiSurface _geminiApiSurface = GeminiApiSurface.generateContent;
   bool _twoPassEnabled = false;
   String _twoPassRefinementModelId = '';
   GeminiThinkingLevel? _selectedThinkingLevel; // null = model default
@@ -120,12 +121,14 @@ class _AiModelsPageState extends State<AiModelsPage> {
     final newTwoPassModel = s.twoPassRefinementModelId;
     final newHasGeminiKey = s.hasGeminiApiKey;
     final newVertexProjectId = s.vertexProjectId;
+    final newGeminiApiSurface = s.geminiApiSurface;
     // Avoid setState if nothing changed (keeps no-op rebuilds cheap).
     if (newBackend == _transcriptionBackend &&
         newTwoPass == _twoPassEnabled &&
         newTwoPassModel == _twoPassRefinementModelId &&
         newHasGeminiKey == _geminiApiKeyPresent &&
-        newVertexProjectId == _vertexProjectId) {
+        newVertexProjectId == _vertexProjectId &&
+        newGeminiApiSurface == _geminiApiSurface) {
       return;
     }
     setState(() {
@@ -134,6 +137,7 @@ class _AiModelsPageState extends State<AiModelsPage> {
       _twoPassRefinementModelId = newTwoPassModel;
       _geminiApiKeyPresent = newHasGeminiKey;
       _vertexProjectId = newVertexProjectId;
+      _geminiApiSurface = newGeminiApiSurface;
     });
   }
 
@@ -144,6 +148,7 @@ class _AiModelsPageState extends State<AiModelsPage> {
       _selectedModelId = s.selectedModelId;
       _transcriptionBackend = s.transcriptionBackend;
       _cloudProvider = s.cloudProvider;
+      _geminiApiSurface = s.geminiApiSurface;
       _twoPassEnabled = s.twoPassTranscriptionEnabled;
       _twoPassRefinementModelId = s.twoPassRefinementModelId;
       // Load persisted thinking level for the currently selected model
@@ -198,6 +203,17 @@ class _AiModelsPageState extends State<AiModelsPage> {
     await settings.setCloudProvider(provider);
     setState(() {
       _cloudProvider = provider;
+      _cloudStatusMessage = null;
+      _cloudStatusIsError = false;
+      _cloudStatusIsVerified = false;
+    });
+  }
+
+  Future<void> _onGeminiApiSurfaceSelected(GeminiApiSurface surface) async {
+    final settings = SettingsProviderScope.of(context).settingsService;
+    await settings.setGeminiApiSurface(surface);
+    setState(() {
+      _geminiApiSurface = surface;
       _cloudStatusMessage = null;
       _cloudStatusIsError = false;
       _cloudStatusIsVerified = false;
@@ -502,7 +518,9 @@ class _AiModelsPageState extends State<AiModelsPage> {
       await widget.onVerifyCloudProvider!.call(_cloudProvider);
       setState(() {
         _cloudStatusMessage = _cloudProvider == CloudProvider.geminiApiKey
-            ? 'Gemini API key verified successfully.'
+            ? _geminiApiSurface == GeminiApiSurface.interactions
+                  ? 'Gemini API key verified successfully (Interactions API).'
+                  : 'Gemini API key verified successfully (legacy generateContent API).'
             : 'Vertex AI configuration verified successfully.';
         _cloudStatusIsError = false;
         _cloudStatusIsVerified = true;
@@ -931,6 +949,28 @@ class _AiModelsPageState extends State<AiModelsPage> {
             ],
           ),
         ),
+        if (isGemini)
+          BeeSettingsRow(
+            icon: Icons.api_rounded,
+            label: 'API Surface',
+            description: _geminiApiSurface.description,
+            trailing: BeeSegmented<GeminiApiSurface>(
+              value: _geminiApiSurface,
+              onChanged: _onGeminiApiSurfaceSelected,
+              options: const [
+                (
+                  val: GeminiApiSurface.interactions,
+                  label: 'Interactions',
+                  icon: Icons.auto_awesome_rounded,
+                ),
+                (
+                  val: GeminiApiSurface.generateContent,
+                  label: 'Legacy',
+                  icon: Icons.history_rounded,
+                ),
+              ],
+            ),
+          ),
         BeeSettingsRow(
           icon: isGemini ? Icons.key_rounded : Icons.hub_rounded,
           label: isGemini ? 'API Key' : 'Project ID',

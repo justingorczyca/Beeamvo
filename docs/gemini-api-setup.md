@@ -19,6 +19,9 @@ Beeamvo stores your Gemini API key in local OS secure storage and sends cloud re
 7. Click `Verify`.
 8. Choose the cloud model you want to use.
 
+In the Gemini API Key section, **API Surface** lets you choose Google's
+recommended **Interactions** API or the legacy `generateContent` API.
+
 ## Notes
 
 - Prefer saving the key via the UI, where it is stored in OS secure storage.
@@ -26,6 +29,8 @@ Beeamvo stores your Gemini API key in local OS secure storage and sends cloud re
 - `.env` is ignored by Git and must not be copied into source archives, app bundles, screenshots, or issue reports.
 - The key is not committed to the repository.
 - The app currently uses inline audio requests for Gemini. If a recording is too large, reduce the duration limit and retry.
+- Interactions is the recommended surface for new setups; `generateContent`
+  remains available for compatibility.
 
 ## Troubleshooting
 
