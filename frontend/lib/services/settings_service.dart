@@ -192,6 +192,7 @@ class SettingsService extends ChangeNotifier {
     final backup = File('${target.path}.bak');
     final targetExisted = target.existsSync();
     await tmp.writeAsString(content, flush: true);
+    await setPosixPermissions(tmp.path, '600');
     if (targetExisted) {
       if (backup.existsSync()) {
         await backup.delete();
@@ -199,9 +200,6 @@ class SettingsService extends ChangeNotifier {
       await target.rename(backup.path);
     }
     await tmp.rename(target.path);
-    if (!targetExisted) {
-      await setPosixPermissions(target.path, '600');
-    }
   }
 
   Future<void> _loadSecureState() async {
@@ -495,7 +493,7 @@ class SettingsService extends ChangeNotifier {
           'status',
         );
         _launchAtStartupRequiresApproval = status == 'requiresApproval';
-        enabled = status == 'enabled';
+        enabled = launchAtStartupStatusIsEnabled(status);
       } else {
         _launchAtStartupRequiresApproval = false;
         enabled = await launchAtStartup.isEnabled();
@@ -506,6 +504,10 @@ class SettingsService extends ChangeNotifier {
       debugPrint('[SettingsService] Failed to reconcile launch at login: $e');
     }
   }
+
+  @visibleForTesting
+  static bool launchAtStartupStatusIsEnabled(String? status) =>
+      status == 'enabled' || status == 'requiresApproval';
 
   // ── Prompt selection ──────────────────────────────────────────────────────
   String get selectedPromptId => _getString(_kSelectedPromptId) ?? 'standard';

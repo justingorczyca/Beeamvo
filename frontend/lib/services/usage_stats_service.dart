@@ -98,6 +98,7 @@ class UsageStatsService extends ChangeNotifier {
     final backup = File('${target.path}.bak');
     final targetExisted = target.existsSync();
     await tmp.writeAsString(content, flush: true);
+    await setPosixPermissions(tmp.path, '600');
     if (targetExisted) {
       if (backup.existsSync()) {
         await backup.delete();
@@ -105,9 +106,6 @@ class UsageStatsService extends ChangeNotifier {
       await target.rename(backup.path);
     }
     await tmp.rename(target.path);
-    if (!targetExisted) {
-      await setPosixPermissions(target.path, '600');
-    }
   }
 
   // ── Public API ────────────────────────────────────────────────────────────
