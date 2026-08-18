@@ -12,6 +12,7 @@ import '../models/system_prompt.dart';
 import '../models/prompt_settings.dart';
 import '../models/hotkey_config.dart';
 import '../models/clipboard_history_entry.dart';
+import '../models/openai_compatible_provider.dart';
 import '../config.dart';
 import 'secure_credential_store.dart';
 import 'update_check_service.dart';
@@ -38,9 +39,14 @@ class LaunchAtStartupException implements Exception {
 /// shell that owns the active [ThemeMode]) can rebuild when a setting that
 /// affects the whole tree changes — currently just [setThemeMode].
 class SettingsService extends ChangeNotifier {
-  SettingsService({SecureCredentialStore? credentialStore})
-    : _credentialStore =
-          credentialStore ?? const FlutterSecureCredentialStore();
+  SettingsService({
+    SecureCredentialStore? credentialStore,
+    @visibleForTesting this._applicationSupportDirectory,
+    @visibleForTesting Iterable<String>? openAiCompatibleProviderIds,
+  }) : _credentialStore =
+           credentialStore ?? const FlutterSecureCredentialStore(),
+       _openAiCompatibleProviderIds =
+           openAiCompatibleProviderIds ?? const <String>[];
   // ── keys ──────────────────────────────────────────────────────────────────
   static const _kLaunchAtStartup = 'launch_at_startup';
   static const _kSelectedPromptId = 'active_system_prompt_id';
@@ -67,6 +73,9 @@ class SettingsService extends ChangeNotifier {
   static const _kTranscriptionBackend = 'transcription_backend';
   static const _kCloudProvider = 'cloud_provider';
   static const _kGeminiApiSurface = 'gemini_api_surface';
+  static const _kOpenAiCompatibleProviderId = 'openai_compatible_provider_id';
+  static const _kOpenAiCompatibleModelId = 'openai_compatible_model_id';
+  static const _kOpenAiCompatibleBaseUrlPrefix = 'openai_compatible_base_url_';
 
   // Update notifications
   static const _kLastUpdateCheckAt = 'last_update_check_at';
@@ -82,18 +91,22 @@ class SettingsService extends ChangeNotifier {
 
   // ── internal state ────────────────────────────────────────────────────────
   final SecureCredentialStore _credentialStore;
+  final Directory? _applicationSupportDirectory;
+  final Iterable<String> _openAiCompatibleProviderIds;
   late File _file;
   Map<String, dynamic> _data = {};
   List<SystemPrompt> _customPrompts = [];
   Map<String, PromptSettings> _promptOverrides = {};
   List<ClipboardHistoryEntry> _clipboardHistory = [];
   bool _hasGeminiApiKey = false;
+  final Map<String, bool> _hasOpenAiCompatibleApiKeys = {};
   bool _launchAtStartupRequiresApproval = false;
 
   // ── init ──────────────────────────────────────────────────────────────────
   Future<void> initialize() async {
     // Resolve the settings file path
-    final dir = await getApplicationSupportDirectory();
+    final dir =
+        _applicationSupportDirectory ?? await getApplicationSupportDirectory();
     final folder = Directory('${dir.path}${Platform.pathSeparator}Beeamvo');
     if (!folder.existsSync()) {
       folder.createSync(recursive: true);
@@ -205,6 +218,32 @@ class SettingsService extends ChangeNotifier {
   Future<void> _loadSecureState() async {
     final geminiApiKey = await _credentialStore.readGeminiApiKey();
     _hasGeminiApiKey = geminiApiKey != null && geminiApiKey.trim().isNotEmpty;
+    final rawProviderId = _getString(_kOpenAiCompatibleProviderId)?.trim();
+    final providerId = selectedOpenAiCompatibleProviderId;
+    final account = rawProviderId == null
+        ? null
+        : tryOpenAiCompatibleApiKeyAccount(rawProviderId);
+    if (rawProviderId != null && account == null) {
+      _data.remove(_kOpenAiCompatibleProviderId);
+      await _save();
+    }
+    _hasOpenAiCompatibleApiKeys.clear();
+    final providerIds = <String>{
+      for (final provider in OpenAiCompatibleProviderRegistry.builtIn)
+        provider.id,
+      ..._openAiCompatibleProviderIds,
+      if (providerId != null) providerId,
+    };
+    for (final candidate in providerIds) {
+      final normalizedProviderId = candidate.trim();
+      final candidateAccount = tryOpenAiCompatibleApiKeyAccount(
+        normalizedProviderId,
+      );
+      if (candidateAccount == null) continue;
+      final key = await _credentialStore.readApiKey(candidateAccount);
+      _hasOpenAiCompatibleApiKeys[normalizedProviderId] =
+          key != null && key.trim().isNotEmpty;
+    }
   }
 
   Future<void> _migrateCloudSettings() async {
@@ -958,6 +997,106 @@ class SettingsService extends ChangeNotifier {
   Future<void> clearGeminiApiKey() async {
     await _credentialStore.deleteGeminiApiKey();
     _hasGeminiApiKey = false;
+    notifyListeners();
+  }
+
+  String? get selectedOpenAiCompatibleProviderId {
+    final providerId = _getString(_kOpenAiCompatibleProviderId)?.trim();
+    if (providerId == null ||
+        tryOpenAiCompatibleApiKeyAccount(providerId) == null) {
+      return null;
+    }
+    return providerId;
+  }
+
+  Future<void> setSelectedOpenAiCompatibleProviderId(String? providerId) async {
+    if (providerId == null || providerId.trim().isEmpty) {
+      await _remove(_kOpenAiCompatibleProviderId);
+    } else {
+      final normalized = providerId.trim();
+      openAiCompatibleApiKeyAccount(normalized);
+      await _setString(_kOpenAiCompatibleProviderId, normalized);
+    }
+    notifyListeners();
+  }
+
+  String? get selectedOpenAiCompatibleModelId =>
+      _getString(_kOpenAiCompatibleModelId);
+
+  Future<void> setSelectedOpenAiCompatibleModelId(String? modelId) async {
+    if (modelId == null || modelId.trim().isEmpty) {
+      await _remove(_kOpenAiCompatibleModelId);
+    } else {
+      await _setString(_kOpenAiCompatibleModelId, modelId.trim());
+    }
+    notifyListeners();
+  }
+
+  /// Namespaces the override key per provider. Reuses the credential account
+  /// validation so a provider id can never escape its own settings key.
+  String? _openAiCompatibleBaseUrlKey(String providerId) {
+    final normalized = providerId.trim();
+    if (tryOpenAiCompatibleApiKeyAccount(normalized) == null) return null;
+    return '$_kOpenAiCompatibleBaseUrlPrefix$normalized';
+  }
+
+  String? getOpenAiCompatibleBaseUrlOverride(String providerId) {
+    final key = _openAiCompatibleBaseUrlKey(providerId);
+    return key == null ? null : _getString(key);
+  }
+
+  Future<void> setOpenAiCompatibleBaseUrlOverride(
+    String providerId,
+    String? baseUrl,
+  ) async {
+    final normalizedProviderId = validateOpenAiCompatibleProviderId(providerId);
+    final key = '$_kOpenAiCompatibleBaseUrlPrefix$normalizedProviderId';
+    if (baseUrl == null || baseUrl.trim().isEmpty) {
+      await _remove(key);
+    } else {
+      await _setString(key, baseUrl.trim());
+    }
+    notifyListeners();
+  }
+
+  Future<String?> readOpenAiCompatibleApiKey(String providerId) async {
+    final normalizedProviderId = providerId.trim();
+    final account = tryOpenAiCompatibleApiKeyAccount(normalizedProviderId);
+    if (account == null) return null;
+    final value = await _credentialStore.readApiKey(account);
+    _hasOpenAiCompatibleApiKeys[normalizedProviderId] =
+        value != null && value.trim().isNotEmpty;
+    return value;
+  }
+
+  bool hasOpenAiCompatibleApiKey(String providerId) {
+    final normalizedProviderId = providerId.trim();
+    if (tryOpenAiCompatibleApiKeyAccount(normalizedProviderId) == null) {
+      return false;
+    }
+    return _hasOpenAiCompatibleApiKeys[normalizedProviderId] ?? false;
+  }
+
+  Future<void> setOpenAiCompatibleApiKey(
+    String providerId,
+    String value,
+  ) async {
+    final account = openAiCompatibleApiKeyAccount(providerId);
+    final trimmed = value.trim();
+    if (trimmed.isEmpty) {
+      await clearOpenAiCompatibleApiKey(providerId);
+      return;
+    }
+    await _credentialStore.writeApiKey(account, trimmed);
+    _hasOpenAiCompatibleApiKeys[providerId.trim()] = true;
+    notifyListeners();
+  }
+
+  Future<void> clearOpenAiCompatibleApiKey(String providerId) async {
+    await _credentialStore.deleteApiKey(
+      openAiCompatibleApiKeyAccount(providerId),
+    );
+    _hasOpenAiCompatibleApiKeys.remove(providerId.trim());
     notifyListeners();
   }
 

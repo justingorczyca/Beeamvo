@@ -4,6 +4,10 @@ import 'package:flutter/services.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 
 abstract class SecureCredentialStore {
+  Future<String?> readApiKey(String account);
+  Future<void> writeApiKey(String account, String value);
+  Future<void> deleteApiKey(String account);
+
   Future<String?> readGeminiApiKey();
   Future<void> writeGeminiApiKey(String value);
   Future<void> deleteGeminiApiKey();
@@ -14,7 +18,7 @@ abstract class SecureCredentialStore {
 class FlutterSecureCredentialStore implements SecureCredentialStore {
   const FlutterSecureCredentialStore();
 
-  static const _kGeminiApiKey = 'gemini_api_key';
+  static const String _kGeminiApiKey = 'gemini_api_key';
 
   /// Platform channel for macOS native credential access
   static const _channel = MethodChannel('com.beamvo/keychain_credentials');
@@ -23,14 +27,14 @@ class FlutterSecureCredentialStore implements SecureCredentialStore {
   static const _fallbackStorage = FlutterSecureStorage();
 
   @override
-  Future<String?> readGeminiApiKey() async {
+  Future<String?> readApiKey(String account) async {
     try {
       if (Platform.isMacOS) {
         return await _channel.invokeMethod<String>('read', {
-          'account': _kGeminiApiKey,
+          'account': account,
         });
       } else {
-        return await _fallbackStorage.read(key: _kGeminiApiKey);
+        return await _fallbackStorage.read(key: account);
       }
     } catch (e) {
       debugPrint('[SecureCredentialStore] Error reading key: $e');
@@ -39,18 +43,18 @@ class FlutterSecureCredentialStore implements SecureCredentialStore {
   }
 
   @override
-  Future<void> writeGeminiApiKey(String value) async {
+  Future<void> writeApiKey(String account, String value) async {
     try {
       if (Platform.isMacOS) {
         final success = await _channel.invokeMethod<bool>('write', {
-          'account': _kGeminiApiKey,
+          'account': account,
           'value': value,
         });
         if (success != true) {
           throw Exception('Failed to write credentials');
         }
       } else {
-        await _fallbackStorage.write(key: _kGeminiApiKey, value: value);
+        await _fallbackStorage.write(key: account, value: value);
       }
     } catch (e) {
       debugPrint('[SecureCredentialStore] Error writing key: $e');
@@ -59,34 +63,74 @@ class FlutterSecureCredentialStore implements SecureCredentialStore {
   }
 
   @override
-  Future<void> deleteGeminiApiKey() async {
+  Future<void> deleteApiKey(String account) async {
     try {
       if (Platform.isMacOS) {
-        await _channel.invokeMethod<bool>('delete', {
-          'account': _kGeminiApiKey,
-        });
+        await _channel.invokeMethod<bool>('delete', {'account': account});
       } else {
-        await _fallbackStorage.delete(key: _kGeminiApiKey);
+        await _fallbackStorage.delete(key: account);
       }
     } catch (e) {
       debugPrint('[SecureCredentialStore] Error deleting key: $e');
     }
   }
+
+  @override
+  Future<String?> readGeminiApiKey() => readApiKey(_kGeminiApiKey);
+
+  @override
+  Future<void> writeGeminiApiKey(String value) =>
+      writeApiKey(_kGeminiApiKey, value);
+
+  @override
+  Future<void> deleteGeminiApiKey() => deleteApiKey(_kGeminiApiKey);
 }
 
 class InMemorySecureCredentialStore implements SecureCredentialStore {
-  String? _geminiApiKey;
+  final Map<String, String> _apiKeys = {};
 
   @override
-  Future<String?> readGeminiApiKey() async => _geminiApiKey;
+  Future<String?> readApiKey(String account) async => _apiKeys[account];
 
   @override
-  Future<void> writeGeminiApiKey(String value) async {
-    _geminiApiKey = value;
+  Future<void> writeApiKey(String account, String value) async {
+    _apiKeys[account] = value;
   }
 
   @override
-  Future<void> deleteGeminiApiKey() async {
-    _geminiApiKey = null;
+  Future<void> deleteApiKey(String account) async {
+    _apiKeys.remove(account);
   }
+
+  @override
+  Future<String?> readGeminiApiKey() => readApiKey('gemini_api_key');
+
+  @override
+  Future<void> writeGeminiApiKey(String value) =>
+      writeApiKey('gemini_api_key', value);
+
+  @override
+  Future<void> deleteGeminiApiKey() => deleteApiKey('gemini_api_key');
+}
+
+String openAiCompatibleApiKeyAccount(String providerId) {
+  return 'openai_compatible_api_key_'
+      '${validateOpenAiCompatibleProviderId(providerId)}';
+}
+
+String validateOpenAiCompatibleProviderId(String providerId) {
+  final normalized = providerId.trim();
+  if (!RegExp(r'^[a-z0-9_-]+$').hasMatch(normalized)) {
+    throw ArgumentError(
+      'OpenAI-compatible provider IDs may contain only lowercase letters, '
+      'digits, underscores, and hyphens.',
+    );
+  }
+  return normalized;
+}
+
+String? tryOpenAiCompatibleApiKeyAccount(String providerId) {
+  final normalized = providerId.trim();
+  if (!RegExp(r'^[a-z0-9_-]+$').hasMatch(normalized)) return null;
+  return 'openai_compatible_api_key_$normalized';
 }
