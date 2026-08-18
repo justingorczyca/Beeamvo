@@ -221,6 +221,50 @@ void main() {
       );
     });
 
+    test('Retry-After seconds are converted to a real delay', () async {
+      var calls = 0;
+      final service = _service(
+        MockClient((_) async {
+          calls++;
+          if (calls == 1) {
+            return http.Response('{}', 429, headers: {'retry-after': '1'});
+          }
+          return _completedResponse('ok');
+        }),
+      );
+      final stopwatch = Stopwatch()..start();
+
+      expect(await service.improveTranscription('raw'), equals('ok'));
+      stopwatch.stop();
+
+      expect(calls, equals(2));
+      expect(stopwatch.elapsedMilliseconds, greaterThanOrEqualTo(800));
+    });
+
+    test('non-numeric Retry-After falls back to exponential backoff', () async {
+      var calls = 0;
+      final service = _service(
+        MockClient((_) async {
+          calls++;
+          if (calls == 1) {
+            return http.Response(
+              '{}',
+              429,
+              headers: {'retry-after': 'Wed, 21 Oct 2015 07:28:00 GMT'},
+            );
+          }
+          return _completedResponse('ok');
+        }),
+      );
+      final stopwatch = Stopwatch()..start();
+
+      expect(await service.improveTranscription('raw'), equals('ok'));
+      stopwatch.stop();
+
+      expect(calls, equals(2));
+      expect(stopwatch.elapsedMilliseconds, greaterThanOrEqualTo(400));
+    });
+
     test('404 falls back to v1beta and reuses the working version', () async {
       final paths = <String>[];
       var calls = 0;

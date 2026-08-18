@@ -287,9 +287,12 @@ class GeminiInteractionsService implements CloudTranscriptionClient {
         if ((response.statusCode == 429 || response.statusCode >= 500) &&
             attempt < maxAttempts - 1) {
           final retryAfterHeader = response.headers['retry-after'];
-          final retryAfterMs = retryAfterHeader != null
+          final retryAfterSeconds = retryAfterHeader != null
               ? int.tryParse(retryAfterHeader)
               : null;
+          final retryAfterMs = retryAfterSeconds == null
+              ? null
+              : retryAfterSeconds * 1000;
           final delayMs =
               retryAfterMs ?? (500 * (1 << attempt) + random.nextInt(500));
           await Future<void>.delayed(Duration(milliseconds: delayMs));
