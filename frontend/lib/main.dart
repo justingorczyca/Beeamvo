@@ -291,7 +291,8 @@ class _BeeamvoHomeState extends State<BeeamvoHome>
     await _whisperService.dispose();
     await _hotkeyService.dispose();
     _cloudService.dispose();
-    _trayService.dispose();
+    await _trayService.dispose();
+    _settingsProvider.dispose();
   }
 
   @override
@@ -1214,6 +1215,9 @@ class _BeeamvoHomeState extends State<BeeamvoHome>
       final shouldReturnToRetry =
           _returnToRetryAfterSettings && await _currentRecordingFileExists();
       _returnToRetryAfterSettings = false;
+      if (!shouldReturnToRetry) {
+        await _clearRetryRecording();
+      }
       setState(
         () => _state = shouldReturnToRetry
             ? RecordingState.error
@@ -1435,6 +1439,7 @@ class _BeeamvoHomeState extends State<BeeamvoHome>
           _pulseController.stop();
           _rotationController.stop();
           await WindowHelper.hide();
+          await _clearRetryRecording();
           // Restore the compact orb size so the next session starts clean.
           try {
             await windowManager.setMinimumSize(const Size(150, 150));

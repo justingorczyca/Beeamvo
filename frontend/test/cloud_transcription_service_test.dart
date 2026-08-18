@@ -5,6 +5,7 @@ import 'package:beeamvo/services/cloud_transcription_client.dart';
 import 'package:beeamvo/services/cloud_transcription_service.dart';
 import 'package:beeamvo/services/secure_credential_store.dart';
 import 'package:beeamvo/services/settings_service.dart';
+import 'package:beeamvo/services/transcription_result_guard.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 class FakeCloudClient implements CloudTranscriptionClient {
@@ -228,6 +229,65 @@ void main() {
         ),
       );
     });
+
+    test(
+      'all orchestrator methods guard marker and excessive output',
+      () async {
+        final markerClient = FakeCloudClient(response: '[NO_TRANSCRIPT]');
+        final markerService = CloudTranscriptionService(
+          geminiApiService: markerClient,
+          vertexAiService: FakeCloudClient(),
+        );
+        markerService.attachSettings(FakeCloudSettingsService());
+
+        await expectLater(
+          () => markerService.improveTranscription('raw'),
+          throwsA(isA<CloudTranscriptionException>()),
+        );
+        await expectLater(
+          () => markerService.transcribeAndImprove(
+            Uint8List.fromList([1]),
+            'audio/wav',
+          ),
+          throwsA(isA<CloudTranscriptionException>()),
+        );
+        await expectLater(
+          () => markerService.transcribeAudio(
+            Uint8List.fromList([1]),
+            'audio/wav',
+          ),
+          throwsA(isA<CloudTranscriptionException>()),
+        );
+
+        final longClient = FakeCloudClient(
+          response: 'x' * (TranscriptionResultGuard.maxTranscriptLength + 10),
+        );
+        final longService = CloudTranscriptionService(
+          geminiApiService: longClient,
+          vertexAiService: FakeCloudClient(),
+        );
+        longService.attachSettings(FakeCloudSettingsService());
+
+        expect(
+          (await longService.improveTranscription('raw')).length,
+          TranscriptionResultGuard.maxTranscriptLength,
+        );
+        expect(
+          (await longService.transcribeAndImprove(
+            Uint8List.fromList([1]),
+            'audio/wav',
+          )).length,
+          TranscriptionResultGuard.maxTranscriptLength,
+        );
+        expect(
+          (await longService.transcribeAudio(
+            Uint8List.fromList([1]),
+            'audio/wav',
+          )).length,
+          TranscriptionResultGuard.maxTranscriptLength,
+        );
+      },
+    );
 
     test('runtime calls forward prompt model and thinking overrides', () async {
       final geminiClient = FakeCloudClient();

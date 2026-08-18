@@ -382,6 +382,9 @@ class MainFlutterWindow: NSWindow {
         debugLog("[LaunchAtLogin] isEnabled: \(enabled)")
         result(enabled)
 
+      case "status":
+        result(self.launchAtLoginStatus())
+
       case "enable":
         debugLog("[LaunchAtLogin] Enabling launch at login...")
         let success = self.setLaunchAtLoginEnabled(true)
@@ -545,6 +548,17 @@ class MainFlutterWindow: NSWindow {
     let status = service.status
     debugLog("[LaunchAtLogin] SMAppService status: \(status.rawValue)")
     return status == .requiresApproval || status == .enabled
+  }
+
+  func launchAtLoginStatus() -> String {
+    switch SMAppService.mainApp.status {
+    case .enabled:
+      return "enabled"
+    case .requiresApproval:
+      return "requiresApproval"
+    default:
+      return "disabled"
+    }
   }
 
   func setLaunchAtLoginEnabled(_ enabled: Bool) -> Bool {

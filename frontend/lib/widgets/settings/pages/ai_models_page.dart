@@ -981,6 +981,13 @@ class _AiModelsPageState extends State<AiModelsPage> {
             isConfigured: isConfigured,
           ),
         ),
+        if (!isGemini)
+          const Padding(
+            padding: EdgeInsets.only(top: 6),
+            child: Text(
+              'Vertex uses local Application Default Credentials JSON; protect it because the cloud-platform scope is broad.',
+            ),
+          ),
         if (isConfigured && !isManagedByEnv)
           BeeSettingsRow(
             icon: _cloudStatusIsVerified

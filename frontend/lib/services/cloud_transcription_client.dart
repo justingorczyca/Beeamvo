@@ -12,6 +12,8 @@ class CloudTranscriptionException implements Exception {
   String toString() => message;
 }
 
+/// Implementations return raw model text. [CloudTranscriptionService] is the
+/// only guarded boundary that sanitizes, validates, and caps that text.
 abstract class CloudTranscriptionClient {
   void attachSettings(SettingsService settings);
   Future<void> initialize();

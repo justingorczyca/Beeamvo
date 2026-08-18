@@ -1,4 +1,5 @@
 import 'dart:typed_data';
+import 'dart:convert';
 
 import 'package:beeamvo/config.dart';
 import 'package:beeamvo/services/cloud_transcription_client.dart';
@@ -7,6 +8,8 @@ import 'package:beeamvo/services/settings_service.dart';
 import 'package:beeamvo/services/transcription_result_guard.dart';
 import 'package:beeamvo/services/vertex_ai_service.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:http/http.dart' as http;
+import 'package:http/testing.dart';
 
 class FakeVertexSettingsService extends SettingsService {
   FakeVertexSettingsService({this.projectId, this.level})
@@ -81,7 +84,7 @@ void main() {
 
     test('verifySetup surfaces ADC configuration errors', () async {
       final service = VertexAiService(
-        adcClientFactory: () async => throw Exception('no adc'),
+        adcClientFactory: (_) async => throw Exception('no adc'),
       );
       service.attachSettings(
         FakeVertexSettingsService(projectId: 'demo-project'),
@@ -98,6 +101,43 @@ void main() {
           ),
         ),
       );
+    });
+
+    test('Retry-After seconds are converted to a real delay', () async {
+      var calls = 0;
+      final service = VertexAiService(
+        adcClientFactory: (_) async => MockClient((request) async {
+          calls++;
+          if (calls == 1) {
+            return http.Response('{}', 429, headers: {'retry-after': '1'});
+          }
+          return http.Response(
+            jsonEncode({
+              'candidates': [
+                {
+                  'content': {
+                    'parts': [
+                      {'text': 'ok'},
+                    ],
+                  },
+                },
+              ],
+            }),
+            200,
+          );
+        }),
+      );
+      service.attachSettings(
+        FakeVertexSettingsService(projectId: 'demo-project'),
+      );
+      await service.initialize();
+      final stopwatch = Stopwatch()..start();
+
+      expect(await service.improveTranscription('raw'), equals('ok'));
+      stopwatch.stop();
+
+      expect(calls, equals(2));
+      expect(stopwatch.elapsedMilliseconds, greaterThanOrEqualTo(800));
     });
 
     test(
@@ -170,7 +210,7 @@ void main() {
       () async {
         // The factory should never be reached: project-id validation fires first.
         final service = VertexAiService(
-          adcClientFactory: () async =>
+          adcClientFactory: (_) async =>
               throw StateError('unreachable: project id should fail first'),
         );
         service.attachSettings(FakeVertexSettingsService(projectId: 'bad/id'));

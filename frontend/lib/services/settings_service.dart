@@ -15,7 +15,17 @@ import '../models/clipboard_history_entry.dart';
 import '../config.dart';
 import 'secure_credential_store.dart';
 import 'update_check_service.dart';
+import 'file_permissions.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
+
+class LaunchAtStartupException implements Exception {
+  const LaunchAtStartupException(this.message);
+
+  final String message;
+
+  @override
+  String toString() => message;
+}
 
 /// Robust file-based settings storage.
 ///
@@ -78,6 +88,7 @@ class SettingsService extends ChangeNotifier {
   Map<String, PromptSettings> _promptOverrides = {};
   List<ClipboardHistoryEntry> _clipboardHistory = [];
   bool _hasGeminiApiKey = false;
+  bool _launchAtStartupRequiresApproval = false;
 
   // ── init ──────────────────────────────────────────────────────────────────
   Future<void> initialize() async {
@@ -87,7 +98,11 @@ class SettingsService extends ChangeNotifier {
     if (!folder.existsSync()) {
       folder.createSync(recursive: true);
     }
+    await setPosixPermissions(folder.path, '700');
     _file = File('${folder.path}${Platform.pathSeparator}settings.json');
+    if (_file.existsSync()) {
+      await setPosixPermissions(_file.path, '600');
+    }
 
     // Load existing data
     await _load();
@@ -101,6 +116,7 @@ class SettingsService extends ChangeNotifier {
         appPath: Platform.resolvedExecutable,
       );
     }
+    await _reconcileLaunchAtStartup();
 
     _loadCustomPrompts();
     _loadPromptOverrides();
@@ -175,13 +191,16 @@ class SettingsService extends ChangeNotifier {
     final tmp = File('${target.path}.tmp');
     final backup = File('${target.path}.bak');
     await tmp.writeAsString(content, flush: true);
+    await setPosixPermissions(tmp.path, '600');
     if (target.existsSync()) {
       if (backup.existsSync()) {
         await backup.delete();
       }
       await target.rename(backup.path);
+      await setPosixPermissions(backup.path, '600');
     }
     await tmp.rename(target.path);
+    await setPosixPermissions(target.path, '600');
   }
 
   Future<void> _loadSecureState() async {
@@ -426,28 +445,64 @@ class SettingsService extends ChangeNotifier {
 
   // ── Launch at Startup ─────────────────────────────────────────────────────
   bool get launchAtStartupEnabled => _getBool(_kLaunchAtStartup);
+  bool get launchAtStartupRequiresApproval => _launchAtStartupRequiresApproval;
 
   Future<void> setLaunchAtStartup(bool value) async {
-    await _setBool(_kLaunchAtStartup, value);
-    if (Platform.isMacOS) {
-      await _setMacOSLaunchAtLogin(value);
-    } else {
-      if (value) {
-        await launchAtStartup.enable();
-      } else {
-        await launchAtStartup.disable();
+    try {
+      final succeeded = Platform.isMacOS
+          ? await _setMacOSLaunchAtLogin(value)
+          : await _setPluginLaunchAtStartup(value);
+      if (!succeeded) {
+        throw const LaunchAtStartupException(
+          'Could not update launch at login. Check your system settings and try again.',
+        );
       }
+      await _reconcileLaunchAtStartup();
+      notifyListeners();
+    } on LaunchAtStartupException {
+      rethrow;
+    } catch (e) {
+      throw LaunchAtStartupException(
+        'Could not update launch at login. Check your system settings and try again.',
+      );
     }
-    notifyListeners();
   }
 
   static const _launchAtLoginChannel = MethodChannel('beeamvo/launch_at_login');
 
-  Future<void> _setMacOSLaunchAtLogin(bool enabled) async {
+  Future<bool> _setPluginLaunchAtStartup(bool enabled) async {
+    if (enabled) {
+      await launchAtStartup.enable();
+    } else {
+      await launchAtStartup.disable();
+    }
+    return true;
+  }
+
+  Future<bool> _setMacOSLaunchAtLogin(bool enabled) async {
+    final result = await _launchAtLoginChannel.invokeMethod<bool>(
+      enabled ? 'enable' : 'disable',
+    );
+    return result == true;
+  }
+
+  Future<void> _reconcileLaunchAtStartup() async {
     try {
-      await _launchAtLoginChannel.invokeMethod(enabled ? 'enable' : 'disable');
+      bool enabled;
+      if (Platform.isMacOS) {
+        final status = await _launchAtLoginChannel.invokeMethod<String>(
+          'status',
+        );
+        _launchAtStartupRequiresApproval = status == 'requiresApproval';
+        enabled = status == 'enabled';
+      } else {
+        _launchAtStartupRequiresApproval = false;
+        enabled = await launchAtStartup.isEnabled();
+      }
+      _data[_kLaunchAtStartup] = enabled;
+      await _save();
     } catch (e) {
-      debugPrint('[SettingsService] Failed to set launch at login: $e');
+      debugPrint('[SettingsService] Failed to reconcile launch at login: $e');
     }
   }
 

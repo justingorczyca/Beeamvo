@@ -35,10 +35,16 @@ Standard caveats apply to **how** you use Beeamvo:
 - **Cloud transcription is opt-in.** With **Whisper Local** selected, audio never
   leaves your machine. Audio is only transmitted when you choose Cloud or enable
   two-pass refinement — and the app confirms the first switch.
-- **Credentials.** Gemini API keys are stored in OS secure storage (macOS
-  Keychain, platform secure storage on Windows/Linux); Vertex AI uses
-  Application Default Credentials and stores no secret. Keep your OS and its
-  trusted root certificates up to date.
+- **Credentials.** macOS stores Gemini API keys in the native Keychain with
+  `kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly`. Windows and Linux use
+  `flutter_secure_storage`: Windows stores an AES key in Credential Manager
+  alongside an encrypted app-support file, while Linux uses libsecret. These
+  mechanisms are not equivalent, and Windows has no per-application ACL prompt
+  equivalent to Keychain.
+- **Vertex AI credentials.** Beeamvo stores no Vertex secret itself. The
+  authorizing Application Default Credentials are a plaintext JSON file found
+  via `GOOGLE_APPLICATION_CREDENTIALS` or the per-OS gcloud ADC path. Beeamvo
+  requests the broad `cloud-platform` scope, so protect that file and account.
 - **Transport.** All cloud traffic uses standard platform TLS validated by the
   OS trust store. **Certificate pinning is not used.**
 - **Clipboard history.** If enabled, history entries are stored as plaintext in

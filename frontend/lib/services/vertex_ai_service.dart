@@ -11,8 +11,24 @@ import '../models/system_prompt.dart';
 import 'cloud_transcription_client.dart';
 import 'settings_service.dart';
 import 'transcription_result_guard.dart';
+import 'pinned_http_client.dart';
+import 'retry_after.dart';
 
-typedef VertexAdcClientFactory = Future<http.Client> Function();
+typedef VertexAdcClientFactory = Future<http.Client> Function(
+  http.Client baseClient,
+);
+
+class _AdcClientBundle {
+  const _AdcClientBundle({required this.client, required this.baseClient});
+
+  final http.Client client;
+  final http.Client baseClient;
+
+  void close() {
+    client.close();
+    baseClient.close();
+  }
+}
 
 class VertexAiService implements CloudTranscriptionClient {
   VertexAiService({VertexAdcClientFactory? adcClientFactory})
@@ -25,7 +41,8 @@ class VertexAiService implements CloudTranscriptionClient {
   final VertexAdcClientFactory _adcClientFactory;
 
   http.Client? _adcClient;
-  Future<http.Client>? _adcClientCreation;
+  Future<_AdcClientBundle>? _adcClientCreation;
+  http.Client? _adcBaseClient;
   int _adcClientGeneration = 0;
   bool _isInitialized = false;
   bool _isDisposed = false;
@@ -65,7 +82,9 @@ class VertexAiService implements CloudTranscriptionClient {
   void _recycleAdcClient() {
     _adcClientGeneration++;
     _adcClient?.close();
+    _adcBaseClient?.close();
     _adcClient = null;
+    _adcBaseClient = null;
     _adcClientCreation = null;
   }
 
@@ -85,9 +104,12 @@ class VertexAiService implements CloudTranscriptionClient {
     setModel(AppConfig.getModelById(modelId));
   }
 
-  static Future<http.Client> _defaultAdcClientFactory() {
+  static Future<http.Client> _defaultAdcClientFactory(
+    http.Client baseClient,
+  ) {
     return clientViaApplicationDefaultCredentials(
       scopes: [_cloudPlatformScope],
+      baseClient: baseClient,
     ).timeout(const Duration(seconds: 30));
   }
 
@@ -142,9 +164,9 @@ class VertexAiService implements CloudTranscriptionClient {
 
       final generation = _adcClientGeneration;
       final creation = _adcClientCreation ??= _createAdcClient();
-      http.Client client;
+      _AdcClientBundle bundle;
       try {
-        client = await creation;
+        bundle = await creation;
       } catch (_) {
         if (identical(_adcClientCreation, creation)) {
           _adcClientCreation = null;
@@ -160,22 +182,32 @@ class VertexAiService implements CloudTranscriptionClient {
       }
 
       if (_isDisposed) {
-        client.close();
+        bundle.close();
         throw StateError('VertexAiService has been disposed.');
       }
       if (generation != _adcClientGeneration) {
         // The client was refreshed or disposed during creation. It must never
         // become the active client after that lifecycle change.
-        client.close();
+        bundle.close();
         continue;
       }
 
-      _adcClient = client;
-      return client;
+      _adcClient = bundle.client;
+      _adcBaseClient = bundle.baseClient;
+      return bundle.client;
     }
   }
 
-  Future<http.Client> _createAdcClient() => _adcClientFactory();
+  Future<_AdcClientBundle> _createAdcClient() async {
+    final baseClient = createSecureHttpClient();
+    try {
+      final client = await _adcClientFactory(baseClient);
+      return _AdcClientBundle(client: client, baseClient: baseClient);
+    } catch (_) {
+      baseClient.close();
+      rethrow;
+    }
+  }
 
   Future<http.Client> _resolveHttpClient() async {
     return _getAdcClient();
@@ -450,9 +482,7 @@ class VertexAiService implements CloudTranscriptionClient {
         if ((response.statusCode == 429 || response.statusCode >= 500) &&
             attempt < maxAttempts - 1) {
           final retryAfterHeader = response.headers['retry-after'];
-          final retryAfterMs = retryAfterHeader != null
-              ? int.tryParse(retryAfterHeader)
-              : null;
+          final retryAfterMs = retryAfterDelayMilliseconds(retryAfterHeader);
           final delayMs = retryAfterMs ??
               (500 * (1 << attempt) + random.nextInt(500));
           await Future<void>.delayed(Duration(milliseconds: delayMs));

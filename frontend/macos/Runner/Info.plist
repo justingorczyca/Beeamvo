@@ -29,7 +29,7 @@
 	<key>NSPrincipalClass</key>
 	<string>NSApplication</string>
 	<key>NSMicrophoneUsageDescription</key>
-	<string>Beeamvo needs microphone access for voice recordings.</string>
+	<string>Beeamvo records your voice to transcribe it. With Whisper Local, audio stays on this Mac; if you choose a cloud model, the recording is sent to Google for transcription.</string>
 	<key>LSUIElement</key>
 	<true/>
 </dict>

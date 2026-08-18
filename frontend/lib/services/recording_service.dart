@@ -16,6 +16,11 @@ import 'package:path_provider/path_provider.dart';
 /// plugin races file finalize and routinely returns empty WAVs for
 /// menu-bar / LSUIElement apps. Windows/Linux keep using the `record` package.
 class RecordingService {
+  RecordingService() {
+    unawaited(_sweepStaleRecordings());
+  }
+
+  static final DateTime _processStartedAt = DateTime.now();
   static const MethodChannel _macChannel = MethodChannel(
     'com.beeamvo/mac_audio_capture',
   );
@@ -24,6 +29,31 @@ class RecordingService {
   String? _currentRecordingPath;
   bool _isRecording = false;
   String? _selectedDeviceId;
+
+  Future<void> _sweepStaleRecordings() async {
+    try {
+      final directory = await getTemporaryDirectory();
+      final pattern = RegExp(r'^beeamvo_recording_(\d+)\.wav$');
+      await for (final entity in directory.list()) {
+        if (entity is! File) continue;
+        final match = pattern.firstMatch(entity.uri.pathSegments.last);
+        final timestamp = match == null
+            ? null
+            : int.tryParse(match.group(1)!);
+        if (timestamp == null ||
+            timestamp >= _processStartedAt.millisecondsSinceEpoch) {
+          continue;
+        }
+        try {
+          await entity.delete();
+        } catch (_) {
+          // Best effort: a stale recording must never block startup or dispose.
+        }
+      }
+    } catch (_) {
+      // Best effort: temporary-directory access can fail during shutdown.
+    }
+  }
 
   // Stream-based recording support
   bool _isStreamRecording = false;
@@ -552,6 +582,7 @@ class RecordingService {
       }
       await _stopStreamRecording();
       await deleteRecording();
+      await _sweepStaleRecordings();
       if (!_useMacNativeCapture) {
         await _recorder.dispose();
       } else {

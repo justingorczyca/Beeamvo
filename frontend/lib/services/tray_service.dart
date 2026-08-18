@@ -289,7 +289,8 @@ class TrayService with TrayListener {
     await trayManager.setToolTip('Beeamvo: $status');
   }
 
-  void dispose() {
+  Future<void> dispose() async {
+    await trayManager.destroy();
     trayManager.removeListener(this);
   }
 }

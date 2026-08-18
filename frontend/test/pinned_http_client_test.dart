@@ -13,8 +13,24 @@
 
 import 'package:beeamvo/services/pinned_http_client.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'dart:io';
 
 void main() {
+  test('direct HTTP clients are only constructed in the secure seam', () {
+    final libDirectory = Directory('lib');
+    final constructorPattern = RegExp(
+      r'\b(?:http\.)?(?:Client|IOClient|HttpClient)\s*\(',
+    );
+    final violations = <String>[];
+    for (final entity in libDirectory.listSync(recursive: true)) {
+      if (entity is! File || !entity.path.endsWith('.dart')) continue;
+      if (entity.path.endsWith('pinned_http_client.dart')) continue;
+      if (constructorPattern.hasMatch(entity.readAsStringSync())) {
+        violations.add(entity.path);
+      }
+    }
+    expect(violations, isEmpty);
+  });
   // "hello" (5 bytes) wrapped as a fake leaf certificate. Its well-known
   // SHA-256 lets us verify the hash computation independently of the rest of
   // the logic.

@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:path_provider/path_provider.dart';
 import '../models/usage_stats.dart';
+import 'file_permissions.dart';
 
 /// Service that tracks local usage statistics (word counts, streaks, etc.)
 /// and persists them to a JSON file in the app-support directory.
@@ -35,7 +36,11 @@ class UsageStatsService extends ChangeNotifier {
     if (!folder.existsSync()) {
       folder.createSync(recursive: true);
     }
+    await setPosixPermissions(folder.path, '700');
     _file = File('${folder.path}${Platform.pathSeparator}usage_stats.json');
+    if (_file.existsSync()) {
+      await setPosixPermissions(_file.path, '600');
+    }
     await _load();
     debugPrint('[UsageStatsService] initialized');
   }
@@ -92,13 +97,16 @@ class UsageStatsService extends ChangeNotifier {
     final tmp = File('${target.path}.tmp');
     final backup = File('${target.path}.bak');
     await tmp.writeAsString(content, flush: true);
+    await setPosixPermissions(tmp.path, '600');
     if (target.existsSync()) {
       if (backup.existsSync()) {
         await backup.delete();
       }
       await target.rename(backup.path);
+      await setPosixPermissions(backup.path, '600');
     }
     await tmp.rename(target.path);
+    await setPosixPermissions(target.path, '600');
   }
 
   // ── Public API ────────────────────────────────────────────────────────────

@@ -562,13 +562,29 @@ class _GeneralSettingsPageState extends State<GeneralSettingsPage> {
                   BeeSettingsRow(
                     icon: Icons.launch_rounded,
                     label: 'Launch at Login',
-                    description: 'Automatically start when you log in',
+                    description: settings.launchAtStartupRequiresApproval
+                        ? 'Approve Beeamvo in Login Items to start automatically'
+                        : 'Automatically start when you log in',
                     trailing: BeeToggle(
                       value: _launchAtStartup,
                       semanticLabel: 'Launch at login',
                       onChanged: (v) async {
-                        await settings.setLaunchAtStartup(v);
-                        setState(() => _launchAtStartup = v);
+                        final previousValue = _launchAtStartup;
+                        try {
+                          await settings.setLaunchAtStartup(v);
+                          if (mounted) {
+                            setState(
+                              () => _launchAtStartup =
+                                  settings.launchAtStartupEnabled,
+                            );
+                          }
+                        } catch (error) {
+                          if (!context.mounted) return;
+                          setState(() => _launchAtStartup = previousValue);
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            SnackBar(content: Text(error.toString())),
+                          );
+                        }
                       },
                     ),
                   ),

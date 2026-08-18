@@ -112,12 +112,13 @@ class CloudTranscriptionService {
     _ensureNotDisposed();
     final client = _currentClient;
     await _initializeIfNeeded(client);
-    return client.improveTranscription(
+    final result = await client.improveTranscription(
       rawText,
       missionInstruction: missionInstruction,
       modelOverrideId: modelOverrideId,
       thinkingLevelOverride: thinkingLevelOverride,
     );
+    return TranscriptionResultGuard.requireTranscript(result);
   }
 
   Future<String> transcribeAndImprove(
