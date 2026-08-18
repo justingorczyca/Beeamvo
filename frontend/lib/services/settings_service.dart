@@ -1031,14 +1031,12 @@ class SettingsService extends ChangeNotifier {
     String providerId,
     String? baseUrl,
   ) async {
-    final key = _openAiCompatibleBaseUrlKey(providerId);
-    if (key == null) {
-      openAiCompatibleApiKeyAccount(providerId);
-    }
+    final normalizedProviderId = validateOpenAiCompatibleProviderId(providerId);
+    final key = '$_kOpenAiCompatibleBaseUrlPrefix$normalizedProviderId';
     if (baseUrl == null || baseUrl.trim().isEmpty) {
-      await _remove(key!);
+      await _remove(key);
     } else {
-      await _setString(key!, baseUrl.trim());
+      await _setString(key, baseUrl.trim());
     }
     notifyListeners();
   }

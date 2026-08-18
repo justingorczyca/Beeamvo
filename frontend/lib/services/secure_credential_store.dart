@@ -114,15 +114,19 @@ class InMemorySecureCredentialStore implements SecureCredentialStore {
 }
 
 String openAiCompatibleApiKeyAccount(String providerId) {
+  return 'openai_compatible_api_key_'
+      '${validateOpenAiCompatibleProviderId(providerId)}';
+}
+
+String validateOpenAiCompatibleProviderId(String providerId) {
   final normalized = providerId.trim();
-  final account = tryOpenAiCompatibleApiKeyAccount(normalized);
-  if (account == null) {
+  if (!RegExp(r'^[a-z0-9_-]+$').hasMatch(normalized)) {
     throw ArgumentError(
       'OpenAI-compatible provider IDs may contain only lowercase letters, '
       'digits, underscores, and hyphens.',
     );
   }
-  return account;
+  return normalized;
 }
 
 String? tryOpenAiCompatibleApiKeyAccount(String providerId) {
