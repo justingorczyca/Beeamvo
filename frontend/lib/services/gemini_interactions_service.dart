@@ -248,7 +248,7 @@ class GeminiInteractionsService implements CloudTranscriptionClient {
       generationConfig: _buildGenerationConfig(
         temperature: 0.0,
         maxOutputTokens: 64,
-        thinkingLevel: _resolveThinkingLevel(model: model),
+        thinkingLevel: _resolveThinkingLevel(model: model, forceMinimal: true),
       ),
     );
   }
