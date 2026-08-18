@@ -67,3 +67,40 @@ extension CloudProviderExtension on CloudProvider {
     return CloudProvider.geminiApiKey;
   }
 }
+
+/// Which Gemini API surface to use for API-key cloud transcription.
+enum GeminiApiSurface { generateContent, interactions }
+
+extension GeminiApiSurfaceExtension on GeminiApiSurface {
+  /// Serialized string value used in JSON persistence.
+  String get value => name;
+
+  /// Human-readable label shown in the UI.
+  String get displayName {
+    switch (this) {
+      case GeminiApiSurface.generateContent:
+        return 'Legacy generateContent';
+      case GeminiApiSurface.interactions:
+        return 'Interactions';
+    }
+  }
+
+  /// Human-readable description shown in the UI.
+  String get description {
+    switch (this) {
+      case GeminiApiSurface.generateContent:
+        return 'Use Gemini’s legacy generateContent API.';
+      case GeminiApiSurface.interactions:
+        return 'Use Google’s current recommended Interactions API.';
+    }
+  }
+
+  /// Resolve a stored [value] string back to an enum member, defaulting
+  /// to [generateContent] when the value is unrecognised.
+  static GeminiApiSurface fromValue(String? value) {
+    if (value == GeminiApiSurface.interactions.name) {
+      return GeminiApiSurface.interactions;
+    }
+    return GeminiApiSurface.generateContent;
+  }
+}

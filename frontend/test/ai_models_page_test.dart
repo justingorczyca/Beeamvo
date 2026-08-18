@@ -12,6 +12,7 @@ class FakeAiModelsSettingsService extends SettingsService {
   FakeAiModelsSettingsService({
     this.backend = TranscriptionBackend.cloud,
     this.provider = CloudProvider.geminiApiKey,
+    this.surface = GeminiApiSurface.generateContent,
     this.geminiKeyPresent = false,
     this.vertexProjectIdValue,
     this.selectedModel = 'legacy-model',
@@ -23,6 +24,7 @@ class FakeAiModelsSettingsService extends SettingsService {
 
   final TranscriptionBackend backend;
   CloudProvider provider;
+  GeminiApiSurface surface;
   bool geminiKeyPresent;
   String? vertexProjectIdValue;
   final String selectedModel;
@@ -41,6 +43,14 @@ class FakeAiModelsSettingsService extends SettingsService {
   @override
   Future<void> setCloudProvider(CloudProvider provider) async {
     this.provider = provider;
+  }
+
+  @override
+  GeminiApiSurface get geminiApiSurface => surface;
+
+  @override
+  Future<void> setGeminiApiSurface(GeminiApiSurface surface) async {
+    this.surface = surface;
   }
 
   @override
@@ -192,5 +202,22 @@ void main() {
     expect(settings.geminiKeyPresent, isFalse);
     expect(find.text('Add API Key'), findsOneWidget);
     expect(find.text('Verified'), findsNothing);
+  });
+
+  testWidgets('Gemini API surface can be switched from the cloud controls', (
+    WidgetTester tester,
+  ) async {
+    final settings = FakeAiModelsSettingsService();
+    await _pumpAiModelsPage(tester, settings);
+
+    expect(find.text('API Surface'), findsOneWidget);
+    await tester.tap(find.text('Interactions'));
+    await tester.pumpAndSettle();
+
+    expect(settings.surface, equals(GeminiApiSurface.interactions));
+    expect(
+      find.textContaining('current recommended Interactions API.'),
+      findsOneWidget,
+    );
   });
 }
