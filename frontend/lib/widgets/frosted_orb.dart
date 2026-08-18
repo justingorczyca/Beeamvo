@@ -99,126 +99,126 @@ class _FrostedOrbState extends State<FrostedOrb> with TickerProviderStateMixin {
           _entranceController.value,
         );
         final bool isError = widget.state == RecordingState.error;
-                final String? errorText = widget.errorMessage?.trim();
-                final bool showErrorDetails =
-                    isError && errorText != null && errorText.isNotEmpty;
+        final String? errorText = widget.errorMessage?.trim();
+        final bool showErrorDetails =
+            isError && errorText != null && errorText.isNotEmpty;
 
-                return Opacity(
-                  opacity: entranceCurve,
-                  child: Transform.scale(
-                    scale: 0.6 + (0.4 * entranceCurve),
-                    child: Column(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Stack(
-                          alignment: Alignment.center,
-                          children: [
-                            // Outer Nebula Aura for Recording
-                            if (isRecording)
-                              CustomPaint(
-                                size: const Size(120, 120),
-                                painter: _UnifiedNebulaPainter(
-                                  animationValue: widget.rotationController.value,
-                                  pulseValue: widget.glowAnimation.value,
-                                  state: widget.state,
-                                  isAura: true,
-                                  transitionValue: 0.0,
-                                  inkAccent: inkAccent,
-                                  errorColor: errorColor,
-                                ),
-                              ),
-
-                            // The Frosted Orb
-                            // On macOS, skip BackdropFilter as it shows black on transparent windows
-                            _buildOrb(
-                              orbSize,
-                              isThinking,
-                              orbSurface: orbSurface,
-                              orbBorder: orbBorder,
-                              inkAccent: inkAccent,
-                              iconColor: iconColor,
-                              errorColor: errorColor,
-                              shadowColor: shadowColor,
-                            ),
-                          ],
+        return Opacity(
+          opacity: entranceCurve,
+          child: Transform.scale(
+            scale: 0.6 + (0.4 * entranceCurve),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Stack(
+                  alignment: Alignment.center,
+                  children: [
+                    // Outer Nebula Aura for Recording
+                    if (isRecording)
+                      CustomPaint(
+                        size: const Size(120, 120),
+                        painter: _UnifiedNebulaPainter(
+                          animationValue: widget.rotationController.value,
+                          pulseValue: widget.glowAnimation.value,
+                          state: widget.state,
+                          isAura: true,
+                          transitionValue: 0.0,
+                          inkAccent: inkAccent,
+                          errorColor: errorColor,
                         ),
-                        // Error details used to be accepted by the widget but never
-                        // rendered — on a 150x150 overlay that left users with only
-                        // the red "!" and no actionable explanation.
-                        if (showErrorDetails) ...[
-                          const SizedBox(height: 10),
-                          ConstrainedBox(
-                            constraints: const BoxConstraints(maxWidth: 260),
-                            child: DecoratedBox(
-                              decoration: BoxDecoration(
-                                color: orbSurface.withValues(alpha: 0.94),
-                                borderRadius: BorderRadius.circular(12),
-                                border: Border.all(
-                                  color: orbBorder.withValues(alpha: 0.75),
-                                  width: 0.5,
-                                ),
-                                boxShadow: [
-                                  BoxShadow(
-                                    color: shadowColor.withValues(alpha: 0.14),
-                                    blurRadius: 16,
-                                    spreadRadius: 1,
-                                  ),
-                                ],
-                              ),
-                              child: Padding(
-                                padding: const EdgeInsets.fromLTRB(12, 10, 12, 10),
-                                child: Column(
-                                  mainAxisSize: MainAxisSize.min,
-                                  children: [
-                                    Text(
-                                      errorText,
-                                      textAlign: TextAlign.center,
-                                      maxLines: 5,
-                                      overflow: TextOverflow.ellipsis,
-                                      style: TextStyle(
-                                        color: iconColor,
-                                        fontSize: 11.5,
-                                        height: 1.35,
-                                        fontWeight: FontWeight.w500,
-                                        decoration: TextDecoration.none,
-                                      ),
-                                    ),
-                                    if (widget.canRetry &&
-                                        (widget.onRetry != null ||
-                                            widget.onAdjustSettings != null)) ...[
-                                      const SizedBox(height: 8),
-                                      Wrap(
-                                        alignment: WrapAlignment.center,
-                                        spacing: 6,
-                                        runSpacing: 4,
-                                        children: [
-                                          if (widget.onRetry != null)
-                                            _ErrorActionChip(
-                                              label: 'Retry',
-                                              accent: inkAccent,
-                                              textColor: iconColor,
-                                              onTap: widget.onRetry!,
-                                            ),
-                                          if (widget.onAdjustSettings != null)
-                                            _ErrorActionChip(
-                                              label: 'Settings',
-                                              accent: orbBorder,
-                                              textColor: iconColor,
-                                              onTap: widget.onAdjustSettings!,
-                                            ),
-                                        ],
-                                      ),
-                                    ],
-                                  ],
-                                ),
-                              ),
-                            ),
+                      ),
+
+                    // The Frosted Orb
+                    // On macOS, skip BackdropFilter as it shows black on transparent windows
+                    _buildOrb(
+                      orbSize,
+                      isThinking,
+                      orbSurface: orbSurface,
+                      orbBorder: orbBorder,
+                      inkAccent: inkAccent,
+                      iconColor: iconColor,
+                      errorColor: errorColor,
+                      shadowColor: shadowColor,
+                    ),
+                  ],
+                ),
+                // Error details used to be accepted by the widget but never
+                // rendered — on a 150x150 overlay that left users with only
+                // the red "!" and no actionable explanation.
+                if (showErrorDetails) ...[
+                  const SizedBox(height: 10),
+                  ConstrainedBox(
+                    constraints: const BoxConstraints(maxWidth: 260),
+                    child: DecoratedBox(
+                      decoration: BoxDecoration(
+                        color: orbSurface.withValues(alpha: 0.94),
+                        borderRadius: BorderRadius.circular(12),
+                        border: Border.all(
+                          color: orbBorder.withValues(alpha: 0.75),
+                          width: 0.5,
+                        ),
+                        boxShadow: [
+                          BoxShadow(
+                            color: shadowColor.withValues(alpha: 0.14),
+                            blurRadius: 16,
+                            spreadRadius: 1,
                           ),
                         ],
-                      ],
+                      ),
+                      child: Padding(
+                        padding: const EdgeInsets.fromLTRB(12, 10, 12, 10),
+                        child: Column(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Text(
+                              errorText,
+                              textAlign: TextAlign.center,
+                              maxLines: 5,
+                              overflow: TextOverflow.ellipsis,
+                              style: TextStyle(
+                                color: iconColor,
+                                fontSize: 11.5,
+                                height: 1.35,
+                                fontWeight: FontWeight.w500,
+                                decoration: TextDecoration.none,
+                              ),
+                            ),
+                            if (widget.canRetry &&
+                                (widget.onRetry != null ||
+                                    widget.onAdjustSettings != null)) ...[
+                              const SizedBox(height: 8),
+                              Wrap(
+                                alignment: WrapAlignment.center,
+                                spacing: 6,
+                                runSpacing: 4,
+                                children: [
+                                  if (widget.onRetry != null)
+                                    _ErrorActionChip(
+                                      label: 'Retry',
+                                      accent: inkAccent,
+                                      textColor: iconColor,
+                                      onTap: widget.onRetry!,
+                                    ),
+                                  if (widget.onAdjustSettings != null)
+                                    _ErrorActionChip(
+                                      label: 'Settings',
+                                      accent: orbBorder,
+                                      textColor: iconColor,
+                                      onTap: widget.onAdjustSettings!,
+                                    ),
+                                ],
+                              ),
+                            ],
+                          ],
+                        ),
+                      ),
                     ),
                   ),
-                );
+                ],
+              ],
+            ),
+          ),
+        );
       },
     );
   }
@@ -310,75 +310,75 @@ class _FrostedOrbState extends State<FrostedOrb> with TickerProviderStateMixin {
   }
 
   IconData _getIcon() {
-      switch (widget.state) {
-        case RecordingState.recording:
-          return Icons.mic_rounded;
-        case RecordingState.success:
-          return Icons.check_circle_outline_rounded;
-        case RecordingState.error:
-          return Icons.error_outline_rounded;
-        default:
-          return Icons.mic_none_rounded;
-      }
-    }
-
-    Color _getIconColor({
-      required Color iconColor,
-      required Color inkAccent,
-      required Color errorColor,
-    }) {
-      // Success uses the monochrome signal; error remains semantic red.
-      if (widget.state == RecordingState.success) return inkAccent;
-      if (widget.state == RecordingState.error) return errorColor;
-      return iconColor;
+    switch (widget.state) {
+      case RecordingState.recording:
+        return Icons.mic_rounded;
+      case RecordingState.success:
+        return Icons.check_circle_outline_rounded;
+      case RecordingState.error:
+        return Icons.error_outline_rounded;
+      default:
+        return Icons.mic_none_rounded;
     }
   }
 
-  /// Compact action chip used under the error orb for Retry / Settings.
-  class _ErrorActionChip extends StatelessWidget {
-    final String label;
-    final Color accent;
-    final Color textColor;
-    final VoidCallback onTap;
+  Color _getIconColor({
+    required Color iconColor,
+    required Color inkAccent,
+    required Color errorColor,
+  }) {
+    // Success uses the monochrome signal; error remains semantic red.
+    if (widget.state == RecordingState.success) return inkAccent;
+    if (widget.state == RecordingState.error) return errorColor;
+    return iconColor;
+  }
+}
 
-    const _ErrorActionChip({
-      required this.label,
-      required this.accent,
-      required this.textColor,
-      required this.onTap,
-    });
+/// Compact action chip used under the error orb for Retry / Settings.
+class _ErrorActionChip extends StatelessWidget {
+  final String label;
+  final Color accent;
+  final Color textColor;
+  final VoidCallback onTap;
 
-    @override
-    Widget build(BuildContext context) {
-      return Material(
-        color: Colors.transparent,
-        child: InkWell(
-          onTap: onTap,
-          borderRadius: BorderRadius.circular(999),
-          child: Container(
-            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
-            decoration: BoxDecoration(
-              color: accent.withValues(alpha: 0.16),
-              borderRadius: BorderRadius.circular(999),
-              border: Border.all(
-                color: accent.withValues(alpha: 0.45),
-                width: 0.5,
-              ),
+  const _ErrorActionChip({
+    required this.label,
+    required this.accent,
+    required this.textColor,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(999),
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+          decoration: BoxDecoration(
+            color: accent.withValues(alpha: 0.16),
+            borderRadius: BorderRadius.circular(999),
+            border: Border.all(
+              color: accent.withValues(alpha: 0.45),
+              width: 0.5,
             ),
-            child: Text(
-              label,
-              style: TextStyle(
-                color: textColor,
-                fontSize: 11,
-                fontWeight: FontWeight.w600,
-                decoration: TextDecoration.none,
-              ),
+          ),
+          child: Text(
+            label,
+            style: TextStyle(
+              color: textColor,
+              fontSize: 11,
+              fontWeight: FontWeight.w600,
+              decoration: TextDecoration.none,
             ),
           ),
         ),
-      );
-    }
+      ),
+    );
   }
+}
 
 class _UnifiedNebulaPainter extends CustomPainter {
   final double animationValue; // 0.0 to 1.0 (rotation/time)

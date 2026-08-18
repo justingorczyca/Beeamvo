@@ -437,13 +437,10 @@ class _BeeamvoHomeState extends State<BeeamvoHome>
         unawaited(_performBackgroundUpdateCheck());
       }
     } catch (e, stackTrace) {
-          debugPrint('Initialization error: $e');
-          if (kDebugMode) debugPrint('Stack trace: $stackTrace');
-          await _presentOrbError(
-            'Startup failed: $e',
-            hideAfterSeconds: 8,
-          );
-        }
+      debugPrint('Initialization error: $e');
+      if (kDebugMode) debugPrint('Stack trace: $stackTrace');
+      await _presentOrbError('Startup failed: $e', hideAfterSeconds: 8);
+    }
   }
 
   /// Background GitHub-Releases update check. Fully best-effort — every
@@ -1270,16 +1267,16 @@ class _BeeamvoHomeState extends State<BeeamvoHome>
         await _settingsService.setSelectedAudioDeviceId(null);
       }
       if (!readiness.hasPermission) {
-              debugPrint('Recording start blocked: microphone permission denied');
-              await _presentOrbError(
-                Platform.isMacOS
-                    ? 'Microphone permission is required. Enable it in '
-                          'System Settings → Privacy & Security → Microphone.'
-                    : 'Microphone permission is required. Enable it in system settings.',
-                hideAfterSeconds: 5,
-              );
-              return;
-            }
+        debugPrint('Recording start blocked: microphone permission denied');
+        await _presentOrbError(
+          Platform.isMacOS
+              ? 'Microphone permission is required. Enable it in '
+                    'System Settings → Privacy & Security → Microphone.'
+              : 'Microphone permission is required. Enable it in system settings.',
+          hideAfterSeconds: 5,
+        );
+        return;
+      }
       if (!readiness.hasAnyDeviceListed) {
         // Still attempt start — some platforms report an empty list but allow
         // the default device — but log loudly for troubleshooting.
@@ -1289,27 +1286,27 @@ class _BeeamvoHomeState extends State<BeeamvoHome>
       }
 
       // Offline (Whisper) sessions prefer in-memory PCM-16. On macOS that goes
-            // through our native AVAudioEngine plugin (the third-party record_macos
-            // package races file finalize and returns empty WAVs). Cloud sessions
-            // use file/WAV capture (also native on macOS). The stop path reads the
-            // actual stream/file mode so fallback stays correct.
-            //
-            // The backend is resolved ONCE here and captured so a mid-session
-            // settings change cannot redirect the captured audio to the wrong path.
-            final sessionBackend = _effectiveBackendForSession();
-            final isOffline = sessionBackend == TranscriptionBackend.whisper;
-            bool started;
-            if (isOffline && RecordingService.prefersStreamCapture) {
-              started = await _recordingService.startStreamRecording();
-              if (!started) {
-                debugPrint(
-                  'Stream recording unavailable; falling back to WAV file capture',
-                );
-                started = await _recordingService.startRecording();
-              }
-            } else {
-              started = await _recordingService.startRecording();
-            }
+      // through our native AVAudioEngine plugin (the third-party record_macos
+      // package races file finalize and returns empty WAVs). Cloud sessions
+      // use file/WAV capture (also native on macOS). The stop path reads the
+      // actual stream/file mode so fallback stays correct.
+      //
+      // The backend is resolved ONCE here and captured so a mid-session
+      // settings change cannot redirect the captured audio to the wrong path.
+      final sessionBackend = _effectiveBackendForSession();
+      final isOffline = sessionBackend == TranscriptionBackend.whisper;
+      bool started;
+      if (isOffline && RecordingService.prefersStreamCapture) {
+        started = await _recordingService.startStreamRecording();
+        if (!started) {
+          debugPrint(
+            'Stream recording unavailable; falling back to WAV file capture',
+          );
+          started = await _recordingService.startRecording();
+        }
+      } else {
+        started = await _recordingService.startRecording();
+      }
 
       if (sessionToken != _sessionToken) {
         // A superseding transition (e.g. Settings opened) won the race while
@@ -1375,117 +1372,117 @@ class _BeeamvoHomeState extends State<BeeamvoHome>
           onPressed: _stopRecordingAndProcess,
         );
       } else {
-              _activeRecordingBackend = null;
-              _recordingStopwatch
-                ..stop()
-                ..reset();
-              await _presentOrbError(
-                'Could not start the microphone. Check the input device in '
-                'Settings → General → Audio Input Device.',
-              );
-            }
-          } catch (e) {
-            debugPrint('Recording start failed: $e');
-            // A platform start may have succeeded before this exception (e.g. the
-            // recorder is running but the subsequent cancel/commit hotkey
-            // registration threw). Best-effort abort/stop it so a failed start can
-            // never strand a hot microphone, and tear down the session-scoped
-            // hotkeys/timers/backend pin captured so far. _abortStartedRecorder is
-            // non-throwing, so it never masks the original error or leaves the mic on.
-            await _abortStartedRecorder();
-            _recordingStopwatch
-              ..stop()
-              ..reset();
-            _holdTimer?.cancel();
-            _holdTimer = null;
-            _isHotkeyHeld = false;
+        _activeRecordingBackend = null;
+        _recordingStopwatch
+          ..stop()
+          ..reset();
+        await _presentOrbError(
+          'Could not start the microphone. Check the input device in '
+          'Settings → General → Audio Input Device.',
+        );
+      }
+    } catch (e) {
+      debugPrint('Recording start failed: $e');
+      // A platform start may have succeeded before this exception (e.g. the
+      // recorder is running but the subsequent cancel/commit hotkey
+      // registration threw). Best-effort abort/stop it so a failed start can
+      // never strand a hot microphone, and tear down the session-scoped
+      // hotkeys/timers/backend pin captured so far. _abortStartedRecorder is
+      // non-throwing, so it never masks the original error or leaves the mic on.
+      await _abortStartedRecorder();
+      _recordingStopwatch
+        ..stop()
+        ..reset();
+      _holdTimer?.cancel();
+      _holdTimer = null;
+      _isHotkeyHeld = false;
 
-            if (sessionToken == _sessionToken) {
-              // We still own this session: surface a recoverable error state.
-              await _presentOrbError(
-                'Microphone failed to start. Try System Default in '
-                'Settings → General → Audio Input Device.',
-              );
-            }
-            // If a superseding transition (e.g. Settings opened) won the race while
-            // we were starting, leave the winning transition's UI state intact — it
-            // already set the correct state and we must not overwrite it with error.
-          } finally {
+      if (sessionToken == _sessionToken) {
+        // We still own this session: surface a recoverable error state.
+        await _presentOrbError(
+          'Microphone failed to start. Try System Default in '
+          'Settings → General → Audio Input Device.',
+        );
+      }
+      // If a superseding transition (e.g. Settings opened) won the race while
+      // we were starting, leave the winning transition's UI state intact — it
+      // already set the correct state and we must not overwrite it with error.
+    } finally {
       _isLockActive = false;
 
       // Post-start integrity check for Hold Mode.
-            // If the user released the key while we were initializing (locked), we
-            // missed the KeyUp action. Processing immediately would almost always
-            // produce an empty capture (especially on macOS where the file is still
-            // finalizing). Cancel cleanly instead of surfacing a bogus mic error.
-            // Skip this check for mode-selection sessions — they use toggle semantics.
-            if (_state == RecordingState.recording &&
-                _settingsService.recordingMode == RecordingMode.hold &&
-                !_isHotkeyHeld &&
-                _temporaryPromptId == null) {
-              debugPrint(
-                'Hold mode: Key released during start-up; canceling empty session.',
-              );
-              unawaited(_cancelRecording());
-            }
-          }
-        }
+      // If the user released the key while we were initializing (locked), we
+      // missed the KeyUp action. Processing immediately would almost always
+      // produce an empty capture (especially on macOS where the file is still
+      // finalizing). Cancel cleanly instead of surfacing a bogus mic error.
+      // Skip this check for mode-selection sessions — they use toggle semantics.
+      if (_state == RecordingState.recording &&
+          _settingsService.recordingMode == RecordingMode.hold &&
+          !_isHotkeyHeld &&
+          _temporaryPromptId == null) {
+        debugPrint(
+          'Hold mode: Key released during start-up; canceling empty session.',
+        );
+        unawaited(_cancelRecording());
+      }
+    }
+  }
 
   void _hideAfterDelay([int seconds = 2]) {
-      Future.delayed(Duration(seconds: seconds), () async {
-        if (mounted &&
-            _state != RecordingState.recording &&
-            _state != RecordingState.processing) {
-          _pulseController.stop();
-          _rotationController.stop();
-          await WindowHelper.hide();
-          await _clearRetryRecording();
-          // Restore the compact orb size so the next session starts clean.
-          try {
-            await windowManager.setMinimumSize(const Size(150, 150));
-            await windowManager.setSize(const Size(150, 150));
-          } catch (_) {
-            // Best-effort; hide already ran.
-          }
-          if (mounted) {
-            setState(() {
-              _state = RecordingState.idle;
-              _lastErrorMessage = null;
-            });
-          }
+    Future.delayed(Duration(seconds: seconds), () async {
+      if (mounted &&
+          _state != RecordingState.recording &&
+          _state != RecordingState.processing) {
+        _pulseController.stop();
+        _rotationController.stop();
+        await WindowHelper.hide();
+        await _clearRetryRecording();
+        // Restore the compact orb size so the next session starts clean.
+        try {
+          await windowManager.setMinimumSize(const Size(150, 150));
+          await windowManager.setSize(const Size(150, 150));
+        } catch (_) {
+          // Best-effort; hide already ran.
         }
-      });
-    }
-
-    /// Present a recoverable error on the floating orb with readable text.
-    ///
-    /// The recording orb is only 150×150 — too small for a multi-line message —
-    /// so we expand the overlay while the error is visible. Callers that keep
-    /// the session for retry should pass [autoHide] = false.
-    Future<void> _presentOrbError(
-      String message, {
-      bool autoHide = true,
-      int hideAfterSeconds = 5,
-    }) async {
-      final cleaned = _humanizeErrorMessage(message);
-      if (!mounted) return;
-      setState(() {
-        _lastErrorMessage = cleaned;
-        _state = RecordingState.error;
-      });
-      // Larger overlay so FrostedOrb can render the error chip + actions.
-      try {
-        await windowManager.setMinimumSize(const Size(300, 220));
-        await WindowHelper.positionAtActiveMonitorBottomCenter(300, 220);
-      } catch (e) {
-        debugPrint('Failed to expand error overlay: $e');
+        if (mounted) {
+          setState(() {
+            _state = RecordingState.idle;
+            _lastErrorMessage = null;
+          });
+        }
       }
-      if (autoHide) {
-        _hideAfterDelay(hideAfterSeconds);
-      }
-    }
+    });
+  }
 
-/// Strip Dart Exception prefixes and collapse whitespace for the orb chip.
+  /// Present a recoverable error on the floating orb with readable text.
+  ///
+  /// The recording orb is only 150×150 — too small for a multi-line message —
+  /// so we expand the overlay while the error is visible. Callers that keep
+  /// the session for retry should pass [autoHide] = false.
+  Future<void> _presentOrbError(
+    String message, {
+    bool autoHide = true,
+    int hideAfterSeconds = 5,
+  }) async {
+    final cleaned = _humanizeErrorMessage(message);
+    if (!mounted) return;
+    setState(() {
+      _lastErrorMessage = cleaned;
+      _state = RecordingState.error;
+    });
+    // Larger overlay so FrostedOrb can render the error chip + actions.
+    try {
+      await windowManager.setMinimumSize(const Size(300, 220));
+      await WindowHelper.positionAtActiveMonitorBottomCenter(300, 220);
+    } catch (e) {
+      debugPrint('Failed to expand error overlay: $e');
+    }
+    if (autoHide) {
+      _hideAfterDelay(hideAfterSeconds);
+    }
+  }
+
+  /// Strip Dart Exception prefixes and collapse whitespace for the orb chip.
   static String _humanizeErrorMessage(String raw) {
     var text = raw.trim();
     // Exception.toString() prefixes like "Exception: ..." / "Bad state: ...".
@@ -1641,29 +1638,29 @@ class _BeeamvoHomeState extends State<BeeamvoHome>
       TranscriptionResultGuard.ensureRecordingLongEnough(recordingDuration);
 
       // For cloud paths, read audio bytes (from file or in-memory mac native PCM).
-            // Do not require the on-disk path to exist — macOS may keep PCM in memory
-            // and only best-effort write a WAV for retries.
-            Uint8List? audioBytes;
-            if (!isOffline) {
-              audioBytes = await _recordingService.getAudioBytes();
-              if (audioBytes == null || audioBytes.isEmpty) {
-                debugPrint(
-                  'Process aborted: empty cloud audio '
-                  '(path=$audioPath, duration=${recordingDuration.inMilliseconds}ms)',
-                );
-                throw CloudTranscriptionException(_noAudioCapturedMessage());
-              }
-            } else if (pcmBytes == null || pcmBytes.isEmpty) {
-              // Stream fell back to file, or stream produced silence/empty buffer.
-              audioBytes = await _recordingService.getAudioBytes();
-              if (audioBytes == null || audioBytes.isEmpty) {
-                debugPrint(
-                  'Process aborted: offline path has neither PCM nor audio bytes '
-                  '(path=$audioPath, duration=${recordingDuration.inMilliseconds}ms)',
-                );
-                throw CloudTranscriptionException(_noAudioCapturedMessage());
-              }
-            }
+      // Do not require the on-disk path to exist — macOS may keep PCM in memory
+      // and only best-effort write a WAV for retries.
+      Uint8List? audioBytes;
+      if (!isOffline) {
+        audioBytes = await _recordingService.getAudioBytes();
+        if (audioBytes == null || audioBytes.isEmpty) {
+          debugPrint(
+            'Process aborted: empty cloud audio '
+            '(path=$audioPath, duration=${recordingDuration.inMilliseconds}ms)',
+          );
+          throw CloudTranscriptionException(_noAudioCapturedMessage());
+        }
+      } else if (pcmBytes == null || pcmBytes.isEmpty) {
+        // Stream fell back to file, or stream produced silence/empty buffer.
+        audioBytes = await _recordingService.getAudioBytes();
+        if (audioBytes == null || audioBytes.isEmpty) {
+          debugPrint(
+            'Process aborted: offline path has neither PCM nor audio bytes '
+            '(path=$audioPath, duration=${recordingDuration.inMilliseconds}ms)',
+          );
+          throw CloudTranscriptionException(_noAudioCapturedMessage());
+        }
+      }
 
       // Compose the final instruction: base prompt + optional rephraser addon
       final rephraserFragment = effectiveRephraseLevel.promptFragment;
@@ -1808,15 +1805,15 @@ class _BeeamvoHomeState extends State<BeeamvoHome>
         await _recordingService.deleteRecording();
       }
       if (_state == RecordingState.processing) {
-              final display = retryableRecordingExists
-                  ? '$message\nAudio saved. You can retry.'
-                  : message;
-              await _presentOrbError(
-                display,
-                autoHide: !retryableRecordingExists,
-                hideAfterSeconds: 6,
-              );
-            }
+        final display = retryableRecordingExists
+            ? '$message\nAudio saved. You can retry.'
+            : message;
+        await _presentOrbError(
+          display,
+          autoHide: !retryableRecordingExists,
+          hideAfterSeconds: 6,
+        );
+      }
     } finally {
       _isLockActive = false;
       // Release the session-scoped global Enter/Escape handlers now that the

@@ -276,7 +276,7 @@ class GeminiApiService implements CloudTranscriptionClient {
   ) async {
     const maxAttempts = 3;
     final random = Random();
-    for (var attempt = 0;; attempt++) {
+    for (var attempt = 0; ; attempt++) {
       try {
         final response = await _httpClient
             .post(uri, headers: headers, body: body)
@@ -286,8 +286,8 @@ class GeminiApiService implements CloudTranscriptionClient {
             attempt < maxAttempts - 1) {
           final retryAfterHeader = response.headers['retry-after'];
           final retryAfterMs = retryAfterDelayMilliseconds(retryAfterHeader);
-          final delayMs = retryAfterMs ??
-              (500 * (1 << attempt) + random.nextInt(500));
+          final delayMs =
+              retryAfterMs ?? (500 * (1 << attempt) + random.nextInt(500));
           await Future<void>.delayed(Duration(milliseconds: delayMs));
           continue;
         }
@@ -306,14 +306,10 @@ class GeminiApiService implements CloudTranscriptionClient {
     String modelName,
     Map<String, dynamic> payload,
   ) async {
-    final response = await _postWithRetry(
-      _buildUri(modelName),
-      {
-        'Content-Type': 'application/json',
-        'x-goog-api-key': apiKey,
-      },
-      jsonEncode(payload),
-    );
+    final response = await _postWithRetry(_buildUri(modelName), {
+      'Content-Type': 'application/json',
+      'x-goog-api-key': apiKey,
+    }, jsonEncode(payload));
 
     final decoded = _decodeResponse(response);
     if (response.statusCode >= 400) {

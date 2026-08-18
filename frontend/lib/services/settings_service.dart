@@ -312,12 +312,12 @@ class SettingsService extends ChangeNotifier {
       }
     }
 
-      if (dirty) {
-        unawaited(_save()); // fire-and-forget OK here
-      }
+    if (dirty) {
+      unawaited(_save()); // fire-and-forget OK here
     }
+  }
 
-    // ── custom prompts ────────────────────────────────────────────────────────
+  // ── custom prompts ────────────────────────────────────────────────────────
   void _loadCustomPrompts() {
     final raw = _getString(_kCustomPrompts);
     if (raw != null) {

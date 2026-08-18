@@ -86,43 +86,47 @@ void main() {
     });
 
     test('rejects non-PCM bit depths Whisper cannot consume', () {
-          expect(
-            () => RecordingService.extractMono16kPcmFromWav(wav(bitsPerSample: 24)),
-            throwsFormatException,
-          );
-        });
+      expect(
+        () => RecordingService.extractMono16kPcmFromWav(wav(bitsPerSample: 24)),
+        throwsFormatException,
+      );
+    });
 
-        test('downmixes stereo PCM-16 to mono', () {
-          // Two frames of stereo: L=1000, R=3000 then L=2000, R=4000
-          // → mono averages 2000 and 3000.
-          final pcm = <int>[
-            1000 & 0xff, (1000 >> 8) & 0xff,
-            3000 & 0xff, (3000 >> 8) & 0xff,
-            2000 & 0xff, (2000 >> 8) & 0xff,
-            4000 & 0xff, (4000 >> 8) & 0xff,
-          ];
-          final result = RecordingService.extractMono16kPcmFromWav(
-            wav(channels: 2, pcm: pcm),
-          );
-          final view = ByteData.sublistView(result);
-          expect(view.getInt16(0, Endian.little), closeTo(2000, 2));
-          expect(view.getInt16(2, Endian.little), closeTo(3000, 2));
-        });
+    test('downmixes stereo PCM-16 to mono', () {
+      // Two frames of stereo: L=1000, R=3000 then L=2000, R=4000
+      // → mono averages 2000 and 3000.
+      final pcm = <int>[
+        1000 & 0xff,
+        (1000 >> 8) & 0xff,
+        3000 & 0xff,
+        (3000 >> 8) & 0xff,
+        2000 & 0xff,
+        (2000 >> 8) & 0xff,
+        4000 & 0xff,
+        (4000 >> 8) & 0xff,
+      ];
+      final result = RecordingService.extractMono16kPcmFromWav(
+        wav(channels: 2, pcm: pcm),
+      );
+      final view = ByteData.sublistView(result);
+      expect(view.getInt16(0, Endian.little), closeTo(2000, 2));
+      expect(view.getInt16(2, Endian.little), closeTo(3000, 2));
+    });
 
-        test('resamples 48 kHz mono PCM-16 down to 16 kHz', () {
-          // 48 samples of a constant value → 16 samples after 3:1 downsample.
-          const sample = 1234;
-          final pcm = <int>[];
-          for (var i = 0; i < 48; i++) {
-            pcm.add(sample & 0xff);
-            pcm.add((sample >> 8) & 0xff);
-          }
-          final result = RecordingService.extractMono16kPcmFromWav(
-            wav(sampleRate: 48000, pcm: pcm),
-          );
-          expect(result.length, 16 * 2);
-          final view = ByteData.sublistView(result);
-          expect(view.getInt16(0, Endian.little), closeTo(sample, 2));
-        });
-      });
-    }
+    test('resamples 48 kHz mono PCM-16 down to 16 kHz', () {
+      // 48 samples of a constant value → 16 samples after 3:1 downsample.
+      const sample = 1234;
+      final pcm = <int>[];
+      for (var i = 0; i < 48; i++) {
+        pcm.add(sample & 0xff);
+        pcm.add((sample >> 8) & 0xff);
+      }
+      final result = RecordingService.extractMono16kPcmFromWav(
+        wav(sampleRate: 48000, pcm: pcm),
+      );
+      expect(result.length, 16 * 2);
+      final view = ByteData.sublistView(result);
+      expect(view.getInt16(0, Endian.little), closeTo(sample, 2));
+    });
+  });
+}

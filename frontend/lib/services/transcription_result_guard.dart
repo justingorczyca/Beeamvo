@@ -2,20 +2,20 @@ import 'cloud_transcription_client.dart';
 
 class TranscriptionResultGuard {
   static const String noTranscriptMessage = 'Nothing was transcribed.';
-    static const String recordingTooShortMessage =
-        'Recording was too short. Hold the hotkey a bit longer, then release.';
-    static const String noTranscriptMarker = '[NO_TRANSCRIPT]';
-    static const String noTranscriptPromptInstruction =
-        'If the audio contains no discernible speech, only silence or noise, '
-        'or is too short or too quiet to transcribe reliably, return exactly '
-        '$noTranscriptMarker.';
-    static const Duration minimumRecordingDuration = Duration(milliseconds: 350);
+  static const String recordingTooShortMessage =
+      'Recording was too short. Hold the hotkey a bit longer, then release.';
+  static const String noTranscriptMarker = '[NO_TRANSCRIPT]';
+  static const String noTranscriptPromptInstruction =
+      'If the audio contains no discernible speech, only silence or noise, '
+      'or is too short or too quiet to transcribe reliably, return exactly '
+      '$noTranscriptMarker.';
+  static const Duration minimumRecordingDuration = Duration(milliseconds: 350);
 
-    static void ensureRecordingLongEnough(Duration duration) {
-      if (duration < minimumRecordingDuration) {
-        throw CloudTranscriptionException(recordingTooShortMessage);
-      }
+  static void ensureRecordingLongEnough(Duration duration) {
+    if (duration < minimumRecordingDuration) {
+      throw CloudTranscriptionException(recordingTooShortMessage);
     }
+  }
 
   /// Maximum characters allowed in a transcription result.
   static const int maxTranscriptLength = 10000;

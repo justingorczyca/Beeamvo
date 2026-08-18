@@ -124,8 +124,9 @@ class UsageStatsService extends ChangeNotifier {
     // future still surfaces any error to the caller; we feed `_recordLock`
     // from `run.catchError(...)` instead so a single failure never leaves the
     // chain in an error state that would permanently block later recordings.
-    final run = _recordLock
-        .then((_) => _recordTranscriptionInternal(text, recordingDuration));
+    final run = _recordLock.then(
+      (_) => _recordTranscriptionInternal(text, recordingDuration),
+    );
     _recordLock = run.catchError((Object _) {});
     return run;
   }
@@ -201,8 +202,9 @@ class UsageStatsService extends ChangeNotifier {
     final cjkCount = RegExp(cjkPattern).allMatches(text).length;
     // Split on whitespace AND CJK ranges to separate Latin words from CJK runs.
     final spaced = text
-        .split(RegExp(
-            r'[\s\u3400-\u9FFF\uF900-\uFAFF\u3040-\u30FF\uAC00-\uD7AF]+'))
+        .split(
+          RegExp(r'[\s\u3400-\u9FFF\uF900-\uFAFF\u3040-\u30FF\uAC00-\uD7AF]+'),
+        )
         .where((t) => t.isNotEmpty)
         .length;
     return spaced + cjkCount;

@@ -14,9 +14,8 @@ import 'transcription_result_guard.dart';
 import 'pinned_http_client.dart';
 import 'retry_after.dart';
 
-typedef VertexAdcClientFactory = Future<http.Client> Function(
-  http.Client baseClient,
-);
+typedef VertexAdcClientFactory =
+    Future<http.Client> Function(http.Client baseClient);
 
 class _AdcClientBundle {
   const _AdcClientBundle({required this.client, required this.baseClient});
@@ -104,9 +103,7 @@ class VertexAiService implements CloudTranscriptionClient {
     setModel(AppConfig.getModelById(modelId));
   }
 
-  static Future<http.Client> _defaultAdcClientFactory(
-    http.Client baseClient,
-  ) {
+  static Future<http.Client> _defaultAdcClientFactory(http.Client baseClient) {
     return clientViaApplicationDefaultCredentials(
       scopes: [_cloudPlatformScope],
       baseClient: baseClient,
@@ -473,7 +470,7 @@ class VertexAiService implements CloudTranscriptionClient {
   ) async {
     const maxAttempts = 3;
     final random = Random();
-    for (var attempt = 0;; attempt++) {
+    for (var attempt = 0; ; attempt++) {
       try {
         final response = await (await _resolveHttpClient())
             .post(uri, headers: headers, body: body)
@@ -483,8 +480,8 @@ class VertexAiService implements CloudTranscriptionClient {
             attempt < maxAttempts - 1) {
           final retryAfterHeader = response.headers['retry-after'];
           final retryAfterMs = retryAfterDelayMilliseconds(retryAfterHeader);
-          final delayMs = retryAfterMs ??
-              (500 * (1 << attempt) + random.nextInt(500));
+          final delayMs =
+              retryAfterMs ?? (500 * (1 << attempt) + random.nextInt(500));
           await Future<void>.delayed(Duration(milliseconds: delayMs));
           continue;
         }
