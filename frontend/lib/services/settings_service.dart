@@ -12,6 +12,7 @@ import '../models/system_prompt.dart';
 import '../models/prompt_settings.dart';
 import '../models/hotkey_config.dart';
 import '../models/clipboard_history_entry.dart';
+import '../models/openai_compatible_provider.dart';
 import '../config.dart';
 import 'secure_credential_store.dart';
 import 'update_check_service.dart';
@@ -41,8 +42,11 @@ class SettingsService extends ChangeNotifier {
   SettingsService({
     SecureCredentialStore? credentialStore,
     @visibleForTesting this._applicationSupportDirectory,
+    @visibleForTesting Iterable<String>? openAiCompatibleProviderIds,
   }) : _credentialStore =
-           credentialStore ?? const FlutterSecureCredentialStore();
+           credentialStore ?? const FlutterSecureCredentialStore(),
+       _openAiCompatibleProviderIds =
+           openAiCompatibleProviderIds ?? const <String>[];
   // ── keys ──────────────────────────────────────────────────────────────────
   static const _kLaunchAtStartup = 'launch_at_startup';
   static const _kSelectedPromptId = 'active_system_prompt_id';
@@ -88,6 +92,7 @@ class SettingsService extends ChangeNotifier {
   // ── internal state ────────────────────────────────────────────────────────
   final SecureCredentialStore _credentialStore;
   final Directory? _applicationSupportDirectory;
+  final Iterable<String> _openAiCompatibleProviderIds;
   late File _file;
   Map<String, dynamic> _data = {};
   List<SystemPrompt> _customPrompts = [];
@@ -221,9 +226,22 @@ class SettingsService extends ChangeNotifier {
     if (rawProviderId != null && account == null) {
       _data.remove(_kOpenAiCompatibleProviderId);
       await _save();
-    } else if (providerId != null && account != null) {
-      final key = await _credentialStore.readApiKey(account);
-      _hasOpenAiCompatibleApiKeys[providerId] =
+    }
+    _hasOpenAiCompatibleApiKeys.clear();
+    final providerIds = <String>{
+      for (final provider in OpenAiCompatibleProviderRegistry.builtIn)
+        provider.id,
+      ..._openAiCompatibleProviderIds,
+      if (providerId != null) providerId,
+    };
+    for (final candidate in providerIds) {
+      final normalizedProviderId = candidate.trim();
+      final candidateAccount = tryOpenAiCompatibleApiKeyAccount(
+        normalizedProviderId,
+      );
+      if (candidateAccount == null) continue;
+      final key = await _credentialStore.readApiKey(candidateAccount);
+      _hasOpenAiCompatibleApiKeys[normalizedProviderId] =
           key != null && key.trim().isNotEmpty;
     }
   }

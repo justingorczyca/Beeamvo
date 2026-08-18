@@ -49,6 +49,8 @@ class OpenAiCompatibleService {
   OpenAiCompatibleProvider get provider => config.provider;
   OpenAiCompatibleModel get model => config.model;
   String get baseUrl => config.baseUrl;
+  int get _requestTimeoutSeconds =>
+      max(1, (_requestTimeout.inMilliseconds + 999) ~/ 1000);
 
   void dispose() {
     if (_isDisposed) return;
@@ -301,7 +303,7 @@ class OpenAiCompatibleService {
       try {
         final response = await _httpClient
             .post(uri, headers: headers, body: body)
-            .timeout(const Duration(seconds: 60));
+            .timeout(_requestTimeout);
         if ((response.statusCode == 429 || response.statusCode >= 500) &&
             attempt < maxAttempts - 1) {
           final delayMs =
@@ -434,7 +436,7 @@ class OpenAiCompatibleService {
       return parseChatResponse(response);
     } on TimeoutException {
       throw CloudTranscriptionException(
-        '${provider.displayName} did not respond within 60 seconds. '
+        '${provider.displayName} did not respond within $_requestTimeoutSeconds seconds. '
         'Try again in a moment.',
       );
     }
@@ -635,7 +637,7 @@ class OpenAiCompatibleService {
         return parseTranscriptionResponse(response);
       } on TimeoutException {
         throw CloudTranscriptionException(
-          '${provider.displayName} did not respond within 60 seconds. '
+          '${provider.displayName} did not respond within $_requestTimeoutSeconds seconds. '
           'Try again in a moment.',
         );
       }

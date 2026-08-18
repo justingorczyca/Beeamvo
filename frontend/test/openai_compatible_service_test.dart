@@ -459,6 +459,31 @@ void main() {
       service.dispose();
     });
 
+    test('applies the configured timeout to chat requests', () async {
+      var attempts = 0;
+      final service = _service(
+        client: MockClient((_) async {
+          attempts++;
+          await Future<void>.delayed(const Duration(milliseconds: 100));
+          return http.Response(
+            '{"choices":[{"message":{"content":"ok"}}]}',
+            200,
+          );
+        }),
+        requestTimeout: const Duration(milliseconds: 1),
+      );
+      await expectLater(
+        service.improveTranscription('draft'),
+        throwsA(
+          predicate<CloudTranscriptionException>(
+            (error) => error.message.contains('within 1 seconds'),
+          ),
+        ),
+      );
+      expect(attempts, 3);
+      service.dispose();
+    });
+
     test('rebuilds multipart transcription requests for retries', () async {
       var attempts = 0;
       final requests = <http.Request>[];
@@ -625,5 +650,32 @@ void main() {
         }
       },
     );
+
+    test('loads an unselected provider key into the presence cache', () async {
+      final root = await Directory.systemTemp.createTemp(
+        'beeamvo-openai-settings-',
+      );
+      final store = InMemorySecureCredentialStore();
+      await store.writeApiKey(
+        openAiCompatibleApiKeyAccount('unselected-provider'),
+        'stored-key',
+      );
+      final settings = SettingsService(
+        credentialStore: store,
+        applicationSupportDirectory: root,
+        openAiCompatibleProviderIds: const ['unselected-provider'],
+      );
+      try {
+        await settings.initialize();
+        expect(settings.selectedOpenAiCompatibleProviderId, isNull);
+        expect(
+          settings.hasOpenAiCompatibleApiKey('unselected-provider'),
+          isTrue,
+        );
+      } finally {
+        settings.dispose();
+        await root.delete(recursive: true);
+      }
+    });
   });
 }
