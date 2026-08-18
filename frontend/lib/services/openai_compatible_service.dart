@@ -35,11 +35,15 @@ class OpenAiCompatibleServiceConfig {
 /// later adapter can connect it to the cloud transcription orchestrator once
 /// the supported provider and model list is finalized.
 class OpenAiCompatibleService {
-  OpenAiCompatibleService({required this.config, http.Client? httpClient})
-    : _httpClient = httpClient ?? createSecureHttpClient();
+  OpenAiCompatibleService({
+    required this.config,
+    http.Client? httpClient,
+    @visibleForTesting this._requestTimeout = const Duration(seconds: 60),
+  }) : _httpClient = httpClient ?? createSecureHttpClient();
 
   final OpenAiCompatibleServiceConfig config;
   final http.Client _httpClient;
+  final Duration _requestTimeout;
   bool _isDisposed = false;
 
   OpenAiCompatibleProvider get provider => config.provider;
@@ -327,6 +331,7 @@ class OpenAiCompatibleService {
     final random = Random();
     for (var attempt = 0; ; attempt++) {
       try {
+        final stopwatch = Stopwatch()..start();
         final request = http.MultipartRequest('POST', uri)
           ..headers.addAll({
             ...provider.extraHeaders,
@@ -337,14 +342,24 @@ class OpenAiCompatibleService {
             http.MultipartFile.fromBytes(
               'file',
               audioData,
-              filename: 'audio.wav',
+              filename: 'audio.${audioFormatForMimeType(mimeType)}',
               contentType: _mediaTypeForMimeType(mimeType),
             ),
           );
         final streamed = await _httpClient
             .send(request)
-            .timeout(const Duration(seconds: 60));
-        final response = await http.Response.fromStream(streamed);
+            .timeout(_requestTimeout);
+        final remainingTimeout = _requestTimeout - stopwatch.elapsed;
+        if (remainingTimeout <= Duration.zero) {
+          return await _readStreamedResponseWithTimeout(
+            streamed,
+            timeout: Duration.zero,
+          );
+        }
+        final response = await _readStreamedResponseWithTimeout(
+          streamed,
+          timeout: remainingTimeout,
+        );
         if ((response.statusCode == 429 || response.statusCode >= 500) &&
             attempt < maxAttempts - 1) {
           final delayMs =
@@ -361,6 +376,52 @@ class OpenAiCompatibleService {
         );
       }
     }
+  }
+
+  Future<http.Response> _readStreamedResponseWithTimeout(
+    http.StreamedResponse streamed, {
+    required Duration timeout,
+  }) async {
+    final bytes = <int>[];
+    final completer = Completer<http.Response>();
+    late final StreamSubscription<List<int>> subscription;
+    final timer = Timer(timeout, () {
+      subscription.cancel().whenComplete(() {
+        if (!completer.isCompleted) {
+          completer.completeError(
+            TimeoutException('Timed out while reading the response body.'),
+          );
+        }
+      });
+    });
+
+    subscription = streamed.stream.listen(
+      bytes.addAll,
+      onError: (Object error, StackTrace stackTrace) {
+        timer.cancel();
+        if (!completer.isCompleted) {
+          completer.completeError(error, stackTrace);
+        }
+      },
+      onDone: () {
+        timer.cancel();
+        if (!completer.isCompleted) {
+          completer.complete(
+            http.Response.bytes(
+              bytes,
+              streamed.statusCode,
+              request: streamed.request,
+              headers: streamed.headers,
+              isRedirect: streamed.isRedirect,
+              persistentConnection: streamed.persistentConnection,
+              reasonPhrase: streamed.reasonPhrase,
+            ),
+          );
+        }
+      },
+      cancelOnError: true,
+    );
+    return completer.future;
   }
 
   Future<String> _postChat(String apiKey, Map<String, dynamic> payload) async {

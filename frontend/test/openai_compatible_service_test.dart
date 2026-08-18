@@ -1,4 +1,6 @@
+import 'dart:async';
 import 'dart:convert';
+import 'dart:io';
 import 'dart:typed_data';
 
 import 'package:beeamvo/config.dart';
@@ -11,6 +13,21 @@ import 'package:beeamvo/services/transcription_result_guard.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
+import 'package:package_info_plus/package_info_plus.dart';
+
+class _StallingClient extends http.BaseClient {
+  bool canceled = false;
+
+  @override
+  Future<http.StreamedResponse> send(http.BaseRequest request) async {
+    final controller = StreamController<List<int>>(
+      onCancel: () {
+        canceled = true;
+      },
+    );
+    return http.StreamedResponse(controller.stream, 200, request: request);
+  }
+}
 
 OpenAiCompatibleModel _textModel() => const OpenAiCompatibleModel(
   id: 'text-model',
@@ -55,6 +72,7 @@ OpenAiCompatibleService _service({
   bool supportsTemperature = true,
   OpenAiCompatibleModel? model,
   Future<String?> Function()? apiKeySupplier,
+  Duration requestTimeout = const Duration(seconds: 60),
 }) {
   final provider = _provider(
     transcriptions: transcriptions,
@@ -68,10 +86,20 @@ OpenAiCompatibleService _service({
       apiKeySupplier: apiKeySupplier ?? (() async => 'secret-key'),
     ),
     httpClient: client,
+    requestTimeout: requestTimeout,
   );
 }
 
 void main() {
+  TestWidgetsFlutterBinding.ensureInitialized();
+  PackageInfo.setMockInitialValues(
+    appName: 'Beeamvo',
+    packageName: 'com.example.beeamvo',
+    version: '1.0.0',
+    buildNumber: '1',
+    buildSignature: 'test',
+  );
+
   group('provider data', () {
     test('wire names and reasoning mappings are provider-neutral', () {
       expect(OpenAiTokenLimitParam.maxTokens.wireName, 'max_tokens');
@@ -465,6 +493,42 @@ void main() {
       expect(requests[1].body, contains('audio.wav'));
       service.dispose();
     });
+
+    test('uses the matching WAV and MP3 multipart filenames', () async {
+      final requests = <http.Request>[];
+      final service = _service(
+        transcriptions: true,
+        client: MockClient((request) async {
+          requests.add(request);
+          return http.Response('{"text":"transcribed"}', 200);
+        }),
+      );
+      await service.transcribeAudio(Uint8List.fromList([1, 2]), 'audio/wav');
+      await service.transcribeAudio(Uint8List.fromList([1, 2]), 'audio/mp3');
+      expect(requests[0].body, contains('filename="audio.wav"'));
+      expect(requests[1].body, contains('filename="audio.mp3"'));
+      expect(requests[1].body, contains('content-type: audio/mpeg'));
+      service.dispose();
+    });
+
+    test('surfaces a stalled transcription response as a timeout', () async {
+      final client = _StallingClient();
+      final service = _service(
+        transcriptions: true,
+        client: client,
+        requestTimeout: const Duration(milliseconds: 1),
+      );
+      await expectLater(
+        service.transcribeAudio(Uint8List.fromList([1, 2]), 'audio/wav'),
+        throwsA(
+          predicate<CloudTranscriptionException>(
+            (error) => error.message.contains('did not respond within'),
+          ),
+        ),
+      );
+      expect(client.canceled, isTrue);
+      service.dispose();
+    });
   });
 
   group('credentials and settings', () {
@@ -518,5 +582,48 @@ void main() {
       );
       settings.dispose();
     });
+
+    test(
+      'rejects invalid provider ids and ignores invalid persisted ids',
+      () async {
+        final settings = SettingsService(
+          credentialStore: InMemorySecureCredentialStore(),
+        );
+        await expectLater(
+          settings.setSelectedOpenAiCompatibleProviderId('not.valid'),
+          throwsA(isA<ArgumentError>()),
+        );
+
+        final root = await Directory.systemTemp.createTemp(
+          'beeamvo-openai-settings-',
+        );
+        final folder = Directory('${root.path}/Beeamvo')..createSync();
+        final file = File('${folder.path}/settings.json');
+        await file.writeAsString(
+          jsonEncode({
+            'openai_compatible_provider_id': 'not.valid',
+            'transcription_backend': 'gemini',
+          }),
+        );
+        final initialized = SettingsService(
+          credentialStore: InMemorySecureCredentialStore(),
+          applicationSupportDirectory: root,
+        );
+        try {
+          await initialized.initialize();
+          expect(initialized.selectedOpenAiCompatibleProviderId, isNull);
+          final persisted =
+              jsonDecode(await file.readAsString()) as Map<String, dynamic>;
+          expect(persisted['openai_compatible_provider_id'], isNull);
+          expect(
+            persisted['transcription_backend'],
+            TranscriptionBackend.cloud.name,
+          );
+        } finally {
+          initialized.dispose();
+          await root.delete(recursive: true);
+        }
+      },
+    );
   });
 }

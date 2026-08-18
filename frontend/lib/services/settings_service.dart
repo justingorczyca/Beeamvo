@@ -38,9 +38,11 @@ class LaunchAtStartupException implements Exception {
 /// shell that owns the active [ThemeMode]) can rebuild when a setting that
 /// affects the whole tree changes — currently just [setThemeMode].
 class SettingsService extends ChangeNotifier {
-  SettingsService({SecureCredentialStore? credentialStore})
-    : _credentialStore =
-          credentialStore ?? const FlutterSecureCredentialStore();
+  SettingsService({
+    SecureCredentialStore? credentialStore,
+    @visibleForTesting this._applicationSupportDirectory,
+  }) : _credentialStore =
+           credentialStore ?? const FlutterSecureCredentialStore();
   // ── keys ──────────────────────────────────────────────────────────────────
   static const _kLaunchAtStartup = 'launch_at_startup';
   static const _kSelectedPromptId = 'active_system_prompt_id';
@@ -85,6 +87,7 @@ class SettingsService extends ChangeNotifier {
 
   // ── internal state ────────────────────────────────────────────────────────
   final SecureCredentialStore _credentialStore;
+  final Directory? _applicationSupportDirectory;
   late File _file;
   Map<String, dynamic> _data = {};
   List<SystemPrompt> _customPrompts = [];
@@ -97,7 +100,8 @@ class SettingsService extends ChangeNotifier {
   // ── init ──────────────────────────────────────────────────────────────────
   Future<void> initialize() async {
     // Resolve the settings file path
-    final dir = await getApplicationSupportDirectory();
+    final dir =
+        _applicationSupportDirectory ?? await getApplicationSupportDirectory();
     final folder = Directory('${dir.path}${Platform.pathSeparator}Beeamvo');
     if (!folder.existsSync()) {
       folder.createSync(recursive: true);
@@ -209,11 +213,16 @@ class SettingsService extends ChangeNotifier {
   Future<void> _loadSecureState() async {
     final geminiApiKey = await _credentialStore.readGeminiApiKey();
     _hasGeminiApiKey = geminiApiKey != null && geminiApiKey.trim().isNotEmpty;
+    final rawProviderId = _getString(_kOpenAiCompatibleProviderId)?.trim();
     final providerId = selectedOpenAiCompatibleProviderId;
-    if (providerId != null) {
-      final key = await _credentialStore.readApiKey(
-        openAiCompatibleApiKeyAccount(providerId),
-      );
+    final account = rawProviderId == null
+        ? null
+        : tryOpenAiCompatibleApiKeyAccount(rawProviderId);
+    if (rawProviderId != null && account == null) {
+      _data.remove(_kOpenAiCompatibleProviderId);
+      await _save();
+    } else if (providerId != null && account != null) {
+      final key = await _credentialStore.readApiKey(account);
       _hasOpenAiCompatibleApiKeys[providerId] =
           key != null && key.trim().isNotEmpty;
     }
@@ -973,14 +982,22 @@ class SettingsService extends ChangeNotifier {
     notifyListeners();
   }
 
-  String? get selectedOpenAiCompatibleProviderId =>
-      _getString(_kOpenAiCompatibleProviderId);
+  String? get selectedOpenAiCompatibleProviderId {
+    final providerId = _getString(_kOpenAiCompatibleProviderId)?.trim();
+    if (providerId == null ||
+        tryOpenAiCompatibleApiKeyAccount(providerId) == null) {
+      return null;
+    }
+    return providerId;
+  }
 
   Future<void> setSelectedOpenAiCompatibleProviderId(String? providerId) async {
     if (providerId == null || providerId.trim().isEmpty) {
       await _remove(_kOpenAiCompatibleProviderId);
     } else {
-      await _setString(_kOpenAiCompatibleProviderId, providerId.trim());
+      final normalized = providerId.trim();
+      openAiCompatibleApiKeyAccount(normalized);
+      await _setString(_kOpenAiCompatibleProviderId, normalized);
     }
     notifyListeners();
   }
@@ -999,40 +1016,50 @@ class SettingsService extends ChangeNotifier {
 
   /// Namespaces the override key per provider. Reuses the credential account
   /// validation so a provider id can never escape its own settings key.
-  String _openAiCompatibleBaseUrlKey(String providerId) {
+  String? _openAiCompatibleBaseUrlKey(String providerId) {
     final normalized = providerId.trim();
-    openAiCompatibleApiKeyAccount(normalized);
+    if (tryOpenAiCompatibleApiKeyAccount(normalized) == null) return null;
     return '$_kOpenAiCompatibleBaseUrlPrefix$normalized';
   }
 
-  String? getOpenAiCompatibleBaseUrlOverride(String providerId) =>
-      _getString(_openAiCompatibleBaseUrlKey(providerId));
+  String? getOpenAiCompatibleBaseUrlOverride(String providerId) {
+    final key = _openAiCompatibleBaseUrlKey(providerId);
+    return key == null ? null : _getString(key);
+  }
 
   Future<void> setOpenAiCompatibleBaseUrlOverride(
     String providerId,
     String? baseUrl,
   ) async {
     final key = _openAiCompatibleBaseUrlKey(providerId);
+    if (key == null) {
+      openAiCompatibleApiKeyAccount(providerId);
+    }
     if (baseUrl == null || baseUrl.trim().isEmpty) {
-      await _remove(key);
+      await _remove(key!);
     } else {
-      await _setString(key, baseUrl.trim());
+      await _setString(key!, baseUrl.trim());
     }
     notifyListeners();
   }
 
   Future<String?> readOpenAiCompatibleApiKey(String providerId) async {
     final normalizedProviderId = providerId.trim();
-    final value = await _credentialStore.readApiKey(
-      openAiCompatibleApiKeyAccount(normalizedProviderId),
-    );
+    final account = tryOpenAiCompatibleApiKeyAccount(normalizedProviderId);
+    if (account == null) return null;
+    final value = await _credentialStore.readApiKey(account);
     _hasOpenAiCompatibleApiKeys[normalizedProviderId] =
         value != null && value.trim().isNotEmpty;
     return value;
   }
 
-  bool hasOpenAiCompatibleApiKey(String providerId) =>
-      _hasOpenAiCompatibleApiKeys[providerId.trim()] ?? false;
+  bool hasOpenAiCompatibleApiKey(String providerId) {
+    final normalizedProviderId = providerId.trim();
+    if (tryOpenAiCompatibleApiKeyAccount(normalizedProviderId) == null) {
+      return false;
+    }
+    return _hasOpenAiCompatibleApiKeys[normalizedProviderId] ?? false;
+  }
 
   Future<void> setOpenAiCompatibleApiKey(
     String providerId,
