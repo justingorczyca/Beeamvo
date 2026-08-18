@@ -67,6 +67,9 @@ class SettingsService extends ChangeNotifier {
   static const _kTranscriptionBackend = 'transcription_backend';
   static const _kCloudProvider = 'cloud_provider';
   static const _kGeminiApiSurface = 'gemini_api_surface';
+  static const _kOpenAiCompatibleProviderId = 'openai_compatible_provider_id';
+  static const _kOpenAiCompatibleModelId = 'openai_compatible_model_id';
+  static const _kOpenAiCompatibleBaseUrlPrefix = 'openai_compatible_base_url_';
 
   // Update notifications
   static const _kLastUpdateCheckAt = 'last_update_check_at';
@@ -88,6 +91,7 @@ class SettingsService extends ChangeNotifier {
   Map<String, PromptSettings> _promptOverrides = {};
   List<ClipboardHistoryEntry> _clipboardHistory = [];
   bool _hasGeminiApiKey = false;
+  final Map<String, bool> _hasOpenAiCompatibleApiKeys = {};
   bool _launchAtStartupRequiresApproval = false;
 
   // ── init ──────────────────────────────────────────────────────────────────
@@ -205,6 +209,14 @@ class SettingsService extends ChangeNotifier {
   Future<void> _loadSecureState() async {
     final geminiApiKey = await _credentialStore.readGeminiApiKey();
     _hasGeminiApiKey = geminiApiKey != null && geminiApiKey.trim().isNotEmpty;
+    final providerId = selectedOpenAiCompatibleProviderId;
+    if (providerId != null) {
+      final key = await _credentialStore.readApiKey(
+        openAiCompatibleApiKeyAccount(providerId),
+      );
+      _hasOpenAiCompatibleApiKeys[providerId] =
+          key != null && key.trim().isNotEmpty;
+    }
   }
 
   Future<void> _migrateCloudSettings() async {
@@ -958,6 +970,97 @@ class SettingsService extends ChangeNotifier {
   Future<void> clearGeminiApiKey() async {
     await _credentialStore.deleteGeminiApiKey();
     _hasGeminiApiKey = false;
+    notifyListeners();
+  }
+
+  String? get selectedOpenAiCompatibleProviderId =>
+      _getString(_kOpenAiCompatibleProviderId);
+
+  Future<void> setSelectedOpenAiCompatibleProviderId(String? providerId) async {
+    if (providerId == null || providerId.trim().isEmpty) {
+      await _remove(_kOpenAiCompatibleProviderId);
+    } else {
+      await _setString(_kOpenAiCompatibleProviderId, providerId.trim());
+    }
+    notifyListeners();
+  }
+
+  String? get selectedOpenAiCompatibleModelId =>
+      _getString(_kOpenAiCompatibleModelId);
+
+  Future<void> setSelectedOpenAiCompatibleModelId(String? modelId) async {
+    if (modelId == null || modelId.trim().isEmpty) {
+      await _remove(_kOpenAiCompatibleModelId);
+    } else {
+      await _setString(_kOpenAiCompatibleModelId, modelId.trim());
+    }
+    notifyListeners();
+  }
+
+  String _openAiCompatibleBaseUrlKey(String providerId) {
+    openAiCompatibleApiKeyAccount(providerId);
+    return '$_kOpenAiCompatibleBaseUrlPrefix${providerId.trim()}';
+  }
+
+  String? readOpenAiCompatibleBaseUrl(String providerId) =>
+      _getString(_openAiCompatibleBaseUrlKey(providerId));
+
+  String? getOpenAiCompatibleBaseUrlOverride(String providerId) =>
+      readOpenAiCompatibleBaseUrl(providerId);
+
+  Future<void> setOpenAiCompatibleBaseUrl(
+    String providerId,
+    String? baseUrl,
+  ) async {
+    final key = _openAiCompatibleBaseUrlKey(providerId);
+    if (baseUrl == null || baseUrl.trim().isEmpty) {
+      await _remove(key);
+    } else {
+      await _setString(key, baseUrl.trim());
+    }
+    notifyListeners();
+  }
+
+  Future<void> setOpenAiCompatibleBaseUrlOverride(
+    String providerId,
+    String? baseUrl,
+  ) {
+    return setOpenAiCompatibleBaseUrl(providerId, baseUrl);
+  }
+
+  Future<String?> readOpenAiCompatibleApiKey(String providerId) async {
+    final normalizedProviderId = providerId.trim();
+    final value = await _credentialStore.readApiKey(
+      openAiCompatibleApiKeyAccount(normalizedProviderId),
+    );
+    _hasOpenAiCompatibleApiKeys[normalizedProviderId] =
+        value != null && value.trim().isNotEmpty;
+    return value;
+  }
+
+  bool hasOpenAiCompatibleApiKey(String providerId) =>
+      _hasOpenAiCompatibleApiKeys[providerId.trim()] ?? false;
+
+  Future<void> setOpenAiCompatibleApiKey(
+    String providerId,
+    String value,
+  ) async {
+    final account = openAiCompatibleApiKeyAccount(providerId);
+    final trimmed = value.trim();
+    if (trimmed.isEmpty) {
+      await clearOpenAiCompatibleApiKey(providerId);
+      return;
+    }
+    await _credentialStore.writeApiKey(account, trimmed);
+    _hasOpenAiCompatibleApiKeys[providerId.trim()] = true;
+    notifyListeners();
+  }
+
+  Future<void> clearOpenAiCompatibleApiKey(String providerId) async {
+    await _credentialStore.deleteApiKey(
+      openAiCompatibleApiKeyAccount(providerId),
+    );
+    _hasOpenAiCompatibleApiKeys.remove(providerId.trim());
     notifyListeners();
   }
 
