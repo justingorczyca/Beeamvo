@@ -9,7 +9,6 @@ environment:
   # the dependency graph requires, so a toolchain in the 3.10.x–3.11.x range
   # passed the manifest constraint but could not resolve the locked packages.
   sdk: ^3.12.0
-  flutter: 3.44.2
 
 dependencies:
   flutter:
