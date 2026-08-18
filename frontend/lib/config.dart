@@ -127,6 +127,20 @@ class AppConfig {
       thinkingBudget: 0,
     ),
     GeminiModelConfig(
+      id: 'gemini-3.7-flash',
+      name: 'Gemini 3.7 Flash',
+      modelName: 'gemini-3.7-flash',
+      vertexLocation: 'global',
+      isPreview: false,
+      thinkingLevel: GeminiThinkingLevel.minimal,
+      supportedThinkingLevels: [
+        GeminiThinkingLevel.minimal,
+        GeminiThinkingLevel.low,
+        GeminiThinkingLevel.medium,
+        GeminiThinkingLevel.high,
+      ],
+    ),
+    GeminiModelConfig(
       id: 'gemini-3-flash',
       name: 'Gemini 3 Flash',
       modelName: 'gemini-3-flash-preview',

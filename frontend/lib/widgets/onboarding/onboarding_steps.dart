@@ -699,6 +699,8 @@ class _ModelStepState extends State<ModelStep> {
         return 'Best balance of speed and quality. Recommended default.';
       case 'gemini-2.5-flash-lite':
         return 'Ultra-fast responses, lighter reasoning.';
+      case 'gemini-3.7-flash':
+        return 'Newest generation. Advanced reasoning with high speed.';
       case 'gemini-3-flash':
         return 'Newest generation. Advanced reasoning (Preview).';
       case 'gemini-3.5-flash':
