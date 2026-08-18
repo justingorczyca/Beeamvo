@@ -190,17 +190,18 @@ class SettingsService extends ChangeNotifier {
   Future<void> _writeAtomic(File target, String content) async {
     final tmp = File('${target.path}.tmp');
     final backup = File('${target.path}.bak');
+    final targetExisted = target.existsSync();
     await tmp.writeAsString(content, flush: true);
-    await setPosixPermissions(tmp.path, '600');
-    if (target.existsSync()) {
+    if (targetExisted) {
       if (backup.existsSync()) {
         await backup.delete();
       }
       await target.rename(backup.path);
-      await setPosixPermissions(backup.path, '600');
     }
     await tmp.rename(target.path);
-    await setPosixPermissions(target.path, '600');
+    if (!targetExisted) {
+      await setPosixPermissions(target.path, '600');
+    }
   }
 
   Future<void> _loadSecureState() async {
@@ -462,6 +463,7 @@ class SettingsService extends ChangeNotifier {
     } on LaunchAtStartupException {
       rethrow;
     } catch (e) {
+      debugPrint('[SettingsService] Failed to set launch at login: $e');
       throw LaunchAtStartupException(
         'Could not update launch at login. Check your system settings and try again.',
       );
@@ -472,11 +474,10 @@ class SettingsService extends ChangeNotifier {
 
   Future<bool> _setPluginLaunchAtStartup(bool enabled) async {
     if (enabled) {
-      await launchAtStartup.enable();
+      return launchAtStartup.enable();
     } else {
-      await launchAtStartup.disable();
+      return launchAtStartup.disable();
     }
-    return true;
   }
 
   Future<bool> _setMacOSLaunchAtLogin(bool enabled) async {

@@ -43,9 +43,7 @@ jobs:
       - name: Set up Flutter
         uses: subosito/flutter-action@v2
         with:
-          # Pinned to the audited baseline for reproducible source builds.
-          # Bump intentionally when moving the supported toolchain forward.
-          flutter-version: '3.44.2'
+          flutter-version-file: pubspec.yaml
           channel: stable
           cache: true
 
@@ -108,7 +106,7 @@ jobs:
       - name: Set up Flutter
         uses: subosito/flutter-action@v2
         with:
-          flutter-version: '3.44.2'
+          flutter-version-file: pubspec.yaml
           channel: stable
           cache: true
 

@@ -96,17 +96,18 @@ class UsageStatsService extends ChangeNotifier {
   Future<void> _writeAtomic(File target, String content) async {
     final tmp = File('${target.path}.tmp');
     final backup = File('${target.path}.bak');
+    final targetExisted = target.existsSync();
     await tmp.writeAsString(content, flush: true);
-    await setPosixPermissions(tmp.path, '600');
-    if (target.existsSync()) {
+    if (targetExisted) {
       if (backup.existsSync()) {
         await backup.delete();
       }
       await target.rename(backup.path);
-      await setPosixPermissions(backup.path, '600');
     }
     await tmp.rename(target.path);
-    await setPosixPermissions(target.path, '600');
+    if (!targetExisted) {
+      await setPosixPermissions(target.path, '600');
+    }
   }
 
   // ── Public API ────────────────────────────────────────────────────────────

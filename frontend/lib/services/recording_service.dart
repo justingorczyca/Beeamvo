@@ -45,6 +45,11 @@ class RecordingService {
           continue;
         }
         try {
+          final lastModified = await entity.lastModified();
+          if (DateTime.now().difference(lastModified) <
+              const Duration(minutes: 10)) {
+            continue;
+          }
           await entity.delete();
         } catch (_) {
           // Best effort: a stale recording must never block startup or dispose.

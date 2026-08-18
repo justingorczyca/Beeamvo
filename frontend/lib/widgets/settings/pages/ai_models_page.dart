@@ -915,11 +915,11 @@ class _AiModelsPageState extends State<AiModelsPage> {
     } else if (!isConfigured) {
       credentialDesc = isGemini
           ? 'No API key configured. Add one to enable cloud transcription.'
-          : 'No project ID set. Configure one for Vertex AI access.';
+          : 'No project ID set. Configure one for Vertex AI access. Vertex authenticates with local Application Default Credentials, a plaintext JSON file with broad cloud-platform scope.';
     } else {
       credentialDesc = isGemini
           ? 'API key stored locally in secure storage.'
-          : 'Project ID: ${_vertexProjectId ?? ''}';
+          : 'Project ID: ${_vertexProjectId ?? ''}. Vertex authenticates with local Application Default Credentials, a plaintext JSON file with broad cloud-platform scope.';
     }
 
     return Column(
@@ -981,13 +981,6 @@ class _AiModelsPageState extends State<AiModelsPage> {
             isConfigured: isConfigured,
           ),
         ),
-        if (!isGemini)
-          const Padding(
-            padding: EdgeInsets.only(top: 6),
-            child: Text(
-              'Vertex uses local Application Default Credentials JSON; protect it because the cloud-platform scope is broad.',
-            ),
-          ),
         if (isConfigured && !isManagedByEnv)
           BeeSettingsRow(
             icon: _cloudStatusIsVerified

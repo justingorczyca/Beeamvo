@@ -290,7 +290,12 @@ class TrayService with TrayListener {
   }
 
   Future<void> dispose() async {
-    await trayManager.destroy();
-    trayManager.removeListener(this);
+    try {
+      await trayManager.destroy();
+    } catch (e) {
+      debugPrint('[TrayService] Failed to destroy tray: $e');
+    } finally {
+      trayManager.removeListener(this);
+    }
   }
 }

@@ -582,7 +582,16 @@ class _GeneralSettingsPageState extends State<GeneralSettingsPage> {
                           if (!context.mounted) return;
                           setState(() => _launchAtStartup = previousValue);
                           ScaffoldMessenger.of(context).showSnackBar(
-                            SnackBar(content: Text(error.toString())),
+                            SnackBar(
+                              content: Text(error.toString()),
+                              backgroundColor: beeSurfaceHighest(context),
+                              behavior: SnackBarBehavior.floating,
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(
+                                  kBeeRadiusMd,
+                                ),
+                              ),
+                            ),
                           );
                         }
                       },
