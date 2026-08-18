@@ -19,7 +19,9 @@ class OpenAiCompatibleServiceConfig {
     String? baseUrl,
     String? baseUrlOverride,
     required this.apiKeySupplier,
-  }) : baseUrl = baseUrlOverride ?? baseUrl ?? provider.defaultBaseUrl;
+  }) : baseUrl = normalizeBaseUrl(
+         baseUrlOverride ?? baseUrl ?? provider.defaultBaseUrl,
+       );
 
   final OpenAiCompatibleProvider provider;
   final OpenAiCompatibleModel model;
@@ -42,9 +44,9 @@ class OpenAiCompatibleService {
 
   OpenAiCompatibleProvider get provider => config.provider;
   OpenAiCompatibleModel get model => config.model;
-  String get baseUrl => normalizeBaseUrl(config.baseUrl);
+  String get baseUrl => config.baseUrl;
 
-  Future<void> dispose() async {
+  void dispose() {
     if (_isDisposed) return;
     _isDisposed = true;
     _httpClient.close();
@@ -223,7 +225,7 @@ class OpenAiCompatibleService {
   @visibleForTesting
   Uri buildChatUri({String? baseUrlOverride}) {
     return _appendPath(
-      normalizeBaseUrl(baseUrlOverride ?? baseUrl),
+      baseUrlOverride == null ? baseUrl : normalizeBaseUrl(baseUrlOverride),
       '/chat/completions',
     );
   }
@@ -231,7 +233,7 @@ class OpenAiCompatibleService {
   @visibleForTesting
   Uri buildTranscriptionsUri({String? baseUrlOverride}) {
     return _appendPath(
-      normalizeBaseUrl(baseUrlOverride ?? baseUrl),
+      baseUrlOverride == null ? baseUrl : normalizeBaseUrl(baseUrlOverride),
       '/audio/transcriptions',
     );
   }
@@ -390,13 +392,6 @@ class OpenAiCompatibleService {
       );
     }
     final choice = choices.first as Map;
-    final finishReason = choice['finish_reason'];
-    if (finishReason is String && finishReason != 'stop') {
-      throw CloudTranscriptionException(
-        '${provider.displayName} stopped generating ($finishReason). '
-        'Try shortening the request or choosing another model.',
-      );
-    }
     final message = choice['message'];
     final content = message is Map ? message['content'] : null;
     final buffer = StringBuffer();
@@ -410,12 +405,23 @@ class OpenAiCompatibleService {
       }
     }
     final text = buffer.toString().trim();
-    if (text.isEmpty) {
+    if (text.isNotEmpty) return text;
+
+    final finishReason = choice['finish_reason'];
+    final normalizedFinishReason = finishReason is String
+        ? finishReason.trim().toLowerCase()
+        : null;
+    if (normalizedFinishReason != null &&
+        normalizedFinishReason.isNotEmpty &&
+        normalizedFinishReason != 'stop') {
       throw CloudTranscriptionException(
-        '${provider.displayName} returned an empty response.',
+        '${provider.displayName} stopped without returning text '
+        '(${finishReason.trim()}). Try again or choose another model.',
       );
     }
-    return text;
+    throw CloudTranscriptionException(
+      '${provider.displayName} returned an empty response.',
+    );
   }
 
   @visibleForTesting
@@ -556,7 +562,7 @@ class OpenAiCompatibleService {
     final apiKey = await _requireApiKey();
     if (provider.supportsTranscriptionsEndpoint) {
       final transcriptionModel =
-          modelOverrideId ?? provider.transcriptionModelId ?? model.id;
+          provider.transcriptionModelId ?? modelOverrideId ?? model.id;
       try {
         final response = await _postMultipartWithRetry(
           buildTranscriptionsUri(),

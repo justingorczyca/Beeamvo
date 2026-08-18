@@ -45,9 +45,6 @@ extension OpenAiReasoningEffortGeminiMapping on GeminiThinkingLevel {
   OpenAiReasoningEffort get openAiReasoningEffort {
     return OpenAiReasoningEffort.fromGeminiThinkingLevel(this);
   }
-
-  OpenAiReasoningEffort get toOpenAiReasoningEffort =>
-      OpenAiReasoningEffort.fromGeminiThinkingLevel(this);
 }
 
 class OpenAiCompatibleModel {

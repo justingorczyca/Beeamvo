@@ -1,4 +1,3 @@
-import 'dart:async';
 import 'dart:convert';
 import 'dart:typed_data';
 
@@ -144,6 +143,21 @@ void main() {
         );
       }
     });
+
+    test('rejects an invalid override when resolving service config', () {
+      final provider = _provider();
+      expect(
+        () => OpenAiCompatibleService(
+          config: OpenAiCompatibleServiceConfig(
+            provider: provider,
+            model: _textModel(),
+            baseUrlOverride: 'http://remote.example/v1',
+            apiKeySupplier: () async => 'key',
+          ),
+        ),
+        throwsA(isA<CloudTranscriptionException>()),
+      );
+    });
   });
 
   group('chat payloads', () {
@@ -165,7 +179,7 @@ void main() {
         contains('secret-key'),
       );
       expect(service.buildHeaders('secret-key')['X-Test'], 'value');
-      unawaited(service.dispose());
+      service.dispose();
     });
 
     test('gates temperature, token and reasoning fields', () {
@@ -179,7 +193,7 @@ void main() {
       expect(payload.containsKey('temperature'), isFalse);
       expect(payload['max_completion_tokens'], 256);
       expect(payload['reasoning_effort'], 'minimal');
-      unawaited(service.dispose());
+      service.dispose();
     });
 
     test('uses the provider-selected legacy token parameter', () {
@@ -201,7 +215,7 @@ void main() {
       );
       expect(payload['max_tokens'], 256);
       expect(payload.containsKey('max_completion_tokens'), isFalse);
-      unawaited(service.dispose());
+      service.dispose();
     });
 
     test('builds audio content parts and uses the no-speech guard', () {
@@ -221,7 +235,7 @@ void main() {
         content[0]['text'],
         contains(TranscriptionResultGuard.noTranscriptPromptInstruction),
       );
-      unawaited(service.dispose());
+      service.dispose();
     });
 
     test('maps audio MIME types and rejects unsupported formats', () {
@@ -232,7 +246,7 @@ void main() {
         () => service.audioFormatForMimeType('audio/ogg'),
         throwsA(isA<CloudTranscriptionException>()),
       );
-      unawaited(service.dispose());
+      service.dispose();
     });
 
     test('rejects a non-audio model without degrading silently', () {
@@ -251,7 +265,7 @@ void main() {
           ),
         ),
       );
-      unawaited(service.dispose());
+      service.dispose();
     });
 
     test('rejects an inline payload over the provider cap', () async {
@@ -276,7 +290,7 @@ void main() {
         service.transcribeAudio(Uint8List.fromList([1]), 'audio/wav'),
         throwsA(isA<CloudTranscriptionException>()),
       );
-      unawaited(service.dispose());
+      service.dispose();
     });
   });
 
@@ -301,10 +315,10 @@ void main() {
         ),
         'ab',
       );
-      unawaited(service.dispose());
+      service.dispose();
     });
 
-    test('rejects empty, malformed and non-stop responses', () {
+    test('handles empty, malformed and non-stop responses', () {
       final service = _service();
       expect(
         () => service.parseChatResponse(
@@ -320,9 +334,32 @@ void main() {
         throwsA(isA<CloudTranscriptionException>()),
       );
       expect(
-        () => service.parseChatResponse(
+        service.parseChatResponse(
           http.Response(
             '{"choices":[{"message":{"content":"partial"},"finish_reason":"length"}]}',
+            200,
+          ),
+        ),
+        'partial',
+      );
+      for (final finishReason in ['end_turn', 'STOP', null]) {
+        final encodedReason = finishReason == null
+            ? 'null'
+            : jsonEncode(finishReason);
+        expect(
+          service.parseChatResponse(
+            http.Response(
+              '{"choices":[{"message":{"content":"complete"},"finish_reason":$encodedReason}]}',
+              200,
+            ),
+          ),
+          'complete',
+        );
+      }
+      expect(
+        () => service.parseChatResponse(
+          http.Response(
+            '{"choices":[{"message":{"content":""},"finish_reason":"length"}]}',
             200,
           ),
         ),
@@ -332,7 +369,7 @@ void main() {
           ),
         ),
       );
-      unawaited(service.dispose());
+      service.dispose();
     });
 
     test('maps non-success status without exposing the body', () {
@@ -349,7 +386,7 @@ void main() {
           ),
         ),
       );
-      unawaited(service.dispose());
+      service.dispose();
     });
 
     test('builds chat URI and sends request with key in header', () async {
@@ -368,7 +405,7 @@ void main() {
       expect(request.headers['authorization'], 'Bearer secret-key');
       final body = (request as http.Request).body;
       expect(body, isNot(contains('secret-key')));
-      unawaited(service.dispose());
+      service.dispose();
     });
 
     test('honors Retry-After and retries a transient response', () async {
@@ -391,7 +428,7 @@ void main() {
       );
       expect(await service.improveTranscription('draft'), 'ok');
       expect(attempts, 2);
-      unawaited(service.dispose());
+      service.dispose();
     });
 
     test('rebuilds multipart transcription requests for retries', () async {
@@ -409,7 +446,11 @@ void main() {
         }),
       );
       expect(
-        await service.transcribeAudio(Uint8List.fromList([1, 2]), 'audio/wav'),
+        await service.transcribeAudio(
+          Uint8List.fromList([1, 2]),
+          'audio/wav',
+          modelOverrideId: 'audio-model',
+        ),
         'transcribed',
       );
       expect(attempts, 2);
@@ -419,9 +460,10 @@ void main() {
       );
       expect(requests[0].body, contains('response_format'));
       expect(requests[0].body, contains('stt-model'));
+      expect(requests[0].body, isNot(contains('audio-model')));
       expect(requests[0].body, contains('audio.wav'));
       expect(requests[1].body, contains('audio.wav'));
-      unawaited(service.dispose());
+      service.dispose();
     });
   });
 
