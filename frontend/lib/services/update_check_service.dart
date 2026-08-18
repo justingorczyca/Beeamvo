@@ -81,6 +81,11 @@ class UpdateCheckService {
   /// GitHub rejects requests without a `User-Agent` header (HTTP 403).
   static const _userAgent = 'Beeamvo-Update-Check';
 
+  static bool isAllowedReleaseUrl(Uri uri) {
+    return uri.host == 'github.com' &&
+        uri.path.startsWith('/justingorczyca/Beeamvo/');
+  }
+
   /// Compares the installed version against the latest GitHub release.
   ///
   /// Unlike [check], this preserves whether the lookup itself succeeded. This
@@ -107,6 +112,10 @@ class UpdateCheckService {
       final tag = (decoded['tag_name'] as String?)?.trim();
       final url = decoded['html_url'] as String?;
       if (tag == null || url == null || url.isEmpty) {
+        return const UpdateCheckResult.failure();
+      }
+      final releaseUri = Uri.tryParse(url);
+      if (releaseUri == null || !isAllowedReleaseUrl(releaseUri)) {
         return const UpdateCheckResult.failure();
       }
 

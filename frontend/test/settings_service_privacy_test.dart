@@ -56,4 +56,13 @@ void main() {
     await settings.setGeminiApiSurface(GeminiApiSurface.interactions);
     expect(settings.geminiApiSurface, equals(GeminiApiSurface.interactions));
   });
+
+  test('macOS launch approval status keeps launch at startup enabled', () {
+    expect(SettingsService.launchAtStartupStatusIsEnabled('enabled'), isTrue);
+    expect(
+      SettingsService.launchAtStartupStatusIsEnabled('requiresApproval'),
+      isTrue,
+    );
+    expect(SettingsService.launchAtStartupStatusIsEnabled('disabled'), isFalse);
+  });
 }

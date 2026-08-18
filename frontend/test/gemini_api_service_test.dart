@@ -251,6 +251,40 @@ void main() {
       );
     });
 
+    test('verifySetup uses a bounded minimal-thinking request', () async {
+      late Map<String, dynamic> body;
+      final client = MockClient((request) async {
+        body = jsonDecode(request.body) as Map<String, dynamic>;
+        return http.Response(
+          jsonEncode({
+            'candidates': [
+              {
+                'content': {
+                  'parts': [
+                    {'text': 'OK'},
+                  ],
+                },
+              },
+            ],
+          }),
+          200,
+        );
+      });
+      final service = GeminiApiService(httpClient: client);
+      service.attachSettings(FakeSettingsService(apiKey: 'test-key'));
+      await service.initialize();
+
+      await service.verifySetup();
+
+      final generationConfig = body['generationConfig'] as Map<String, dynamic>;
+      expect(generationConfig['temperature'], 0.0);
+      expect(generationConfig['maxOutputTokens'], 64);
+      expect(
+        generationConfig['thinkingConfig'],
+        equals(<String, dynamic>{'thinkingLevel': 'MINIMAL'}),
+      );
+    });
+
     test('verifySetup surfaces invalid non-JSON responses', () async {
       final client = MockClient(
         (_) async => http.Response(
@@ -274,6 +308,40 @@ void main() {
           ),
         ),
       );
+    });
+
+    test('Retry-After seconds are converted to a real delay', () async {
+      var calls = 0;
+      final client = MockClient((_) async {
+        calls++;
+        if (calls == 1) {
+          return http.Response('{}', 429, headers: {'retry-after': '1'});
+        }
+        return http.Response(
+          jsonEncode({
+            'candidates': [
+              {
+                'content': {
+                  'parts': [
+                    {'text': 'ok'},
+                  ],
+                },
+              },
+            ],
+          }),
+          200,
+        );
+      });
+      final service = GeminiApiService(httpClient: client);
+      service.attachSettings(FakeSettingsService(apiKey: 'test-key'));
+      await service.initialize();
+      final stopwatch = Stopwatch()..start();
+
+      expect(await service.improveTranscription('raw'), equals('ok'));
+      stopwatch.stop();
+
+      expect(calls, equals(2));
+      expect(stopwatch.elapsedMilliseconds, greaterThanOrEqualTo(800));
     });
   });
 }

@@ -10,11 +10,15 @@ Beeamvo is a Flutter desktop app. See the [README](README.md) for platform
 prerequisites. In short, from `frontend/`:
 
 ```bash
+flutter --version                    # must report Flutter 3.44.2
 flutter pub get --enforce-lockfile   # use the pinned pubspec.lock versions
 flutter analyze                      # must report "No issues found"
 flutter test                         # must pass
 dart format lib test                 # keep the tree formatter-clean
 ```
+
+Use the pinned Flutter/Dart 3.44.2 SDK when formatting; CI checks the same
+formatted output.
 
 `pubspec.lock` is the source of truth for dependency versions — please do not
 re-lock to different versions unless that is the point of your change.

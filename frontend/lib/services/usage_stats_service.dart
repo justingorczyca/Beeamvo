@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:path_provider/path_provider.dart';
 import '../models/usage_stats.dart';
+import 'file_permissions.dart';
 
 /// Service that tracks local usage statistics (word counts, streaks, etc.)
 /// and persists them to a JSON file in the app-support directory.
@@ -35,7 +36,11 @@ class UsageStatsService extends ChangeNotifier {
     if (!folder.existsSync()) {
       folder.createSync(recursive: true);
     }
+    await setPosixPermissions(folder.path, '700');
     _file = File('${folder.path}${Platform.pathSeparator}usage_stats.json');
+    if (_file.existsSync()) {
+      await setPosixPermissions(_file.path, '600');
+    }
     await _load();
     debugPrint('[UsageStatsService] initialized');
   }
@@ -91,8 +96,10 @@ class UsageStatsService extends ChangeNotifier {
   Future<void> _writeAtomic(File target, String content) async {
     final tmp = File('${target.path}.tmp');
     final backup = File('${target.path}.bak');
+    final targetExisted = target.existsSync();
     await tmp.writeAsString(content, flush: true);
-    if (target.existsSync()) {
+    await setPosixPermissions(tmp.path, '600');
+    if (targetExisted) {
       if (backup.existsSync()) {
         await backup.delete();
       }
@@ -115,8 +122,9 @@ class UsageStatsService extends ChangeNotifier {
     // future still surfaces any error to the caller; we feed `_recordLock`
     // from `run.catchError(...)` instead so a single failure never leaves the
     // chain in an error state that would permanently block later recordings.
-    final run = _recordLock
-        .then((_) => _recordTranscriptionInternal(text, recordingDuration));
+    final run = _recordLock.then(
+      (_) => _recordTranscriptionInternal(text, recordingDuration),
+    );
     _recordLock = run.catchError((Object _) {});
     return run;
   }
@@ -192,8 +200,9 @@ class UsageStatsService extends ChangeNotifier {
     final cjkCount = RegExp(cjkPattern).allMatches(text).length;
     // Split on whitespace AND CJK ranges to separate Latin words from CJK runs.
     final spaced = text
-        .split(RegExp(
-            r'[\s\u3400-\u9FFF\uF900-\uFAFF\u3040-\u30FF\uAC00-\uD7AF]+'))
+        .split(
+          RegExp(r'[\s\u3400-\u9FFF\uF900-\uFAFF\u3040-\u30FF\uAC00-\uD7AF]+'),
+        )
         .where((t) => t.isNotEmpty)
         .length;
     return spaced + cjkCount;

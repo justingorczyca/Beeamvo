@@ -11,7 +11,7 @@
 <p align="center">
   <a href="LICENSE"><img src="https://img.shields.io/badge/License-MIT-green.svg" alt="License"></a>
   <img src="https://img.shields.io/badge/Platform-Windows%20%7C%20macOS-blue" alt="Platform: Windows / macOS (Linux experimental)">
-  <img src="https://img.shields.io/badge/Flutter-3.44+-02569B?logo=flutter&logoColor=white" alt="Flutter">
+  <img src="https://img.shields.io/badge/Flutter-3.44.2-02569B?logo=flutter&logoColor=white" alt="Flutter">
   <img src="https://img.shields.io/badge/whisper.cpp-v1.8.4-FF6F00" alt="whisper.cpp v1.8.4">
 </p>
 
@@ -39,11 +39,13 @@ Press a global hotkey anywhere, speak, and your words are typed at the cursor â€
 
 | Platform | Requirements |
 |----------|--------------|
-| **Windows** | Flutter 3.44+ (stable), Visual Studio 2022 with the *Desktop development with C++* workload |
-| **macOS** | Flutter 3.44+ (stable), Xcode 15+, CocoaPods. Builds target macOS 13.0 (Ventura). |
-| **Linux** (experimental) | Flutter 3.44+ (stable) with Linux desktop enabled (`flutter config --enable-linux-desktop`), plus `clang`, `cmake`, `ninja-build`, `pkg-config`, `libgtk-3-dev`, `liblzma-dev`, `libstdc++-12-dev` |
+| **Windows** | Flutter 3.44.2 (stable), Visual Studio 2022 with the *Desktop development with C++* workload |
+| **macOS** | Flutter 3.44.2 (stable), Xcode 15+, CocoaPods. Builds target macOS 13.0 (Ventura). |
+| **Linux** (experimental) | Flutter 3.44.2 (stable) with Linux desktop enabled (`flutter config --enable-linux-desktop`), plus `clang`, `cmake`, `ninja-build`, `pkg-config`, `libgtk-3-dev`, `liblzma-dev`, `libstdc++-12-dev` |
 
 > **whisper.cpp build model.** On **macOS**, the app links a **bundled local copy** under `frontend/macos/Runner/whisper.cpp/` (no network needed to build). On **Windows and Linux**, the native runner downloads the whisper.cpp source from GitHub via CMake `FetchContent` at **build time**, pinned to upstream commit `9386f239401074690479731c1e41683fbbeac557` (**v1.8.4**) â€” so the first build for those platforms requires an internet connection. The pin lives in `frontend/windows/runner/CMakeLists.txt` and `frontend/linux/runner/CMakeLists.txt`. All three platforms end up building the **same whisper.cpp v1.8.4**.
+
+Use Flutter/Dart 3.44.2 for formatting and verification so local output matches CI.
 
 ### Build and run from source
 

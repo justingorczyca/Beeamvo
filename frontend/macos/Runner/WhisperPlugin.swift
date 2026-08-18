@@ -220,13 +220,14 @@ extension WhisperPlugin: FlutterPlugin {
         wparams.print_timestamps = false
         wparams.no_timestamps = true
         wparams.single_segment = true
+        wparams.suppress_nst = true
 
         // Reduce encoder context for short clips to avoid full 30s encoder cost.
         let sr = sampleRate > 0 ? sampleRate : 16000
         let audioSeconds = Float(samples.count) / Float(sr)
         if audioSeconds < 30 {
             let ctxFrames = Int(ceil(audioSeconds / 30.0 * 1500.0 / 64.0)) * 64
-            wparams.audio_ctx = Int32(max(512, ctxFrames))
+            wparams.audio_ctx = Int32(min(1500, max(768, ctxFrames)))
         } else {
             wparams.audio_ctx = 0 // 0 = default full context window
         }

@@ -2,9 +2,11 @@ import 'dart:ffi';
 import 'package:ffi/ffi.dart';
 import 'package:win32/win32.dart';
 
+final Pointer<Utf16> _windowClassName = 'BEEAMVO_WIN32_WINDOW'.toNativeUtf16();
+
 /// Get the handle to the Flutter window
 int _getWindowHandle() {
-  final hwnd = FindWindow(TEXT('BEEAMVO_WIN32_WINDOW'), nullptr);
+  final hwnd = FindWindow(_windowClassName, nullptr);
   return hwnd;
 }
 

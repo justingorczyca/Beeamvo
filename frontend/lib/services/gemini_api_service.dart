@@ -11,6 +11,7 @@ import 'cloud_transcription_client.dart';
 import 'pinned_http_client.dart';
 import 'settings_service.dart';
 import 'transcription_result_guard.dart';
+import 'retry_after.dart';
 
 class GeminiApiService implements CloudTranscriptionClient {
   // Standard platform TLS (OS trust store). No certificate pinning is active;
@@ -275,7 +276,7 @@ class GeminiApiService implements CloudTranscriptionClient {
   ) async {
     const maxAttempts = 3;
     final random = Random();
-    for (var attempt = 0;; attempt++) {
+    for (var attempt = 0; ; attempt++) {
       try {
         final response = await _httpClient
             .post(uri, headers: headers, body: body)
@@ -284,11 +285,9 @@ class GeminiApiService implements CloudTranscriptionClient {
         if ((response.statusCode == 429 || response.statusCode >= 500) &&
             attempt < maxAttempts - 1) {
           final retryAfterHeader = response.headers['retry-after'];
-          final retryAfterMs = retryAfterHeader != null
-              ? int.tryParse(retryAfterHeader)
-              : null;
-          final delayMs = retryAfterMs ??
-              (500 * (1 << attempt) + random.nextInt(500));
+          final retryAfterMs = retryAfterDelayMilliseconds(retryAfterHeader);
+          final delayMs =
+              retryAfterMs ?? (500 * (1 << attempt) + random.nextInt(500));
           await Future<void>.delayed(Duration(milliseconds: delayMs));
           continue;
         }
@@ -307,14 +306,10 @@ class GeminiApiService implements CloudTranscriptionClient {
     String modelName,
     Map<String, dynamic> payload,
   ) async {
-    final response = await _postWithRetry(
-      _buildUri(modelName),
-      {
-        'Content-Type': 'application/json',
-        'x-goog-api-key': apiKey,
-      },
-      jsonEncode(payload),
-    );
+    final response = await _postWithRetry(_buildUri(modelName), {
+      'Content-Type': 'application/json',
+      'x-goog-api-key': apiKey,
+    }, jsonEncode(payload));
 
     final decoded = _decodeResponse(response);
     if (response.statusCode >= 400) {
@@ -420,7 +415,11 @@ class GeminiApiService implements CloudTranscriptionClient {
     final apiKey = await _requireApiKey();
     final payload = {
       'contents': [_buildTextContent('Reply with OK.')],
-      'generationConfig': {'temperature': 0.0, 'maxOutputTokens': 8},
+      'generationConfig': _buildGenerationConfig(
+        temperature: 0.0,
+        maxOutputTokens: 64,
+        thinkingConfig: _buildThinkingConfig(forceMinimal: true),
+      ),
     };
     await _postGenerateContent(apiKey, _currentModel.modelName, payload);
   }

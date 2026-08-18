@@ -11,6 +11,7 @@ import 'cloud_transcription_client.dart';
 import 'pinned_http_client.dart';
 import 'settings_service.dart';
 import 'transcription_result_guard.dart';
+import 'retry_after.dart';
 
 class GeminiInteractionsService implements CloudTranscriptionClient {
   GeminiInteractionsService({http.Client? httpClient})
@@ -287,12 +288,7 @@ class GeminiInteractionsService implements CloudTranscriptionClient {
         if ((response.statusCode == 429 || response.statusCode >= 500) &&
             attempt < maxAttempts - 1) {
           final retryAfterHeader = response.headers['retry-after'];
-          final retryAfterSeconds = retryAfterHeader != null
-              ? int.tryParse(retryAfterHeader)
-              : null;
-          final retryAfterMs = retryAfterSeconds == null
-              ? null
-              : retryAfterSeconds * 1000;
+          final retryAfterMs = retryAfterDelayMilliseconds(retryAfterHeader);
           final delayMs =
               retryAfterMs ?? (500 * (1 << attempt) + random.nextInt(500));
           await Future<void>.delayed(Duration(milliseconds: delayMs));
