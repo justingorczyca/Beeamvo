@@ -110,6 +110,32 @@ void main() {
       expect(generationConfig.containsKey('thinking_level'), isFalse);
       expect(generationConfig.containsKey('thinking_budget'), isFalse);
     });
+
+    test('verifySetup uses the key header and robust verify payload', () async {
+      http.Request? capturedRequest;
+      final service = _service(
+        MockClient((request) async {
+          capturedRequest = request;
+          return _completedResponse('OK');
+        }),
+      );
+
+      await service.verifySetup();
+
+      expect(capturedRequest, isNotNull);
+      final request = capturedRequest!;
+      final body = jsonDecode(request.body) as Map<String, dynamic>;
+      expect(body['store'], isFalse);
+      expect(body.containsKey('system_instruction'), isFalse);
+      expect(body['generation_config'], {
+        'temperature': 0.0,
+        'max_output_tokens': 64,
+        'thinking_level': 'minimal',
+      });
+      expect(request.headers['x-goog-api-key'], equals('test-key'));
+      expect(request.headers.containsKey('Authorization'), isFalse);
+      expect(request.headers.containsKey('authorization'), isFalse);
+    });
   });
 
   group('GeminiInteractionsService responses', () {

@@ -6,6 +6,7 @@ import 'package:flutter_dotenv/flutter_dotenv.dart';
 import '../../../providers/settings_provider.dart';
 import '../../../config.dart';
 import '../../../models/system_prompt.dart';
+import '../../../services/settings_service.dart';
 import '../../../services/whisper_service.dart';
 import '../../../services/whisper_model_download_service.dart';
 import '../settings_shared.dart';
@@ -517,7 +518,9 @@ class _AiModelsPageState extends State<AiModelsPage> {
       await widget.onVerifyCloudProvider!.call(_cloudProvider);
       setState(() {
         _cloudStatusMessage = _cloudProvider == CloudProvider.geminiApiKey
-            ? '${_geminiApiSurface.displayName} API verified successfully.'
+            ? _geminiApiSurface == GeminiApiSurface.interactions
+                  ? 'Gemini API key verified successfully (Interactions API).'
+                  : 'Gemini API key verified successfully (legacy generateContent API).'
             : 'Vertex AI configuration verified successfully.';
         _cloudStatusIsError = false;
         _cloudStatusIsVerified = true;
@@ -988,7 +991,7 @@ class _AiModelsPageState extends State<AiModelsPage> {
             label: 'Connection',
             description:
                 _cloudStatusMessage ??
-                'Verify that your ${isGemini ? _geminiApiSurface.displayName : 'Vertex AI'} credentials work correctly.',
+                'Verify that your credentials work correctly.',
             showDivider: false,
             trailing: BeeActionChip(
               label: _isVerifyingCloudProvider ? 'Verifying…' : 'Verify',

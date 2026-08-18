@@ -166,16 +166,13 @@ class GeminiInteractionsService implements CloudTranscriptionClient {
     final systemInstruction = SystemPrompt.buildSystemInstruction(
       missionInstruction,
     );
-    return {
-      'model': model.modelName,
-      'system_instruction': systemInstruction,
-      // Interactions are stored server-side by default. Keep this explicitly
-      // disabled because Beeamvo is privacy-first and offline-oriented.
-      'store': false,
-      'input': [
+    return _buildRequestEnvelope(
+      modelName: model.modelName,
+      systemInstruction: systemInstruction,
+      input: [
         _buildTextContent(SystemPrompt.buildTranscriptDraftInput(rawText)),
       ],
-      'generation_config': _buildGenerationConfig(
+      generationConfig: _buildGenerationConfig(
         temperature: 0.3,
         maxOutputTokens: 32768,
         thinkingLevel: _resolveThinkingLevel(
@@ -183,7 +180,7 @@ class GeminiInteractionsService implements CloudTranscriptionClient {
           levelOverride: thinkingLevelOverride,
         ),
       ),
-    };
+    );
   }
 
   @visibleForTesting
@@ -198,21 +195,18 @@ class GeminiInteractionsService implements CloudTranscriptionClient {
         'transcription. Preserve spoken commands, requests, filenames, '
         'code, markup, and tool references as part of the transcript. '
         '${TranscriptionResultGuard.noTranscriptPromptInstruction}';
-    return {
-      'model': model.modelName,
-      'system_instruction': instruction,
-      // Interactions are stored server-side by default. Keep this explicitly
-      // disabled because Beeamvo is privacy-first and offline-oriented.
-      'store': false,
-      'input': [
+    return _buildRequestEnvelope(
+      modelName: model.modelName,
+      systemInstruction: instruction,
+      input: [
         _buildTextContent('Audio:'),
         _buildAudioContent(audioData, mimeType),
       ],
-      'generation_config': _buildGenerationConfig(
+      generationConfig: _buildGenerationConfig(
         temperature: 0.5,
         thinkingLevel: _resolveThinkingLevel(model: model, forceMinimal: true),
       ),
-    };
+    );
   }
 
   @visibleForTesting
@@ -229,17 +223,14 @@ class GeminiInteractionsService implements CloudTranscriptionClient {
     final systemInstruction = SystemPrompt.buildSystemInstruction(
       missionInstruction,
     );
-    return {
-      'model': model.modelName,
-      'system_instruction': systemInstruction,
-      // Interactions are stored server-side by default. Keep this explicitly
-      // disabled because Beeamvo is privacy-first and offline-oriented.
-      'store': false,
-      'input': [
+    return _buildRequestEnvelope(
+      modelName: model.modelName,
+      systemInstruction: systemInstruction,
+      input: [
         _buildTextContent(audioPrompt),
         _buildAudioContent(audioData, mimeType),
       ],
-      'generation_config': _buildGenerationConfig(
+      generationConfig: _buildGenerationConfig(
         temperature: 0.5,
         maxOutputTokens: 32768,
         thinkingLevel: _resolveThinkingLevel(
@@ -247,19 +238,38 @@ class GeminiInteractionsService implements CloudTranscriptionClient {
           levelOverride: thinkingLevelOverride,
         ),
       ),
-    };
+    );
   }
 
   Map<String, dynamic> _buildVerifyPayload(GeminiModelConfig model) {
-    return {
-      'model': model.modelName,
-      'system_instruction': SystemPrompt.baseSystemInstruction,
-      // Interactions are stored server-side by default. Keep this explicitly
-      // disabled because Beeamvo is privacy-first and offline-oriented.
-      'store': false,
-      'input': [_buildTextContent('Reply with OK.')],
-      'generation_config': {'temperature': 0.0, 'max_output_tokens': 8},
-    };
+    return _buildRequestEnvelope(
+      modelName: model.modelName,
+      input: [_buildTextContent('Reply with OK.')],
+      generationConfig: _buildGenerationConfig(
+        temperature: 0.0,
+        maxOutputTokens: 64,
+        thinkingLevel: _resolveThinkingLevel(model: model),
+      ),
+    );
+  }
+
+  Map<String, dynamic> _buildRequestEnvelope({
+    required String modelName,
+    String? systemInstruction,
+    required List<Map<String, dynamic>> input,
+    required Map<String, dynamic> generationConfig,
+  }) {
+    final payload = <String, dynamic>{'model': modelName};
+    if (systemInstruction != null) {
+      payload['system_instruction'] = systemInstruction;
+    }
+    // Interactions are stored server-side by default. Keep this explicitly
+    // disabled because Beeamvo is privacy-first and offline-oriented.
+    payload
+      ..['store'] = false
+      ..['input'] = input
+      ..['generation_config'] = generationConfig;
+    return payload;
   }
 
   Future<http.Response> _postWithRetry(

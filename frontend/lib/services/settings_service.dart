@@ -6,6 +6,7 @@ import 'package:flutter/services.dart';
 import 'package:launch_at_startup/launch_at_startup.dart';
 import 'package:package_info_plus/package_info_plus.dart';
 import 'package:path_provider/path_provider.dart';
+import '../models/enums.dart';
 export '../models/enums.dart';
 import '../models/system_prompt.dart';
 import '../models/prompt_settings.dart';
