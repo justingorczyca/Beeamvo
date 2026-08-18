@@ -115,7 +115,7 @@ Full guide: [docs/vertex-rest-setup.md](docs/vertex-rest-setup.md)
 | **Recording modes** | Toggle (press to start/stop) or Hold (hold to record) |
 | **Auto-paste** | Transcription is pasted at the cursor automatically |
 | **Cancel / commit** | `Esc` cancels, `Enter` commits early |
-| **Cloud models** | Gemini 2.5 Flash, 2.5 Flash Lite, 3 Flash (preview), 3.5 Flash, 3.1 Flash Lite |
+| **Cloud models** | Gemini 2.5 Flash, 2.5 Flash Lite, 3.7 Flash, 3 Flash (preview), 3.5 Flash, 3.1 Flash Lite |
 | **Thinking levels** | Minimal / Low / Medium / High (Gemini 3+ models) |
 | **Two-pass refinement** | Local Whisper transcription followed by an AI polish pass |
 | **System prompts** | Built-in prompts plus unlimited custom prompts |

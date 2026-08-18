@@ -109,6 +109,21 @@ void main() {
       expect(model.supportedThinkingLevels, contains(GeminiThinkingLevel.high));
     });
 
+    test('Gemini 3.7 Flash is available with all thinking levels', () {
+      final model = AppConfig.getModelById('gemini-3.7-flash');
+
+      expect(model.modelName, equals('gemini-3.7-flash'));
+      expect(model.isPreview, isFalse);
+      expect(model.vertexLocation, equals('global'));
+      expect(model.thinkingLevel, equals(GeminiThinkingLevel.minimal));
+      expect(model.supportedThinkingLevels, [
+        GeminiThinkingLevel.minimal,
+        GeminiThinkingLevel.low,
+        GeminiThinkingLevel.medium,
+        GeminiThinkingLevel.high,
+      ]);
+    });
+
     test('model list excludes deprecated Gemini 2.0 variants', () {
       expect(
         AppConfig.availableModels.map((model) => model.id),
