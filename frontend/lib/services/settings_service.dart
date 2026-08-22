@@ -913,21 +913,26 @@ class SettingsService extends ChangeNotifier {
       twoPassTranscriptionEnabled;
 
   /// Whether the prompt with [promptId] would have NO effect with the
-  /// current pipeline.
+  /// pipeline it would actually run on.
   ///
   /// The Default prompt (`standard`) is never considered inactive — it is the
-  /// implicit baseline Whisper uses. A per-prompt override that routes the
-  /// prompt to Cloud or enables two-pass also keeps it active.
+  /// implicit baseline Whisper uses. The check mirrors the runtime session
+  /// resolution: per-prompt backend/two-pass overrides take precedence over
+  /// the global defaults, in either direction. A prompt whose overrides force
+  /// pure offline Whisper (no two-pass) is flagged even when the global
+  /// backend is Cloud, so the user is prompted to pick an explicit
+  /// configuration that applies the instruction (the runtime still falls back
+  /// to a cloud refinement pass when cloud credentials are available).
   bool isPromptInactiveOnLocalBackend(String promptId) {
     if (promptId == 'standard') return false;
     final overrides = getPromptOverrides(promptId);
-    if (overrides != null) {
-      if (overrides.transcriptionBackend == TranscriptionBackend.cloud.value) {
-        return false;
-      }
-      if (overrides.twoPassTranscriptionEnabled == true) return false;
-    }
-    return !isCloudRefinementInPipeline;
+    final effectiveBackend = TranscriptionBackendExtension.fromValue(
+      overrides?.transcriptionBackend ?? transcriptionBackend.name,
+    );
+    final effectiveTwoPass =
+        overrides?.twoPassTranscriptionEnabled ?? twoPassTranscriptionEnabled;
+    return effectiveBackend == TranscriptionBackend.whisper &&
+        !effectiveTwoPass;
   }
 
   /// Keep local Whisper transcription but enable the two-pass cloud

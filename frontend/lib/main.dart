@@ -1741,6 +1741,24 @@ class _BeeamvoHomeState extends State<BeeamvoHome>
                 overrides.thinkingLevel,
           );
           debugPrint('Whisper two-pass: refined with $refinementModelId');
+        } else if ((selectedPrompt.id != 'standard' ||
+                rephraserFragment != null) &&
+            _settingsService.hasCloudCredentials) {
+          // A non-default mode (or active rephraser) still needs a cloud
+          // refinement pass to apply its instruction — otherwise the selected
+          // prompt would be silently dropped on pure Whisper.
+          improvedText = await _cloudService.improveTranscription(
+            rawTranscript,
+            missionInstruction: effectiveInstruction,
+            modelOverrideId: effectiveRefinementModelId,
+            thinkingLevelOverride:
+                overrides.twoPassRefinementThinkingLevel ??
+                overrides.thinkingLevel,
+          );
+          debugPrint(
+            'Whisper: applied prompt "${selectedPrompt.id}" via cloud '
+            'refinement (single-pass fallback)',
+          );
         } else {
           improvedText = rawTranscript;
         }
