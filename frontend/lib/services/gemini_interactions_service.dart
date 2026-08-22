@@ -177,18 +177,18 @@ class GeminiInteractionsService implements CloudTranscriptionClient {
       input: [
         _buildTextContent(SystemPrompt.buildTranscriptDraftInput(rawText)),
       ],
-          generationConfig: _buildGenerationConfig(
-            maxOutputTokens: 32768,
-            thinkingLevel: _resolveThinkingLevel(
-              model: model,
-              levelOverride: thinkingLevelOverride,
-            ),
-          ),
-        );
-      }
+      generationConfig: _buildGenerationConfig(
+        maxOutputTokens: 32768,
+        thinkingLevel: _resolveThinkingLevel(
+          model: model,
+          levelOverride: thinkingLevelOverride,
+        ),
+      ),
+    );
+  }
 
-      @visibleForTesting
-      Map<String, dynamic> buildTranscribePayload({
+  @visibleForTesting
+  Map<String, dynamic> buildTranscribePayload({
     required Uint8List audioData,
     required String mimeType,
     required GeminiModelConfig model,
@@ -206,14 +206,14 @@ class GeminiInteractionsService implements CloudTranscriptionClient {
         _buildTextContent('Audio:'),
         _buildAudioContent(audioData, mimeType),
       ],
-          generationConfig: _buildGenerationConfig(
-            thinkingLevel: _resolveThinkingLevel(model: model, forceMinimal: true),
-          ),
-        );
-      }
+      generationConfig: _buildGenerationConfig(
+        thinkingLevel: _resolveThinkingLevel(model: model, forceMinimal: true),
+      ),
+    );
+  }
 
-      @visibleForTesting
-      Map<String, dynamic> buildTranscribeAndImprovePayload({
+  @visibleForTesting
+  Map<String, dynamic> buildTranscribeAndImprovePayload({
     required Uint8List audioData,
     required String mimeType,
     required String missionInstruction,
@@ -233,17 +233,17 @@ class GeminiInteractionsService implements CloudTranscriptionClient {
         _buildTextContent(audioPrompt),
         _buildAudioContent(audioData, mimeType),
       ],
-          generationConfig: _buildGenerationConfig(
-            maxOutputTokens: 32768,
-            thinkingLevel: _resolveThinkingLevel(
-              model: model,
-              levelOverride: thinkingLevelOverride,
-            ),
-          ),
-        );
-      }
+      generationConfig: _buildGenerationConfig(
+        maxOutputTokens: 32768,
+        thinkingLevel: _resolveThinkingLevel(
+          model: model,
+          levelOverride: thinkingLevelOverride,
+        ),
+      ),
+    );
+  }
 
-      Map<String, dynamic> _buildVerifyPayload(GeminiModelConfig model) {
+  Map<String, dynamic> _buildVerifyPayload(GeminiModelConfig model) {
     return _buildRequestEnvelope(
       modelName: model.modelName,
       input: [_buildTextContent('Reply with OK.')],
