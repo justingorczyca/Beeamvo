@@ -19,14 +19,18 @@ class GeminiInteractionsService implements CloudTranscriptionClient {
 
   static const int maxInlineRequestBytes = 20 * 1024 * 1024;
 
-  // Google documentation currently lists /v1, /v1beta, and /v1beta2 for
-  // Interactions, so probe the stable path and fall back only on a 404.
-  static const List<String> _interactionApiVersions = ['v1', 'v1beta'];
+  // The Interactions API is served exclusively under /v1beta
+  // (https://ai.google.dev/api/interactions-api). There is no /v1 surface;
+  // probing other versions can pin a broken endpoint.
+  static const String _interactionApiVersion = 'v1beta';
+
+  // All official REST examples pin the wire format with this dated revision
+  // header (https://ai.google.dev/gemini-api/docs/interactions/quickstart).
+  static const String apiRevision = '2026-05-20';
 
   final http.Client _httpClient;
   bool _isInitialized = false;
   bool _isDisposed = false;
-  String? _workingApiVersion;
   GeminiModelConfig _currentModel = AppConfig.getModelById(
     AppConfig.defaultModelId,
   );
@@ -177,18 +181,18 @@ class GeminiInteractionsService implements CloudTranscriptionClient {
       input: [
         _buildTextContent(SystemPrompt.buildTranscriptDraftInput(rawText)),
       ],
-          generationConfig: _buildGenerationConfig(
-            maxOutputTokens: 32768,
-            thinkingLevel: _resolveThinkingLevel(
-              model: model,
-              levelOverride: thinkingLevelOverride,
-            ),
-          ),
-        );
-      }
+      generationConfig: _buildGenerationConfig(
+        maxOutputTokens: 32768,
+        thinkingLevel: _resolveThinkingLevel(
+          model: model,
+          levelOverride: thinkingLevelOverride,
+        ),
+      ),
+    );
+  }
 
-      @visibleForTesting
-      Map<String, dynamic> buildTranscribePayload({
+  @visibleForTesting
+  Map<String, dynamic> buildTranscribePayload({
     required Uint8List audioData,
     required String mimeType,
     required GeminiModelConfig model,
@@ -206,14 +210,14 @@ class GeminiInteractionsService implements CloudTranscriptionClient {
         _buildTextContent('Audio:'),
         _buildAudioContent(audioData, mimeType),
       ],
-          generationConfig: _buildGenerationConfig(
-            thinkingLevel: _resolveThinkingLevel(model: model, forceMinimal: true),
-          ),
-        );
-      }
+      generationConfig: _buildGenerationConfig(
+        thinkingLevel: _resolveThinkingLevel(model: model, forceMinimal: true),
+      ),
+    );
+  }
 
-      @visibleForTesting
-      Map<String, dynamic> buildTranscribeAndImprovePayload({
+  @visibleForTesting
+  Map<String, dynamic> buildTranscribeAndImprovePayload({
     required Uint8List audioData,
     required String mimeType,
     required String missionInstruction,
@@ -233,17 +237,17 @@ class GeminiInteractionsService implements CloudTranscriptionClient {
         _buildTextContent(audioPrompt),
         _buildAudioContent(audioData, mimeType),
       ],
-          generationConfig: _buildGenerationConfig(
-            maxOutputTokens: 32768,
-            thinkingLevel: _resolveThinkingLevel(
-              model: model,
-              levelOverride: thinkingLevelOverride,
-            ),
-          ),
-        );
-      }
+      generationConfig: _buildGenerationConfig(
+        maxOutputTokens: 32768,
+        thinkingLevel: _resolveThinkingLevel(
+          model: model,
+          levelOverride: thinkingLevelOverride,
+        ),
+      ),
+    );
+  }
 
-      Map<String, dynamic> _buildVerifyPayload(GeminiModelConfig model) {
+  Map<String, dynamic> _buildVerifyPayload(GeminiModelConfig model) {
     return _buildRequestEnvelope(
       modelName: model.modelName,
       input: [_buildTextContent('Reply with OK.')],
@@ -304,40 +308,23 @@ class GeminiInteractionsService implements CloudTranscriptionClient {
     }
   }
 
-  Uri _buildUri(String apiVersion) {
+  Uri _buildUri() {
     return Uri.https(
       'generativelanguage.googleapis.com',
-      '/$apiVersion/interactions',
+      '/$_interactionApiVersion/interactions',
     );
   }
 
   Future<http.Response> _postInteractions(
     String apiKey,
     Map<String, dynamic> payload,
-  ) async {
-    final versions = _workingApiVersion == null
-        ? _interactionApiVersions
-        : <String>[_workingApiVersion!];
+  ) {
     final headers = {
       'Content-Type': 'application/json',
       'x-goog-api-key': apiKey,
+      'Api-Revision': apiRevision,
     };
-    final body = jsonEncode(payload);
-
-    for (var index = 0; index < versions.length; index++) {
-      final version = versions[index];
-      final response = await _postWithRetry(_buildUri(version), headers, body);
-      if (response.statusCode == 404 &&
-          version == _interactionApiVersions.first &&
-          index + 1 < versions.length) {
-        continue;
-      }
-      if (response.statusCode != 404) {
-        _workingApiVersion = version;
-      }
-      return response;
-    }
-    return http.Response('', 404);
+    return _postWithRetry(_buildUri(), headers, jsonEncode(payload));
   }
 
   Future<String> _postPayload(

@@ -70,16 +70,16 @@ void main() {
       expect(payload['system_instruction'], isA<String>());
       expect(payload.containsKey('systemInstruction'), isFalse);
       expect(payload['input'], isA<List<dynamic>>());
-        expect(payload['input'][0]['type'], equals('text'));
-        expect(payload['generation_config']['thinking_level'], equals('high'));
-        expect(payload['generation_config']['max_output_tokens'], equals(32768));
-        expect(
-          payload['generation_config'].containsKey('temperature'),
-          isFalse,
-          reason:
-              'The Interactions API rejects unknown generation_config fields.',
-        );
-      });
+      expect(payload['input'][0]['type'], equals('text'));
+      expect(payload['generation_config']['thinking_level'], equals('high'));
+      expect(payload['generation_config']['max_output_tokens'], equals(32768));
+      expect(
+        payload['generation_config'].containsKey('temperature'),
+        isFalse,
+        reason:
+            'The Interactions API rejects unknown generation_config fields.',
+      );
+    });
 
     test('audio payloads use text and inline audio content items', () {
       final service = _service(
@@ -141,6 +141,11 @@ void main() {
         'thinking_level': 'minimal',
       });
       expect(request.headers['x-goog-api-key'], equals('test-key'));
+      expect(
+        request.headers['Api-Revision'],
+        equals(GeminiInteractionsService.apiRevision),
+      );
+      expect(request.url.path, equals('/v1beta/interactions'));
       expect(request.headers.containsKey('Authorization'), isFalse);
       expect(request.headers.containsKey('authorization'), isFalse);
     });
@@ -273,31 +278,21 @@ void main() {
       expect(stopwatch.elapsedMilliseconds, greaterThanOrEqualTo(400));
     });
 
-    test('404 falls back to v1beta and reuses the working version', () async {
+    test('requests always target the v1beta Interactions endpoint', () async {
       final paths = <String>[];
-      var calls = 0;
       final service = _service(
         MockClient((request) async {
           paths.add(request.url.path);
-          calls++;
-          if (calls == 1) return http.Response('{}', 404);
           return _completedResponse('ok');
         }),
       );
 
       expect(await service.improveTranscription('raw'), equals('ok'));
       expect(await service.improveTranscription('raw'), equals('ok'));
-      expect(
-        paths,
-        equals([
-          '/v1/interactions',
-          '/v1beta/interactions',
-          '/v1beta/interactions',
-        ]),
-      );
+      expect(paths, equals(['/v1beta/interactions', '/v1beta/interactions']));
     });
 
-    test('non-404 errors do not probe another API version', () async {
+    test('errors surface a safe message without upstream details', () async {
       final paths = <String>[];
       final service = _service(
         MockClient((request) async {
@@ -324,7 +319,7 @@ void main() {
           ),
         ),
       );
-      expect(paths, equals(['/v1/interactions']));
+      expect(paths, equals(['/v1beta/interactions']));
     });
   });
 }
