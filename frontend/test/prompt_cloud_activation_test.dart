@@ -101,6 +101,43 @@ void main() {
 
       expect(s.isPromptInactiveOnLocalBackend('concise'), isFalse);
     });
+
+    test('per-prompt whisper override makes the prompt inactive on cloud', () {
+      final s = _FakeSettings()
+        ..backend = TranscriptionBackend.cloud
+        ..twoPass = false;
+      s.overrides['concise'] = const PromptSettings(
+        transcriptionBackend: 'whisper',
+      );
+
+      expect(s.isPromptInactiveOnLocalBackend('concise'), isTrue);
+    });
+
+    test('per-prompt two-pass-off override makes the prompt inactive on '
+        'whisper with global two-pass', () {
+      final s = _FakeSettings()
+        ..backend = TranscriptionBackend.whisper
+        ..twoPass = true;
+      s.overrides['concise'] = const PromptSettings(
+        twoPassTranscriptionEnabled: false,
+      );
+
+      expect(s.isPromptInactiveOnLocalBackend('concise'), isTrue);
+    });
+
+    test(
+      'per-prompt whisper override stays active when global two-pass is on',
+      () {
+        final s = _FakeSettings()
+          ..backend = TranscriptionBackend.cloud
+          ..twoPass = true;
+        s.overrides['concise'] = const PromptSettings(
+          transcriptionBackend: 'whisper',
+        );
+
+        expect(s.isPromptInactiveOnLocalBackend('concise'), isFalse);
+      },
+    );
   });
 
   group('isCloudRefinementInPipeline', () {

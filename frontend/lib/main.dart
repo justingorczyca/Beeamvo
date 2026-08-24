@@ -1594,7 +1594,17 @@ class _BeeamvoHomeState extends State<BeeamvoHome>
           overrides.twoPassRefinementModelId ??
           overrides.modelId ??
           _settingsService.twoPassRefinementModelId;
-      final cloudInPipeline = !isOffline || effectiveTwoPassEnabled;
+      // Pure Whisper still runs a cloud refinement pass when a non-default
+      // mode (or active rephraser) needs its instruction applied and cloud
+      // credentials are available (see the fallback branch below).
+      final whisperPromptFallback =
+          isOffline &&
+          !effectiveTwoPassEnabled &&
+          (selectedPrompt.id != 'standard' ||
+              effectiveRephraseLevel.promptFragment != null) &&
+          _settingsService.hasCloudCredentials;
+      final cloudInPipeline =
+          !isOffline || effectiveTwoPassEnabled || whisperPromptFallback;
 
       // ── Per-prompt model & provider override ─────────────────────────────
       _promptModelOverrideActive = false;
@@ -1741,6 +1751,22 @@ class _BeeamvoHomeState extends State<BeeamvoHome>
                 overrides.thinkingLevel,
           );
           debugPrint('Whisper two-pass: refined with $refinementModelId');
+        } else if (whisperPromptFallback) {
+          // A non-default mode (or active rephraser) still needs a cloud
+          // refinement pass to apply its instruction — otherwise the selected
+          // prompt would be silently dropped on pure Whisper.
+          improvedText = await _cloudService.improveTranscription(
+            rawTranscript,
+            missionInstruction: effectiveInstruction,
+            modelOverrideId: effectiveRefinementModelId,
+            thinkingLevelOverride:
+                overrides.twoPassRefinementThinkingLevel ??
+                overrides.thinkingLevel,
+          );
+          debugPrint(
+            'Whisper: applied prompt "${selectedPrompt.id}" via cloud '
+            'refinement (single-pass fallback)',
+          );
         } else {
           improvedText = rawTranscript;
         }
