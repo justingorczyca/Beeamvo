@@ -14,6 +14,8 @@ import '../services/usage_stats_service.dart';
 
 enum MobileTranscriptionState { idle, recording, processing, success, error }
 
+enum MobileErrorAction { none, openSettings }
+
 abstract class MobileAudioRecorder {
   Future<bool> hasPermission();
   Future<bool> startRecording();
@@ -78,6 +80,8 @@ class MobileTranscriptionController extends ChangeNotifier {
   StreamSubscription<double>? _amplitudeSubscription;
   bool _disposed = false;
   bool _stopRequested = false;
+  bool _hasRetryableRecording = false;
+  MobileErrorAction _errorAction = MobileErrorAction.none;
   int _operation = 0;
 
   MobileTranscriptionState get state => _state;
@@ -87,6 +91,9 @@ class MobileTranscriptionController extends ChangeNotifier {
   double get amplitude => _amplitude;
   bool get isRecording => _state == MobileTranscriptionState.recording;
   bool get isProcessing => _state == MobileTranscriptionState.processing;
+  bool get canRetry =>
+      _state == MobileTranscriptionState.error && _hasRetryableRecording;
+  MobileErrorAction get errorAction => _errorAction;
 
   Future<void> toggleRecording() async {
     if (_disposed || isProcessing) return;
@@ -95,7 +102,10 @@ class MobileTranscriptionController extends ChangeNotifier {
       return;
     }
     if (!settingsService.hasCloudCredentials) {
-      _setError('Add a cloud API key in Settings before recording.');
+      _setError(
+        'Add a cloud API key in Settings before recording.',
+        action: MobileErrorAction.openSettings,
+      );
       return;
     }
     if (!await recorder.hasPermission()) {
@@ -114,6 +124,10 @@ class MobileTranscriptionController extends ChangeNotifier {
       }
       _resultText = null;
       _errorMessage = null;
+      _errorAction = MobileErrorAction.none;
+      _hasRetryableRecording = false;
+      _successTimer?.cancel();
+      _successTimer = null;
       _duration = Duration.zero;
       _stopRequested = false;
       _setState(MobileTranscriptionState.recording);
@@ -148,14 +162,15 @@ class MobileTranscriptionController extends ChangeNotifier {
     _limitTimer = null;
     await _amplitudeSubscription?.cancel();
     _amplitudeSubscription = null;
-    await recorder.stopRecording();
+    final recordingPath = await recorder.stopRecording();
     if (_disposed) return;
+    _hasRetryableRecording = recordingPath != null;
     _setState(MobileTranscriptionState.processing);
     await _processRecording(operation);
   }
 
   Future<void> retry() async {
-    if (_disposed || _state != MobileTranscriptionState.error) return;
+    if (_disposed || !canRetry) return;
     _errorMessage = null;
     final operation = ++_operation;
     _setState(MobileTranscriptionState.processing);
@@ -174,6 +189,7 @@ class MobileTranscriptionController extends ChangeNotifier {
     _amplitudeSubscription = null;
     if (isRecording) await recorder.stopRecording();
     await recorder.deleteRecording();
+    _hasRetryableRecording = false;
     _duration = Duration.zero;
     _resultText = null;
     _errorMessage = null;
@@ -183,8 +199,11 @@ class MobileTranscriptionController extends ChangeNotifier {
 
   Future<void> clearResult() async {
     if (_disposed) return;
+    await recorder.deleteRecording();
     _resultText = null;
     _errorMessage = null;
+    _errorAction = MobileErrorAction.none;
+    _hasRetryableRecording = false;
     _setState(MobileTranscriptionState.idle);
   }
 
@@ -218,28 +237,33 @@ class MobileTranscriptionController extends ChangeNotifier {
       final twoPass =
           overrides?.twoPassTranscriptionEnabled ??
           settingsService.twoPassTranscriptionEnabled;
-      cloudService.setProviderOverride(provider);
-      final text = twoPass
-          ? await _twoPass(
-              audio,
-              instruction,
-              modelId,
-              thinkingLevel,
-              overrides,
-            )
-          : await cloudService.transcribeAndImprove(
-              audio,
-              'audio/wav',
-              missionInstruction: instruction,
-              modelOverrideId: modelId,
-              thinkingLevelOverride: thinkingLevel,
-            );
-      cloudService.clearProviderOverride();
+      late final String text;
+      try {
+        cloudService.setProviderOverride(provider);
+        text = twoPass
+            ? await _twoPass(
+                audio,
+                instruction,
+                modelId,
+                thinkingLevel,
+                overrides,
+              )
+            : await cloudService.transcribeAndImprove(
+                audio,
+                'audio/wav',
+                missionInstruction: instruction,
+                modelOverrideId: modelId,
+                thinkingLevelOverride: thinkingLevel,
+              );
+      } finally {
+        cloudService.clearProviderOverride();
+      }
       if (_disposed || operation != _operation) return;
       await Clipboard.setData(ClipboardData(text: text));
       await settingsService.addClipboardEntry(text);
       await usageStatsService.recordTranscription(text, _duration);
       await recorder.deleteRecording();
+      _hasRetryableRecording = false;
       _resultText = text;
       _errorMessage = null;
       _setState(MobileTranscriptionState.success);
@@ -250,10 +274,8 @@ class MobileTranscriptionController extends ChangeNotifier {
         }
       });
     } on CloudTranscriptionException catch (error) {
-      cloudService.clearProviderOverride();
       _setError(error.message);
     } catch (error) {
-      cloudService.clearProviderOverride();
       _setError('Transcription failed: $error');
     }
   }
@@ -279,8 +301,12 @@ class MobileTranscriptionController extends ChangeNotifier {
     );
   }
 
-  void _setError(String message) {
+  void _setError(
+    String message, {
+    MobileErrorAction action = MobileErrorAction.none,
+  }) {
     if (_disposed) return;
+    _errorAction = action;
     _errorMessage = message;
     _setState(MobileTranscriptionState.error);
   }

@@ -24,13 +24,14 @@ class FakeSettings extends SettingsService {
   bool twoPass;
   bool limitEnabled;
   int limit;
+  String promptId = 'standard';
   PromptSettings? overrides;
   final entries = <ClipboardHistoryEntry>[];
 
   @override
   bool get hasCloudCredentials => credentials;
   @override
-  String get selectedPromptId => 'standard';
+  String get selectedPromptId => promptId;
   @override
   List<SystemPrompt> get customPrompts => const [];
   @override
@@ -64,6 +65,11 @@ class FakeSettings extends SettingsService {
         isPinned: isPinned,
       ),
     );
+  }
+
+  @override
+  Future<void> setSelectedPromptId(String value) async {
+    promptId = value;
   }
 }
 
@@ -115,9 +121,24 @@ class FakeCloud extends CloudTranscriptionService {
   bool fail = false;
   int transcribeCalls = 0;
   int improveCalls = 0;
+  bool overrideActive = false;
+  int clearOverrideCalls = 0;
+  Completer<String>? pendingResult;
 
   @override
   void attachSettings(SettingsService settings) {}
+
+  @override
+  void setProviderOverride(CloudProvider provider) {
+    overrideActive = true;
+  }
+
+  @override
+  void clearProviderOverride() {
+    overrideActive = false;
+    clearOverrideCalls++;
+  }
+
   @override
   Future<String> transcribeAndImprove(
     Uint8List audio,
@@ -126,6 +147,7 @@ class FakeCloud extends CloudTranscriptionService {
     String? modelOverrideId,
     GeminiThinkingLevel? thinkingLevelOverride,
   }) async {
+    if (pendingResult != null) return pendingResult!.future;
     if (fail) throw CloudTranscriptionException('network failed');
     transcribeCalls++;
     return 'single result';
@@ -240,11 +262,15 @@ void main() {
     await missing.toggleRecording();
     expect(missing.state, MobileTranscriptionState.error);
     expect(missing.errorMessage, contains('API key'));
+    expect(missing.canRetry, isFalse);
+    expect(missing.errorAction, MobileErrorAction.openSettings);
     missing.dispose();
 
     final denied = makeController(recorder: FakeRecorder(permission: false));
     await denied.toggleRecording();
     expect(denied.errorMessage, contains('Microphone'));
+    expect(denied.canRetry, isFalse);
+    expect(denied.errorAction, MobileErrorAction.none);
     denied.dispose();
   });
 
@@ -256,12 +282,64 @@ void main() {
     await controller.toggleRecording();
     expect(controller.state, MobileTranscriptionState.error);
     expect(recorder.deleted, isFalse);
+    expect(controller.canRetry, isTrue);
+    expect(cloud.clearOverrideCalls, 1);
     cloud.fail = false;
     await controller.retry();
     expect(controller.resultText, 'single result');
     expect(recorder.deleted, isTrue);
+    expect(controller.canRetry, isFalse);
     controller.dispose();
   });
+
+  test('provider override is cleared when processing is invalidated', () async {
+    final cloud = FakeCloud()..pendingResult = Completer<String>();
+    final controller = makeController(cloud: cloud);
+    await controller.toggleRecording();
+    final processing = controller.toggleRecording();
+    while (!cloud.overrideActive) {
+      await Future<void>.delayed(Duration.zero);
+    }
+    await controller.cancel();
+    cloud.pendingResult!.complete('late result');
+    await processing;
+    expect(cloud.overrideActive, isFalse);
+    expect(cloud.clearOverrideCalls, 1);
+    controller.dispose();
+  });
+
+  test('provider override is cleared when controller is disposed', () async {
+    final cloud = FakeCloud()..pendingResult = Completer<String>();
+    final controller = makeController(cloud: cloud);
+    await controller.toggleRecording();
+    final processing = controller.toggleRecording();
+    while (!cloud.overrideActive) {
+      await Future<void>.delayed(Duration.zero);
+    }
+    controller.dispose();
+    cloud.pendingResult!.complete('late result');
+    await processing;
+    expect(cloud.overrideActive, isFalse);
+    expect(cloud.clearOverrideCalls, 1);
+  });
+
+  test(
+    'success keeps the result after returning to idle and can record again',
+    () async {
+      final recorder = FakeRecorder();
+      final controller = makeController(recorder: recorder);
+      await controller.toggleRecording();
+      await controller.toggleRecording();
+      expect(controller.state, MobileTranscriptionState.success);
+      await Future<void>.delayed(const Duration(seconds: 1, milliseconds: 50));
+      expect(controller.state, MobileTranscriptionState.idle);
+      expect(controller.resultText, 'single result');
+      await controller.toggleRecording();
+      expect(controller.state, MobileTranscriptionState.recording);
+      expect(controller.resultText, isNull);
+      controller.dispose();
+    },
+  );
 
   test('cancel stops and deletes the active recording', () async {
     final recorder = FakeRecorder();
