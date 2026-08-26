@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_localizations/flutter_localizations.dart';
 
+import '../config.dart';
 import '../services/cloud_transcription_service.dart';
 import '../services/settings_service.dart';
 import '../services/usage_stats_service.dart';
@@ -64,10 +66,17 @@ class _BeeamvoMobileAppState extends State<BeeamvoMobileApp> {
     return AnimatedBuilder(
       animation: widget.settingsService,
       builder: (context, _) => MaterialApp(
+        title: AppConfig.appName,
         debugShowCheckedModeBanner: false,
         theme: AppTheme.lightTheme,
         darkTheme: AppTheme.darkTheme,
         themeMode: widget.settingsService.themeModeEnum,
+        localizationsDelegates: const [
+          GlobalMaterialLocalizations.delegate,
+          GlobalWidgetsLocalizations.delegate,
+          GlobalCupertinoLocalizations.delegate,
+        ],
+        supportedLocales: const [Locale('en')],
         home: FutureBuilder<void>(
           future: _ready,
           builder: (context, snapshot) {
