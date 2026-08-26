@@ -1,7 +1,26 @@
+import 'dart:convert';
+import 'dart:io';
+
 import 'package:beeamvo/services/settings_service.dart';
+import 'package:beeamvo/services/secure_credential_store.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 void main() {
+  TestWidgetsFlutterBinding.ensureInitialized();
+  TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+      .setMockMethodCallHandler(
+        const MethodChannel('dev.fluttercommunity.plus/package_info'),
+        (call) async => {
+          'appName': 'Beeamvo',
+          'packageName': 'com.beeamvo.app',
+          'version': '1.0.0',
+          'buildNumber': '1',
+          'buildSignature': '',
+          'installerStore': '',
+        },
+      );
+
   group('SettingsService privacy defaults', () {
     test('clipboard history and watcher default off for new users', () {
       final settings = SettingsService();
@@ -56,6 +75,44 @@ void main() {
     await settings.setGeminiApiSurface(GeminiApiSurface.interactions);
     expect(settings.geminiApiSurface, equals(GeminiApiSurface.interactions));
   });
+
+  test(
+    'mobile history default applies only when the preference is absent',
+    () async {
+      final root = await Directory.systemTemp.createTemp(
+        'beeamvo-mobile-history-',
+      );
+      final settings = SettingsService(
+        applicationSupportDirectory: root,
+        credentialStore: InMemorySecureCredentialStore(),
+      );
+      final file = File('${root.path}/Beeamvo/settings.json');
+      try {
+        await settings.initialize();
+        await settings.addClipboardEntry('before mobile default');
+        expect(settings.clipboardHistory, isEmpty);
+        var persisted = jsonDecode(await file.readAsString());
+        expect(persisted['clipboard_history_items'], isNull);
+
+        await settings.applyMobileDefaults();
+        await settings.addClipboardEntry('after mobile default');
+        expect(settings.clipboardHistory.single.text, 'after mobile default');
+        persisted = jsonDecode(await file.readAsString());
+        expect(persisted['clipboard_history_enabled'], isTrue);
+        final items =
+            jsonDecode(persisted['clipboard_history_items'] as String)
+                as List<dynamic>;
+        expect(items, hasLength(1));
+
+        await settings.setClipboardHistoryEnabled(false);
+        await settings.applyMobileDefaults();
+        expect(settings.clipboardHistoryEnabled, isFalse);
+      } finally {
+        settings.dispose();
+        await root.delete(recursive: true);
+      }
+    },
+  );
 
   test('macOS launch approval status keeps launch at startup enabled', () {
     expect(SettingsService.launchAtStartupStatusIsEnabled('enabled'), isTrue);

@@ -43,6 +43,7 @@ class _BeeamvoMobileAppState extends State<BeeamvoMobileApp> {
 
   Future<void> _initialize() async {
     await widget.settingsService.initialize();
+    await widget.settingsService.applyMobileDefaults();
     await _usageStatsService.initialize();
     _controller = MobileTranscriptionController(
       settingsService: widget.settingsService,

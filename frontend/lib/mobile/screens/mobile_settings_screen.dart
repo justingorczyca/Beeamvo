@@ -157,6 +157,17 @@ class _MobileSettingsScreenState extends State<MobileSettingsScreen> {
               Text(_message!),
             ],
             const SizedBox(height: 20),
+            const _SectionTitle('History'),
+            SwitchListTile(
+              contentPadding: EdgeInsets.zero,
+              title: const Text('Save transcriptions on this device'),
+              subtitle: const Text(
+                'When off, results are only copied to the clipboard.',
+              ),
+              value: settings.clipboardHistoryEnabled,
+              onChanged: settings.setClipboardHistoryEnabled,
+            ),
+            const SizedBox(height: 20),
             const _SectionTitle('Gemini API surface'),
             SegmentedButton<GeminiApiSurface>(
               segments: GeminiApiSurface.values

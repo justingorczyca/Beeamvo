@@ -687,6 +687,14 @@ class SettingsService extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// Mobile delivers results via history, so enable it on first run only —
+  /// an explicit user choice is never overridden.
+  Future<void> applyMobileDefaults() async {
+    if (_data[_kClipboardHistoryEnabled] is! bool) {
+      await setClipboardHistoryEnabled(true);
+    }
+  }
+
   bool get clipboardWatcherEnabled => _getBool(_kClipboardWatcherEnabled);
 
   Future<void> setClipboardWatcherEnabled(bool value) async {

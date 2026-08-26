@@ -18,12 +18,14 @@ class FakeSettings extends SettingsService {
     this.twoPass = false,
     this.limitEnabled = false,
     this.limit = 5,
+    this.historyEnabled = true,
   });
 
   bool credentials;
   bool twoPass;
   bool limitEnabled;
   int limit;
+  bool historyEnabled;
   String promptId = 'standard';
   PromptSettings? overrides;
   final entries = <ClipboardHistoryEntry>[];
@@ -53,7 +55,10 @@ class FakeSettings extends SettingsService {
   @override
   List<ClipboardHistoryEntry> get clipboardHistory => entries;
   @override
+  bool get clipboardHistoryEnabled => historyEnabled;
+  @override
   Future<void> addClipboardEntry(String text, {bool isPinned = false}) async {
+    if (!clipboardHistoryEnabled && !isPinned) return;
     final now = DateTime.now();
     entries.insert(
       0,
@@ -65,6 +70,11 @@ class FakeSettings extends SettingsService {
         isPinned: isPinned,
       ),
     );
+  }
+
+  @override
+  Future<void> setClipboardHistoryEnabled(bool value) async {
+    historyEnabled = value;
   }
 
   @override

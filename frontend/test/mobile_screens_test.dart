@@ -21,6 +21,7 @@ class _Settings extends SettingsService {
   final history = <ClipboardHistoryEntry>[];
   String promptId = 'standard';
   bool? clearKeepPinned;
+  bool historyEnabled = true;
 
   @override
   bool get hasCloudCredentials => credentials;
@@ -39,6 +40,15 @@ class _Settings extends SettingsService {
   @override
   Future<String?> readGeminiApiKey() async =>
       credentials ? 'secret-api-key-1234' : null;
+
+  @override
+  bool get clipboardHistoryEnabled => historyEnabled;
+
+  @override
+  Future<void> setClipboardHistoryEnabled(bool value) async {
+    historyEnabled = value;
+    notifyListeners();
+  }
 
   @override
   Future<void> setSelectedPromptId(String value) async {
@@ -228,6 +238,35 @@ void main() {
     expect(find.text('1.2.3'), findsOneWidget);
     expect(find.text('Interactions'), findsOneWidget);
     expect(find.text('Legacy'), findsOneWidget);
+  });
+
+  testWidgets('settings history switch can disable local history', (
+    tester,
+  ) async {
+    final settings = _Settings(credentials: true);
+    await tester.pumpWidget(
+      MaterialApp(
+        home: MobileSettingsScreen(
+          settingsService: settings,
+          cloudService: CloudTranscriptionService(),
+          packageInfoLoader: () async => PackageInfo(
+            appName: 'Beeamvo',
+            packageName: 'com.beeamvo.app',
+            version: '1.2.3',
+            buildNumber: '1',
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    expect(settings.historyEnabled, isTrue);
+    await tester.tap(find.byType(SwitchListTile));
+    await tester.pump();
+    expect(settings.historyEnabled, isFalse);
+    expect(
+      find.text('When off, results are only copied to the clipboard.'),
+      findsOneWidget,
+    );
   });
 
   testWidgets('history clear all confirms and removes pinned entries', (
