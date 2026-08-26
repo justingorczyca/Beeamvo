@@ -10,7 +10,7 @@
 
 <p align="center">
   <a href="LICENSE"><img src="https://img.shields.io/badge/License-MIT-green.svg" alt="License"></a>
-  <img src="https://img.shields.io/badge/Platform-Windows%20%7C%20macOS-blue" alt="Platform: Windows / macOS (Linux experimental)">
+  <img src="https://img.shields.io/badge/Platform-Windows%20%7C%20macOS%20%7C%20Android%20%7C%20iOS-blue" alt="Platform: Windows / macOS / Android / iOS">
   <img src="https://img.shields.io/badge/Flutter-3.44.2-02569B?logo=flutter&logoColor=white" alt="Flutter">
   <img src="https://img.shields.io/badge/whisper.cpp-v1.8.4-FF6F00" alt="whisper.cpp v1.8.4">
 </p>
@@ -34,6 +34,8 @@ Press a global hotkey anywhere, speak, and your words are typed at the cursor �
 | **Windows 10/11** | Supported | — |
 | **macOS 13.0 (Ventura) or later** | Supported | App Sandbox is **intentionally off** (see [Platform & build notes](#platform--build-notes)); signed/notarized binaries are a separate, not-yet-built release step. |
 | **Linux** | Experimental | A complete native runner exists and is built in CI, but it has not yet shipped to end users. Treat it as community-supported until it stabilizes. |
+| **Android** | Supported | Cloud transcription with clipboard and local history; see [Run on mobile](#run-on-mobile). |
+| **iOS** | Supported | Cloud transcription with clipboard and local history; see [Run on mobile](#run-on-mobile). |
 
 ### Prerequisites
 
@@ -55,6 +57,20 @@ cd Beeamvo/frontend
 flutter pub get
 flutter run -d windows    # or: flutter run -d macos | flutter run -d linux
 ```
+
+### Run on mobile
+
+From `frontend/`, connect an Android or iOS device and run:
+
+```bash
+flutter run -d android
+# or: flutter run -d ios
+```
+
+On first launch, open **Settings**, add a Gemini API key, and verify it. The
+key is stored in the device's secure storage and is never displayed in full.
+Mobile recording is cloud-only and copies each result to the system clipboard
+while also saving it to Beeamvo's local history.
 
 > The CI gate (`flutter pub get --enforce-lockfile`) resolves exactly the versions pinned in `frontend/pubspec.lock`, so it requires no network beyond `pub get` (and the whisper.cpp build fetch on Windows/Linux).
 
@@ -182,7 +198,8 @@ The same steps (plus a per-platform `flutter build`) run in CI — see [`.github
 - **macOS — App Sandbox is intentionally off.** Beeamvo relies on Accessibility + cross-application keyboard event injection for auto-paste and on the legacy login-item API for launch-at-startup, both of which the sandbox restricts. Enabling it would require a product redesign. Source builds you run yourself inherit your own machine's trust boundary.
 - **macOS — signing/notarization is for distributed binaries only.** The committed macOS code-signing tooling (`frontend/macos/setup_codesign.sh`, `frontend/macos/CODESIGN_README.md`, `frontend/scripts/build_signed_macos.sh`) creates a **local self-signed certificate** and is **development-only, not for distribution**. A public `.app`/`.dmg` still needs Hardened Runtime, a Developer ID, and notarization — none of which exist yet.
 - **Linux is experimental.** It is built in CI but has not been distributed. If the CI Linux build turns out to be flaky on hosted runners, the honest fallback is "provided experimentally, community-maintained."
-- **No mobile or web targets.** This is a desktop-only app (no Android/iOS/web build config).
+- **Mobile is cloud-only.** Android and iOS do not include offline Whisper,
+  global hotkeys, auto-paste into another app, or background recording.
 
 ## Troubleshooting
 
@@ -198,6 +215,8 @@ The same steps (plus a per-platform `flutter build`) run in CI — see [`.github
 - First-time transcription has a short warm-up while the Whisper model loads.
 - Inline audio requests for cloud providers have a size cap; very long recordings should use a shorter duration limit.
 - Cloud transcription is not cancelled mid-request; pressing escape finishes any in-flight network call.
+- On Android and iOS, transcription requires a cloud API key; offline Whisper,
+  global hotkeys, auto-paste, and background recording are desktop-only.
 
 ## License
 

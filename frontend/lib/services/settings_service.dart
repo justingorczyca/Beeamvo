@@ -121,15 +121,17 @@ class SettingsService extends ChangeNotifier {
     await _load();
 
     // System integrations
-    final packageInfo = await PackageInfo.fromPlatform();
-    // launch_at_startup plugin doesn't support macOS, use native implementation
-    if (!Platform.isMacOS) {
-      launchAtStartup.setup(
-        appName: packageInfo.appName,
-        appPath: Platform.resolvedExecutable,
-      );
+    if (!Platform.isAndroid && !Platform.isIOS) {
+      final packageInfo = await PackageInfo.fromPlatform();
+      // launch_at_startup plugin doesn't support macOS, use native implementation
+      if (!Platform.isMacOS) {
+        launchAtStartup.setup(
+          appName: packageInfo.appName,
+          appPath: Platform.resolvedExecutable,
+        );
+      }
+      await _reconcileLaunchAtStartup();
     }
-    await _reconcileLaunchAtStartup();
 
     _loadCustomPrompts();
     _loadPromptOverrides();
@@ -486,6 +488,7 @@ class SettingsService extends ChangeNotifier {
   bool get launchAtStartupRequiresApproval => _launchAtStartupRequiresApproval;
 
   Future<void> setLaunchAtStartup(bool value) async {
+    if (Platform.isAndroid || Platform.isIOS) return;
     try {
       final succeeded = Platform.isMacOS
           ? await _setMacOSLaunchAtLogin(value)
@@ -682,6 +685,14 @@ class SettingsService extends ChangeNotifier {
   Future<void> setClipboardHistoryEnabled(bool value) async {
     await _setBool(_kClipboardHistoryEnabled, value);
     notifyListeners();
+  }
+
+  /// Mobile delivers results via history, so enable it on first run only —
+  /// an explicit user choice is never overridden.
+  Future<void> applyMobileDefaults() async {
+    if (_data[_kClipboardHistoryEnabled] is! bool) {
+      await setClipboardHistoryEnabled(true);
+    }
   }
 
   bool get clipboardWatcherEnabled => _getBool(_kClipboardWatcherEnabled);

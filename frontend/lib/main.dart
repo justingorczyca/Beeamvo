@@ -34,10 +34,15 @@ import 'widgets/mode_selection_popup.dart';
 import 'widgets/mode_cloud_confirm_popup.dart';
 import 'providers/settings_provider.dart';
 import 'theme/app_theme.dart';
+import 'mobile/mobile_app.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
   await AppConfig.initialize();
+  if (Platform.isAndroid || Platform.isIOS) {
+    runApp(BeeamvoMobileApp(settingsService: SettingsService()));
+    return;
+  }
   await windowManager.ensureInitialized();
 
   const windowOptions = WindowOptions(
