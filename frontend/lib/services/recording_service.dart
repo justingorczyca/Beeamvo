@@ -573,6 +573,11 @@ class RecordingService {
   /// Get current recording path
   String? get currentRecordingPath => _currentRecordingPath;
 
+  /// Mobile UI metering stream normalized to a 0–1 range.
+  Stream<double> get amplitudeStream => _recorder
+      .onAmplitudeChanged(const Duration(milliseconds: 100))
+      .map((amplitude) => ((amplitude.current + 60) / 60).clamp(0.0, 1.0));
+
   /// Dispose and cleanup
   Future<void> dispose() async {
     if (_usingMacNative || _isRecording) {
