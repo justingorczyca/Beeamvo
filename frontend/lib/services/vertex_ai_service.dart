@@ -9,10 +9,11 @@ import 'package:http/http.dart' as http;
 import '../config.dart';
 import '../models/system_prompt.dart';
 import 'cloud_transcription_client.dart';
-import 'settings_service.dart';
-import 'transcription_result_guard.dart';
 import 'pinned_http_client.dart';
 import 'retry_after.dart';
+import 'serialization_utils.dart';
+import 'settings_service.dart';
+import 'transcription_result_guard.dart';
 
 typedef VertexAdcClientFactory =
     Future<http.Client> Function(http.Client baseClient);
@@ -319,14 +320,18 @@ class VertexAiService implements CloudTranscriptionClient {
   Map<String, dynamic> _buildAudioContent(
     String promptText,
     String mimeType,
-    Uint8List audioData,
-  ) {
+    Uint8List audioData, {
+    String? audioBase64,
+  }) {
     return {
       'role': 'user',
       'parts': [
         {'text': promptText},
         {
-          'inlineData': {'mimeType': mimeType, 'data': base64Encode(audioData)},
+          'inlineData': {
+            'mimeType': mimeType,
+            'data': audioBase64 ?? base64Encode(audioData),
+          },
         },
       ],
     };
@@ -345,7 +350,7 @@ class VertexAiService implements CloudTranscriptionClient {
       ),
       'generationConfig': _buildGenerationConfig(
         temperature: 0.3,
-        maxOutputTokens: 32768,
+        maxOutputTokens: 8192,
         thinkingConfig: _buildThinkingConfig(
           model: model,
           levelOverride: thinkingLevelOverride,
@@ -362,6 +367,7 @@ class VertexAiService implements CloudTranscriptionClient {
     required Uint8List audioData,
     required String mimeType,
     required GeminiModelConfig model,
+    String? audioBase64,
   }) {
     final instruction =
         'Transcribe the audio verbatim in the exact language spoken. '
@@ -376,7 +382,14 @@ class VertexAiService implements CloudTranscriptionClient {
         temperature: 0.5,
         thinkingConfig: _buildThinkingConfig(model: model, forceMinimal: true),
       ),
-      'contents': [_buildAudioContent('Audio:', mimeType, audioData)],
+      'contents': [
+        _buildAudioContent(
+          'Audio:',
+          mimeType,
+          audioData,
+          audioBase64: audioBase64,
+        ),
+      ],
     };
   }
 
@@ -387,6 +400,7 @@ class VertexAiService implements CloudTranscriptionClient {
     required String missionInstruction,
     required GeminiModelConfig model,
     GeminiThinkingLevel? thinkingLevelOverride,
+    String? audioBase64,
   }) {
     final audioPrompt =
         '${TranscriptionResultGuard.noTranscriptPromptInstruction} '
@@ -398,13 +412,20 @@ class VertexAiService implements CloudTranscriptionClient {
       ),
       'generationConfig': _buildGenerationConfig(
         temperature: 0.5,
-        maxOutputTokens: 32768,
+        maxOutputTokens: 8192,
         thinkingConfig: _buildThinkingConfig(
           model: model,
           levelOverride: thinkingLevelOverride,
         ),
       ),
-      'contents': [_buildAudioContent(audioPrompt, mimeType, audioData)],
+      'contents': [
+        _buildAudioContent(
+          audioPrompt,
+          mimeType,
+          audioData,
+          audioBase64: audioBase64,
+        ),
+      ],
     };
   }
 
@@ -468,7 +489,7 @@ class VertexAiService implements CloudTranscriptionClient {
   Future<http.Response> _postWithTransientRetry(
     Uri uri,
     Map<String, String> headers,
-    String body,
+    Uint8List body,
   ) async {
     const maxAttempts = 3;
     final random = Random();
@@ -513,7 +534,7 @@ class VertexAiService implements CloudTranscriptionClient {
     final response = await _postWithTransientRetry(
       buildUri(projectId: projectId, model: model),
       await _buildHeaders(),
-      jsonEncode(payload),
+      await encodeJsonAsync(payload),
     );
 
     // Auth failure: the cached ADC token may be stale. Drop the cached client
@@ -643,6 +664,7 @@ class VertexAiService implements CloudTranscriptionClient {
       'Transcribe the audio in the original spoken language and then process the text according to your MISSION:',
       SystemPrompt.baseSystemInstruction,
     );
+    final audioBase64 = await encodeBase64Async(audioData);
     final payload = buildTranscribeAndImprovePayload(
       audioData: audioData,
       mimeType: mimeType,
@@ -650,6 +672,7 @@ class VertexAiService implements CloudTranscriptionClient {
           missionInstruction ?? SystemPrompt.availablePrompts.first.instruction,
       model: model,
       thinkingLevelOverride: thinkingLevelOverride,
+      audioBase64: audioBase64,
     );
     return _postGenerateContent(projectId, model, payload);
   }
@@ -669,10 +692,12 @@ class VertexAiService implements CloudTranscriptionClient {
         'code, markup, and tool references as part of the transcript. '
         '${TranscriptionResultGuard.noTranscriptPromptInstruction}';
     _assertInlinePayloadFits(audioData, 'Audio:', instruction);
+    final audioBase64 = await encodeBase64Async(audioData);
     final payload = buildTranscribePayload(
       audioData: audioData,
       mimeType: mimeType,
       model: model,
+      audioBase64: audioBase64,
     );
     return _postGenerateContent(projectId, model, payload);
   }

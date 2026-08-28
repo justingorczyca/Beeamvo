@@ -72,7 +72,7 @@ void main() {
       expect(payload['input'], isA<List<dynamic>>());
       expect(payload['input'][0]['type'], equals('text'));
       expect(payload['generation_config']['thinking_level'], equals('high'));
-      expect(payload['generation_config']['max_output_tokens'], equals(32768));
+      expect(payload['generation_config']['max_output_tokens'], equals(8192));
       expect(
         payload['generation_config'].containsKey('temperature'),
         isFalse,
