@@ -117,6 +117,38 @@ void main() {
       expect(generationConfig.containsKey('thinking_budget'), isFalse);
     });
 
+    test(
+      'transcription-only payload uses generation_config.transcription_config',
+      () {
+        final service = _service(
+          MockClient((_) async => _completedResponse('ok')),
+        );
+        final payload = service.buildTranscribePayload(
+          audioData: Uint8List.fromList([1, 2, 3]),
+          mimeType: 'audio/wav',
+          model: AppConfig.getModelById('gemini-3.5-transcribe'),
+        );
+
+        expect(payload['model'], equals('gemini-3.5-transcribe'));
+        final input = payload['input'] as List<dynamic>;
+        expect(input, [
+          {
+            'type': 'audio',
+            'data': base64Encode([1, 2, 3]),
+            'mime_type': 'audio/wav',
+          },
+        ]);
+        expect(payload.containsKey('system_instruction'), isFalse);
+        final generationConfig =
+            payload['generation_config'] as Map<String, dynamic>;
+        final transcriptionConfig =
+            generationConfig['transcription_config'] as Map<String, dynamic>;
+        expect(transcriptionConfig.containsKey('language_codes'), isFalse);
+        expect(transcriptionConfig['mode'], {'type': 'verbatim'});
+        expect(generationConfig.containsKey('thinking_level'), isFalse);
+      },
+    );
+
     test('verifySetup uses the key header and robust verify payload', () async {
       http.Request? capturedRequest;
       final service = _service(
@@ -176,6 +208,38 @@ void main() {
 
       expect(await service.improveTranscription('raw'), equals('Hello world'));
     });
+
+    test(
+      'extracts text from transcription-only steps without a step type',
+      () async {
+        final service = _service(
+          MockClient(
+            (_) async => http.Response(
+              jsonEncode({
+                'status': 'completed',
+                'steps': [
+                  {
+                    'content': [
+                      {'type': 'text', 'text': 'Transcribed'},
+                    ],
+                  },
+                ],
+              }),
+              200,
+            ),
+          ),
+        );
+
+        expect(
+          await service.transcribeAudio(
+            Uint8List(0),
+            'audio/wav',
+            modelOverrideId: 'gemini-3.5-transcribe',
+          ),
+          equals('Transcribed'),
+        );
+      },
+    );
 
     test('reports non-completed interactions and empty text safely', () async {
       final pendingService = _service(

@@ -148,6 +148,15 @@ class CloudTranscriptionService {
   }) async {
     _ensureNotDisposed();
     final client = _currentClient;
+    final model = modelOverrideId != null
+        ? AppConfig.getModelById(modelOverrideId)
+        : currentModel;
+    if (model.isTranscriptionOnly && client is! GeminiInteractionsService) {
+      throw CloudTranscriptionException(
+        'Gemini 3.5 Transcribe requires the Interactions API surface. '
+        'Set Cloud Provider → Gemini API Key → API Surface to Interactions.',
+      );
+    }
     await _initializeIfNeeded(client);
     final result = await client.transcribeAudio(
       audioData,

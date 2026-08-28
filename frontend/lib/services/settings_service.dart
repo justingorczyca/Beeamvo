@@ -71,6 +71,12 @@ class SettingsService extends ChangeNotifier {
   static const _kWhisperModelId = 'whisper_model_id';
   static const _kWhisperLanguage = 'whisper_language';
   static const _kTranscriptionBackend = 'transcription_backend';
+  static const _kTranscriptionMode = 'transcription_mode';
+  static const _kTranscriptionLanguage = 'transcription_language';
+  static const _kTranscriptionCustomVocabulary =
+      'transcription_custom_vocabulary';
+  static const _kTranscriptionDiarization = 'transcription_diarization';
+  static const _kTranscriptionWordTimestamps = 'transcription_word_timestamps';
   static const _kCloudProvider = 'cloud_provider';
   static const _kGeminiApiSurface = 'gemini_api_surface';
   static const _kOpenAiCompatibleProviderId = 'openai_compatible_provider_id';
@@ -340,12 +346,15 @@ class SettingsService extends ChangeNotifier {
 
     // Two-pass overrides — clear any stale id, leave valid/null untouched so
     // the inheritance (`?? selectedModelId`) keeps working as designed.
+    // Pass 2 refinement can never be a transcription-only model.
     for (final key in [
       _kTwoPassTranscriptionModelId,
       _kTwoPassRefinementModelId,
     ]) {
       final v = _getString(key);
-      if (!AppConfig.isOfferedModelId(v)) {
+      if (!AppConfig.isOfferedModelId(v) ||
+          (key == _kTwoPassRefinementModelId &&
+              AppConfig.getModelById(v ?? '').isTranscriptionOnly)) {
         _data.remove(key);
         dirty = dirty || v != null;
       }
@@ -1163,6 +1172,62 @@ class SettingsService extends ChangeNotifier {
 
   Future<void> setWhisperLanguage(String value) async {
     await _setString(_kWhisperLanguage, value);
+    notifyListeners();
+  }
+
+  // ── Gemini Transcription Settings ────────────────────────────────────────
+  TranscriptionMode get transcriptionMode =>
+      TranscriptionModeExtension.fromValue(_getString(_kTranscriptionMode));
+
+  Future<void> setTranscriptionMode(TranscriptionMode value) async {
+    await _setString(_kTranscriptionMode, value.value);
+    notifyListeners();
+  }
+
+  String get transcriptionLanguage =>
+      _getString(_kTranscriptionLanguage) ?? 'auto';
+
+  Future<void> setTranscriptionLanguage(String value) async {
+    await _setString(_kTranscriptionLanguage, value);
+    notifyListeners();
+  }
+
+  List<String> get transcriptionCustomVocabulary {
+    final raw = _getString(_kTranscriptionCustomVocabulary);
+    if (raw == null || raw.isEmpty) return const [];
+    return raw
+        .split(',')
+        .map((s) => s.trim())
+        .where((s) => s.isNotEmpty)
+        .toList();
+  }
+
+  Future<void> setTranscriptionCustomVocabulary(List<String> value) async {
+    final normalized = value
+        .map((s) => s.trim())
+        .where((s) => s.isNotEmpty)
+        .toList();
+    if (normalized.isEmpty) {
+      await _remove(_kTranscriptionCustomVocabulary);
+    } else {
+      await _setString(_kTranscriptionCustomVocabulary, normalized.join(', '));
+    }
+    notifyListeners();
+  }
+
+  bool get transcriptionDiarization =>
+      _getBool(_kTranscriptionDiarization, defaultValue: false);
+
+  Future<void> setTranscriptionDiarization(bool value) async {
+    await _setBool(_kTranscriptionDiarization, value);
+    notifyListeners();
+  }
+
+  bool get transcriptionWordTimestamps =>
+      _getBool(_kTranscriptionWordTimestamps, defaultValue: false);
+
+  Future<void> setTranscriptionWordTimestamps(bool value) async {
+    await _setBool(_kTranscriptionWordTimestamps, value);
     notifyListeners();
   }
 

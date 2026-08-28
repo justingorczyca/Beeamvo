@@ -79,6 +79,10 @@ class GeminiModelConfig {
 
   final List<GeminiThinkingLevel> supportedThinkingLevels;
 
+  /// True when this model is a dedicated speech-to-text model and can only
+  /// be used for the first pass of a two-stage transcription pipeline.
+  final bool isTranscriptionOnly;
+
   const GeminiModelConfig({
     required this.id,
     required this.name,
@@ -88,6 +92,7 @@ class GeminiModelConfig {
     this.thinkingBudget,
     this.thinkingLevel,
     this.supportedThinkingLevels = const [],
+    this.isTranscriptionOnly = false,
   });
 
   bool get hasSelectableThinkingLevel => supportedThinkingLevels.isNotEmpty;
@@ -192,6 +197,14 @@ class AppConfig {
         GeminiThinkingLevel.high,
       ],
     ),
+    GeminiModelConfig(
+      id: 'gemini-3.5-transcribe',
+      name: 'Gemini 3.5 Transcribe',
+      modelName: 'gemini-3.5-transcribe',
+      vertexLocation: 'global',
+      isPreview: true,
+      isTranscriptionOnly: true,
+    ),
   ];
 
   static GeminiModelConfig getModelById(String id) {
@@ -210,14 +223,26 @@ class AppConfig {
     return availableModels.any((model) => model.id == id);
   }
 
+  /// Models suitable for primary cloud selection and the Pass 2 refinement
+  /// pass. Dedicated transcription-only models are excluded.
+  static List<GeminiModelConfig> get mainModels =>
+      availableModels.where((m) => !m.isTranscriptionOnly).toList();
+
+  /// Dedicated speech-to-text models such as `gemini-3.5-transcribe`.
+  static List<GeminiModelConfig> get transcriptionModels =>
+      availableModels.where((m) => m.isTranscriptionOnly).toList();
+
   /// Returns the model id that should be persisted on disk for [savedId]:
-  /// - `null` (never set) or an id no longer in [availableModels] → [defaultModelId]
-  /// - any currently-offered id → [savedId]
+  /// - `null` (never set) or an id no longer in [mainModels] → [defaultModelId]
+  /// - any currently-offered main model id → [savedId]
   ///
   /// Pure + testable; used by [SettingsService]'s model migration so the
   /// `selected_model_id` key is always explicitly and validly populated.
+  /// Transcription-only models cannot be selected as the primary model.
   static String resolveModelId(String? savedId) {
-    if (isOfferedModelId(savedId)) return savedId!;
+    if (savedId != null && mainModels.any((model) => model.id == savedId)) {
+      return savedId;
+    }
     return defaultModelId;
   }
 

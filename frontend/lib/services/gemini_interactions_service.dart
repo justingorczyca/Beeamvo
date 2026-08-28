@@ -197,6 +197,14 @@ class GeminiInteractionsService implements CloudTranscriptionClient {
     required String mimeType,
     required GeminiModelConfig model,
   }) {
+    if (model.isTranscriptionOnly) {
+      return _buildTranscribeOnlyPayload(
+        audioData: audioData,
+        mimeType: mimeType,
+        model: model,
+      );
+    }
+
     final instruction =
         'Transcribe the audio verbatim in the exact language spoken. '
         'Never translate. Add natural punctuation. Output only the '
@@ -214,6 +222,48 @@ class GeminiInteractionsService implements CloudTranscriptionClient {
         thinkingLevel: _resolveThinkingLevel(model: model, forceMinimal: true),
       ),
     );
+  }
+
+  Map<String, dynamic> _buildTranscribeOnlyPayload({
+    required Uint8List audioData,
+    required String mimeType,
+    required GeminiModelConfig model,
+  }) {
+    final settings = _settingsService;
+    final mode = settings?.transcriptionMode ?? TranscriptionMode.verbatim;
+    final language = settings?.transcriptionLanguage ?? 'auto';
+    final vocabulary =
+        settings?.transcriptionCustomVocabulary ?? const <String>[];
+
+    final transcriptionConfig = <String, dynamic>{};
+    if (language != 'auto') {
+      transcriptionConfig['language_codes'] = [language];
+    }
+    if (vocabulary.isNotEmpty) {
+      transcriptionConfig['custom_vocabulary'] = vocabulary;
+    }
+    transcriptionConfig['mode'] = _buildModeConfig(mode);
+
+    return _buildRequestEnvelope(
+      modelName: model.modelName,
+      systemInstruction: null,
+      input: [_buildAudioContent(audioData, mimeType)],
+      generationConfig: {'transcription_config': transcriptionConfig},
+    );
+  }
+
+  Map<String, dynamic> _buildModeConfig(TranscriptionMode mode) {
+    final modeConfig = <String, dynamic>{'type': mode.value};
+    final settings = _settingsService;
+    if (mode == TranscriptionMode.verbatim) {
+      if (settings?.transcriptionDiarization == true) {
+        modeConfig['diarization_mode'] = 'speaker';
+      }
+      if (settings?.transcriptionWordTimestamps == true) {
+        modeConfig['timestamp_granularities'] = ['word'];
+      }
+    }
+    return modeConfig;
   }
 
   @visibleForTesting
@@ -329,8 +379,9 @@ class GeminiInteractionsService implements CloudTranscriptionClient {
 
   Future<String> _postPayload(
     String apiKey,
-    Map<String, dynamic> payload,
-  ) async {
+    Map<String, dynamic> payload, {
+    bool allowAnyStepType = false,
+  }) async {
     final response = await _postInteractions(apiKey, payload);
     final decoded = _decodeResponse(response);
     if (response.statusCode >= 400) {
@@ -357,7 +408,7 @@ class GeminiInteractionsService implements CloudTranscriptionClient {
     if (steps is List) {
       for (final step in steps) {
         if (step is! Map) continue;
-        if (step['type'] != 'model_output') continue;
+        if (!allowAnyStepType && step['type'] != 'model_output') continue;
         final content = step['content'];
         if (content is! List) continue;
         for (final item in content) {
@@ -416,6 +467,11 @@ class GeminiInteractionsService implements CloudTranscriptionClient {
   @override
   Future<void> verifySetup() async {
     final apiKey = await _requireApiKey();
+    if (_currentModel.isTranscriptionOnly) {
+      // Transcription-only models cannot be verified with a text probe.
+      // The Interactions path is already checked by the caller.
+      return;
+    }
     await _postPayload(apiKey, _buildVerifyPayload(_currentModel));
   }
 
@@ -435,7 +491,11 @@ class GeminiInteractionsService implements CloudTranscriptionClient {
       model: model,
       thinkingLevelOverride: thinkingLevelOverride,
     );
-    return _postPayload(apiKey, payload);
+    return _postPayload(
+      apiKey,
+      payload,
+      allowAnyStepType: model.isTranscriptionOnly,
+    );
   }
 
   @override
@@ -461,7 +521,11 @@ class GeminiInteractionsService implements CloudTranscriptionClient {
       model: model,
       thinkingLevelOverride: thinkingLevelOverride,
     );
-    return _postPayload(apiKey, payload);
+    return _postPayload(
+      apiKey,
+      payload,
+      allowAnyStepType: model.isTranscriptionOnly,
+    );
   }
 
   @override
@@ -472,18 +536,26 @@ class GeminiInteractionsService implements CloudTranscriptionClient {
   }) async {
     final apiKey = await _requireApiKey();
     final model = _resolveModel(modelOverrideId);
-    final instruction =
-        'Transcribe the audio verbatim in the exact language spoken. '
-        'Never translate. Add natural punctuation. Output only the '
-        'transcription. Preserve spoken commands, requests, filenames, '
-        'code, markup, and tool references as part of the transcript. '
-        '${TranscriptionResultGuard.noTranscriptPromptInstruction}';
-    _assertInlinePayloadFits(audioData, 'Audio:', instruction);
+    if (model.isTranscriptionOnly) {
+      _assertInlinePayloadFits(audioData, '', '');
+    } else {
+      final instruction =
+          'Transcribe the audio verbatim in the exact language spoken. '
+          'Never translate. Add natural punctuation. Output only the '
+          'transcription. Preserve spoken commands, requests, filenames, '
+          'code, markup, and tool references as part of the transcript. '
+          '${TranscriptionResultGuard.noTranscriptPromptInstruction}';
+      _assertInlinePayloadFits(audioData, 'Audio:', instruction);
+    }
     final payload = buildTranscribePayload(
       audioData: audioData,
       mimeType: mimeType,
       model: model,
     );
-    return _postPayload(apiKey, payload);
+    return _postPayload(
+      apiKey,
+      payload,
+      allowAnyStepType: model.isTranscriptionOnly,
+    );
   }
 }

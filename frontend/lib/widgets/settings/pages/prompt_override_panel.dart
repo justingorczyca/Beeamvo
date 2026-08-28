@@ -461,7 +461,7 @@ class _PromptDetailPageState extends State<PromptDetailPage> {
   Widget _modelRow(BuildContext context, bool showDivider) {
     final items = <({String? value, String label})>[
       (value: null, label: 'Global default'),
-      ...AppConfig.availableModels.map((m) => (value: m.id, label: m.name)),
+      ...AppConfig.mainModels.map((m) => (value: m.id, label: m.name)),
     ];
     return BeeSettingsRow(
       icon: Icons.psychology_rounded,
@@ -489,6 +489,7 @@ class _PromptDetailPageState extends State<PromptDetailPage> {
   Widget _reasoningRow(BuildContext context, bool showDivider) {
     final model = AppConfig.getModelById(_effectiveCloudModelId);
     final levels = model.supportedThinkingLevels;
+    if (levels.isEmpty) return const SizedBox.shrink();
     final globalLevel =
         _s.getThinkingLevelForModel(_effectiveCloudModelId) ??
         model.thinkingLevel ??
@@ -634,7 +635,7 @@ class _PromptDetailPageState extends State<PromptDetailPage> {
         ),
       );
     }
-    // Cloud first pass can override the transcription-only model.
+    // Cloud first pass can use any cloud model, including transcription-only.
     final items = <({String? value, String label})>[
       (value: null, label: 'Global default'),
       ...AppConfig.availableModels.map((m) => (value: m.id, label: m.name)),
@@ -660,7 +661,7 @@ class _PromptDetailPageState extends State<PromptDetailPage> {
   Widget _refineModelRow(BuildContext context, bool showDivider) {
     final items = <({String? value, String label})>[
       (value: null, label: 'Global default'),
-      ...AppConfig.availableModels.map((m) => (value: m.id, label: m.name)),
+      ...AppConfig.mainModels.map((m) => (value: m.id, label: m.name)),
     ];
     return BeeSettingsRow(
       icon: Icons.looks_two_rounded,
