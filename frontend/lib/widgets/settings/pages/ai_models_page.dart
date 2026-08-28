@@ -38,6 +38,7 @@ class _AiModelsPageState extends State<AiModelsPage> {
   CloudProvider _cloudProvider = CloudProvider.geminiApiKey;
   GeminiApiSurface _geminiApiSurface = GeminiApiSurface.generateContent;
   bool _twoPassEnabled = false;
+  String _twoPassTranscriptionModelId = '';
   String _twoPassRefinementModelId = '';
   GeminiThinkingLevel? _selectedThinkingLevel; // null = model default
   GeminiThinkingLevel? _selectedRefinementThinkingLevel; // null = model default
@@ -118,6 +119,7 @@ class _AiModelsPageState extends State<AiModelsPage> {
     final s = SettingsProviderScope.of(context).settingsService;
     final newBackend = s.transcriptionBackend;
     final newTwoPass = s.twoPassTranscriptionEnabled;
+    final newTwoPassTranscriptionModel = s.twoPassTranscriptionModelId;
     final newTwoPassModel = s.twoPassRefinementModelId;
     final newHasGeminiKey = s.hasGeminiApiKey;
     final newVertexProjectId = s.vertexProjectId;
@@ -125,6 +127,7 @@ class _AiModelsPageState extends State<AiModelsPage> {
     // Avoid setState if nothing changed (keeps no-op rebuilds cheap).
     if (newBackend == _transcriptionBackend &&
         newTwoPass == _twoPassEnabled &&
+        newTwoPassTranscriptionModel == _twoPassTranscriptionModelId &&
         newTwoPassModel == _twoPassRefinementModelId &&
         newHasGeminiKey == _geminiApiKeyPresent &&
         newVertexProjectId == _vertexProjectId &&
@@ -134,6 +137,7 @@ class _AiModelsPageState extends State<AiModelsPage> {
     setState(() {
       _transcriptionBackend = newBackend;
       _twoPassEnabled = newTwoPass;
+      _twoPassTranscriptionModelId = newTwoPassTranscriptionModel;
       _twoPassRefinementModelId = newTwoPassModel;
       _geminiApiKeyPresent = newHasGeminiKey;
       _vertexProjectId = newVertexProjectId;
@@ -150,6 +154,7 @@ class _AiModelsPageState extends State<AiModelsPage> {
       _cloudProvider = s.cloudProvider;
       _geminiApiSurface = s.geminiApiSurface;
       _twoPassEnabled = s.twoPassTranscriptionEnabled;
+      _twoPassTranscriptionModelId = s.twoPassTranscriptionModelId;
       _twoPassRefinementModelId = s.twoPassRefinementModelId;
       // Load persisted thinking level for the currently selected model
       _selectedThinkingLevel = s.getThinkingLevelForModel(_selectedModelId);
@@ -747,6 +752,19 @@ class _AiModelsPageState extends State<AiModelsPage> {
 
                   const SizedBox(height: BeePageHeader.groupGap),
 
+                  // ── TRANSCRIPTION SETTINGS ────────────────────────
+                  if (_transcriptionBackend == TranscriptionBackend.cloud &&
+                      AppConfig.getModelById(
+                        _twoPassTranscriptionModelId,
+                      ).isTranscriptionOnly)
+                    _buildTranscriptionSettingsSection(),
+
+                  if (_transcriptionBackend == TranscriptionBackend.cloud &&
+                      AppConfig.getModelById(
+                        _twoPassTranscriptionModelId,
+                      ).isTranscriptionOnly)
+                    const SizedBox(height: BeePageHeader.groupGap),
+
                   // ── FOOTNOTE ──────────────────────────────────────
                   _buildSettingsLocalFootnote(),
                 ],
@@ -771,6 +789,89 @@ class _AiModelsPageState extends State<AiModelsPage> {
           fontStyle: FontStyle.italic,
         ),
       ),
+    );
+  }
+
+  /// Settings for dedicated speech-to-text models such as
+  /// `gemini-3.5-transcribe`. Shown only when a transcription-only model is
+  /// selected for Pass 1.
+  Widget _buildTranscriptionSettingsSection() {
+    final settings = SettingsProviderScope.of(context).settingsService;
+
+    return Builder(
+      builder: (context) {
+        final customVocab = settings.transcriptionCustomVocabulary;
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const BeeGroupLabel(label: 'Transcription Settings'),
+            BeeSettingsRow(
+              icon: Icons.format_align_left,
+              label: 'Output Mode',
+              description:
+                  'Verbatim preserves filler words; Smart cleans and structures.',
+              trailing: ConstrainedBox(
+                constraints: const BoxConstraints(maxWidth: 240),
+                child: BeeDropdown<TranscriptionMode>(
+                  value: settings.transcriptionMode,
+                  options: [
+                    for (final m in TranscriptionMode.values)
+                      BeeDropdownOption(
+                        value: m,
+                        label: m.displayName,
+                      ),
+                  ],
+                  onChanged: (v) async {
+                    await settings.setTranscriptionMode(v);
+                    setState(() {});
+                  },
+                ),
+              ),
+            ),
+            BeeSettingsRow(
+              icon: Icons.language_rounded,
+              label: 'Spoken Language',
+              description:
+                  'Auto-detect or bias recognition toward a specific language.',
+              trailing: BeeDropdown<String>(
+                value: _safeLanguageId(settings.transcriptionLanguage),
+                options: _languageOptions,
+                onChanged: (v) async {
+                  await settings.setTranscriptionLanguage(v);
+                  setState(() {});
+                },
+              ),
+            ),
+            BeeSettingsRow(
+              icon: Icons.school_rounded,
+              label: 'Custom Vocabulary',
+              description:
+                  customVocab.isEmpty
+                      ? 'No custom terms configured.'
+                      : '${customVocab.length} term${customVocab.length == 1 ? '' : 's'} configured',
+              showDivider: false,
+              trailing: BeeActionChip(
+                label: customVocab.isEmpty ? 'Add' : 'Edit',
+                onTap: () async {
+                  final result = await _showTextInputDialog(
+                    title: 'Custom Vocabulary',
+                    hintText: 'term1, term2, project-codename',
+                    initialValue: customVocab.join(', '),
+                    helperText:
+                        'Comma-separated terms to bias the transcription model.',
+                  );
+                  if (result != null && mounted) {
+                    await settings.setTranscriptionCustomVocabulary(
+                      result.split(','),
+                    );
+                    setState(() {});
+                  }
+                },
+              ),
+            ),
+          ],
+        );
+      },
     );
   }
 
@@ -807,20 +908,29 @@ class _AiModelsPageState extends State<AiModelsPage> {
           ),
         ),
         if (_twoPassEnabled) ...[
-          BeeSettingsRow(
-            icon: Icons.looks_one_rounded,
-            label: 'Pass 1 · Raw Transcription',
-            description: _transcriptionBackend == TranscriptionBackend.cloud
-                ? 'Uses ${AppConfig.getModelById(_selectedModelId).displayName} (primary cloud model).'
-                : 'Uses the selected local Whisper model.',
-            trailing: beeBadge(
-              context,
-              _transcriptionBackend == TranscriptionBackend.cloud
-                  ? 'Cloud'
-                  : 'Local',
-              BeeBadgeTone.neutral,
+          if (_transcriptionBackend == TranscriptionBackend.whisper)
+            BeeSettingsRow(
+              icon: Icons.looks_one_rounded,
+              label: 'Pass 1 · Raw Transcription',
+              description: 'Uses the selected local Whisper model.',
+              trailing: beeBadge(context, 'Local', BeeBadgeTone.neutral),
+            )
+          else
+            BeeSettingsRow(
+              icon: Icons.looks_one_rounded,
+              label: 'Pass 1 · Raw Transcription',
+              description: 'Model for the raw audio-to-text pass.',
+              trailing: BeeDropdown<String>(
+                value: _safeTranscriptionModelId(
+                  _twoPassTranscriptionModelId,
+                ),
+                options: _transcriptionModelOptions(),
+                onChanged: (v) async {
+                  await settings.setTwoPassTranscriptionModelId(v);
+                  setState(() => _twoPassTranscriptionModelId = v);
+                },
+              ),
             ),
-          ),
           BeeSettingsRow(
             icon: Icons.looks_two_rounded,
             label: 'Pass 2 · AI Refinement',
@@ -1283,9 +1393,18 @@ class _AiModelsPageState extends State<AiModelsPage> {
     );
   }
 
-  /// Dropdown options for every available cloud model. Shared by the
-  /// primary-model and two-pass refinement [BeeDropdown] triggers.
+  /// Dropdown options for primary and Pass 2 refinement models.
+  /// Dedicated transcription-only models are excluded.
   List<BeeDropdownOption<String>> _cloudModelOptions() {
+    return [
+      for (final m in AppConfig.mainModels)
+        BeeDropdownOption(value: m.id, label: m.displayName),
+    ];
+  }
+
+  /// Dropdown options for the Pass 1 raw transcription model. Includes
+  /// general-purpose cloud models and dedicated transcription-only models.
+  List<BeeDropdownOption<String>> _transcriptionModelOptions() {
     return [
       for (final m in AppConfig.availableModels)
         BeeDropdownOption(value: m.id, label: m.displayName),
@@ -1299,6 +1418,13 @@ class _AiModelsPageState extends State<AiModelsPage> {
     return AppConfig.availableModels.any((m) => m.id == id)
         ? id
         : AppConfig.availableModels.first.id;
+  }
+
+  /// Resolves a Pass 1 model id to a valid, still-offered id.
+  String _safeTranscriptionModelId(String id) {
+    return AppConfig.isOfferedModelId(id)
+        ? id
+        : AppConfig.defaultModelId;
   }
 
   /// Spoken-language choices for the Whisper engine dropdown.

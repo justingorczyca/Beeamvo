@@ -31,6 +31,40 @@ extension TranscriptionBackendExtension on TranscriptionBackend {
   }
 }
 
+/// Transcription output formatting mode for dedicated speech-to-text models.
+enum TranscriptionMode { verbatim, smart }
+
+extension TranscriptionModeExtension on TranscriptionMode {
+  /// Serialized string value used in JSON persistence and API requests.
+  String get value {
+    switch (this) {
+      case TranscriptionMode.verbatim:
+        return 'verbatim';
+      case TranscriptionMode.smart:
+        return 'smart';
+    }
+  }
+
+  /// Human-readable label shown in the UI.
+  String get displayName {
+    switch (this) {
+      case TranscriptionMode.verbatim:
+        return 'Verbatim';
+      case TranscriptionMode.smart:
+        return 'Smart';
+    }
+  }
+
+  /// Resolve a stored [value] string back to an enum member, defaulting
+  /// to [verbatim] when the value is unrecognised.
+  static TranscriptionMode fromValue(String? value) {
+    if (value == TranscriptionMode.smart.value) {
+      return TranscriptionMode.smart;
+    }
+    return TranscriptionMode.verbatim;
+  }
+}
+
 /// Which cloud provider to use for transcription.
 enum CloudProvider { geminiApiKey, vertexAi }
 
