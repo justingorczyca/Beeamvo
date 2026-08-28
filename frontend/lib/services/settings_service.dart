@@ -105,6 +105,7 @@ class SettingsService extends ChangeNotifier {
   Map<String, PromptSettings> _promptOverrides = {};
   List<ClipboardHistoryEntry> _clipboardHistory = [];
   bool _hasGeminiApiKey = false;
+  String? _geminiApiKey;
   final Map<String, bool> _hasOpenAiCompatibleApiKeys = {};
   bool _launchAtStartupRequiresApproval = false;
 
@@ -225,6 +226,7 @@ class SettingsService extends ChangeNotifier {
 
   Future<void> _loadSecureState() async {
     final geminiApiKey = await _credentialStore.readGeminiApiKey();
+    _geminiApiKey = geminiApiKey;
     _hasGeminiApiKey = geminiApiKey != null && geminiApiKey.trim().isNotEmpty;
     final rawProviderId = _getString(_kOpenAiCompatibleProviderId)?.trim();
     final providerId = selectedOpenAiCompatibleProviderId;
@@ -1006,7 +1008,11 @@ class SettingsService extends ChangeNotifier {
   Future<String?> readGeminiApiKey() async {
     final envKey = _envValue('GEMINI_API_KEY');
     if (envKey != null) return envKey;
-    return _credentialStore.readGeminiApiKey();
+    if (_geminiApiKey != null || _hasGeminiApiKey) return _geminiApiKey;
+    final stored = await _credentialStore.readGeminiApiKey();
+    _geminiApiKey = stored;
+    _hasGeminiApiKey = stored != null && stored.trim().isNotEmpty;
+    return stored;
   }
 
   Future<void> setGeminiApiKey(String value) async {
@@ -1016,12 +1022,14 @@ class SettingsService extends ChangeNotifier {
       return;
     }
     await _credentialStore.writeGeminiApiKey(trimmed);
+    _geminiApiKey = trimmed;
     _hasGeminiApiKey = true;
     notifyListeners();
   }
 
   Future<void> clearGeminiApiKey() async {
     await _credentialStore.deleteGeminiApiKey();
+    _geminiApiKey = null;
     _hasGeminiApiKey = false;
     notifyListeners();
   }

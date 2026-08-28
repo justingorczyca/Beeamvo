@@ -9,9 +9,10 @@ import '../config.dart';
 import '../models/system_prompt.dart';
 import 'cloud_transcription_client.dart';
 import 'pinned_http_client.dart';
+import 'retry_after.dart';
+import 'serialization_utils.dart';
 import 'settings_service.dart';
 import 'transcription_result_guard.dart';
-import 'retry_after.dart';
 
 class GeminiInteractionsService implements CloudTranscriptionClient {
   GeminiInteractionsService({http.Client? httpClient})
@@ -127,11 +128,12 @@ class GeminiInteractionsService implements CloudTranscriptionClient {
 
   Map<String, dynamic> _buildAudioContent(
     Uint8List audioData,
-    String mimeType,
-  ) {
+    String mimeType, {
+    String? audioBase64,
+  }) {
     return {
       'type': 'audio',
-      'data': base64Encode(audioData),
+      'data': audioBase64 ?? base64Encode(audioData),
       'mime_type': mimeType,
     };
   }
@@ -182,7 +184,7 @@ class GeminiInteractionsService implements CloudTranscriptionClient {
         _buildTextContent(SystemPrompt.buildTranscriptDraftInput(rawText)),
       ],
       generationConfig: _buildGenerationConfig(
-        maxOutputTokens: 32768,
+        maxOutputTokens: 8192,
         thinkingLevel: _resolveThinkingLevel(
           model: model,
           levelOverride: thinkingLevelOverride,
@@ -196,12 +198,14 @@ class GeminiInteractionsService implements CloudTranscriptionClient {
     required Uint8List audioData,
     required String mimeType,
     required GeminiModelConfig model,
+    String? audioBase64,
   }) {
     if (model.isTranscriptionOnly) {
       return _buildTranscribeOnlyPayload(
         audioData: audioData,
         mimeType: mimeType,
         model: model,
+        audioBase64: audioBase64,
       );
     }
 
@@ -216,7 +220,7 @@ class GeminiInteractionsService implements CloudTranscriptionClient {
       systemInstruction: instruction,
       input: [
         _buildTextContent('Audio:'),
-        _buildAudioContent(audioData, mimeType),
+        _buildAudioContent(audioData, mimeType, audioBase64: audioBase64),
       ],
       generationConfig: _buildGenerationConfig(
         thinkingLevel: _resolveThinkingLevel(model: model, forceMinimal: true),
@@ -228,6 +232,7 @@ class GeminiInteractionsService implements CloudTranscriptionClient {
     required Uint8List audioData,
     required String mimeType,
     required GeminiModelConfig model,
+    String? audioBase64,
   }) {
     final settings = _settingsService;
     final mode = settings?.transcriptionMode ?? TranscriptionMode.verbatim;
@@ -247,7 +252,9 @@ class GeminiInteractionsService implements CloudTranscriptionClient {
     return _buildRequestEnvelope(
       modelName: model.modelName,
       systemInstruction: null,
-      input: [_buildAudioContent(audioData, mimeType)],
+      input: [
+        _buildAudioContent(audioData, mimeType, audioBase64: audioBase64),
+      ],
       generationConfig: {'transcription_config': transcriptionConfig},
     );
   }
@@ -273,6 +280,7 @@ class GeminiInteractionsService implements CloudTranscriptionClient {
     required String missionInstruction,
     required GeminiModelConfig model,
     GeminiThinkingLevel? thinkingLevelOverride,
+    String? audioBase64,
   }) {
     final audioPrompt =
         '${TranscriptionResultGuard.noTranscriptPromptInstruction} '
@@ -285,10 +293,10 @@ class GeminiInteractionsService implements CloudTranscriptionClient {
       systemInstruction: systemInstruction,
       input: [
         _buildTextContent(audioPrompt),
-        _buildAudioContent(audioData, mimeType),
+        _buildAudioContent(audioData, mimeType, audioBase64: audioBase64),
       ],
       generationConfig: _buildGenerationConfig(
-        maxOutputTokens: 32768,
+        maxOutputTokens: 8192,
         thinkingLevel: _resolveThinkingLevel(
           model: model,
           levelOverride: thinkingLevelOverride,
@@ -330,7 +338,7 @@ class GeminiInteractionsService implements CloudTranscriptionClient {
   Future<http.Response> _postWithRetry(
     Uri uri,
     Map<String, String> headers,
-    String body,
+    Uint8List body,
   ) async {
     const maxAttempts = 3;
     final random = Random();
@@ -368,13 +376,13 @@ class GeminiInteractionsService implements CloudTranscriptionClient {
   Future<http.Response> _postInteractions(
     String apiKey,
     Map<String, dynamic> payload,
-  ) {
+  ) async {
     final headers = {
       'Content-Type': 'application/json',
       'x-goog-api-key': apiKey,
       'Api-Revision': apiRevision,
     };
-    return _postWithRetry(_buildUri(), headers, jsonEncode(payload));
+    return _postWithRetry(_buildUri(), headers, await encodeJsonAsync(payload));
   }
 
   Future<String> _postPayload(
@@ -513,6 +521,7 @@ class GeminiInteractionsService implements CloudTranscriptionClient {
       'Transcribe the audio in the original spoken language and then process the text according to your MISSION:',
       SystemPrompt.baseSystemInstruction,
     );
+    final audioBase64 = await encodeBase64Async(audioData);
     final payload = buildTranscribeAndImprovePayload(
       audioData: audioData,
       mimeType: mimeType,
@@ -520,6 +529,7 @@ class GeminiInteractionsService implements CloudTranscriptionClient {
           missionInstruction ?? SystemPrompt.availablePrompts.first.instruction,
       model: model,
       thinkingLevelOverride: thinkingLevelOverride,
+      audioBase64: audioBase64,
     );
     return _postPayload(
       apiKey,
@@ -547,10 +557,12 @@ class GeminiInteractionsService implements CloudTranscriptionClient {
           '${TranscriptionResultGuard.noTranscriptPromptInstruction}';
       _assertInlinePayloadFits(audioData, 'Audio:', instruction);
     }
+    final audioBase64 = await encodeBase64Async(audioData);
     final payload = buildTranscribePayload(
       audioData: audioData,
       mimeType: mimeType,
       model: model,
+      audioBase64: audioBase64,
     );
     return _postPayload(
       apiKey,
