@@ -30,7 +30,7 @@ class _FakePromptOverrideSettings extends SettingsService {
   String get selectedModelId => 'gemini-3-flash';
 
   @override
-  String get twoPassTranscriptionModelId => 'gemini-2.5-flash';
+  String get twoPassTranscriptionModelId => 'gemini-3.5-flash-lite';
 
   @override
   String get twoPassRefinementModelId => twoPassRefinementModel;

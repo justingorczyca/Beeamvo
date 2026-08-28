@@ -29,7 +29,7 @@ void main() {
   group('VertexAiService', () {
     test('buildUri uses the global Vertex endpoint for global models', () {
       final service = VertexAiService();
-      final model = AppConfig.getModelById('gemini-2.5-flash');
+      final model = AppConfig.getModelById('gemini-3.6-flash');
 
       final uri = service.buildUri(projectId: 'demo-project', model: model);
 
@@ -37,7 +37,7 @@ void main() {
       expect(
         uri.path,
         equals(
-          '/v1/projects/demo-project/locations/global/publishers/google/models/gemini-2.5-flash:generateContent',
+          '/v1/projects/demo-project/locations/global/publishers/google/models/gemini-3.6-flash:generateContent',
         ),
       );
     });
@@ -47,7 +47,7 @@ void main() {
       const model = GeminiModelConfig(
         id: 'regional-model',
         name: 'Regional Model',
-        modelName: 'gemini-2.5-flash',
+        modelName: 'gemini-3.6-flash',
         vertexLocation: 'us-central1',
       );
 
@@ -57,7 +57,7 @@ void main() {
       expect(
         uri.path,
         equals(
-          '/v1/projects/demo-project/locations/us-central1/publishers/google/models/gemini-2.5-flash:generateContent',
+          '/v1/projects/demo-project/locations/us-central1/publishers/google/models/gemini-3.6-flash:generateContent',
         ),
       );
     });

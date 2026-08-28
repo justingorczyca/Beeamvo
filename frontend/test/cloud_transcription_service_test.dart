@@ -379,12 +379,12 @@ void main() {
 
       await service.improveTranscription(
         'raw',
-        modelOverrideId: 'gemini-3.1-flash-lite',
+        modelOverrideId: 'gemini-3.5-flash-lite',
         thinkingLevelOverride: GeminiThinkingLevel.low,
       );
       expect(
         geminiClient.lastImproveModelOverrideId,
-        equals('gemini-3.1-flash-lite'),
+        equals('gemini-3.5-flash-lite'),
       );
       expect(
         geminiClient.lastImproveThinkingLevelOverride,

@@ -1356,7 +1356,8 @@ class _AiModelsPageState extends State<AiModelsPage> {
     }
 
     final effective =
-        selectedLevel ?? modelConfig.thinkingLevel ?? levels.first;
+        modelConfig.resolveThinkingLevel(levelOverride: selectedLevel) ??
+        levels.first;
 
     final options = levels
         .map(

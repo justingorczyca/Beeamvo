@@ -101,11 +101,38 @@ class GeminiModelConfig {
 
   String get displayName => isPreview ? '$name (Preview)' : name;
 
+  /// Returns a thinking level that is guaranteed to be supported by this model.
+  ///
+  /// - For 2.x models (no [thinkingLevel]) it returns `null`.
+  /// - [levelOverride] is honored only when it appears in [supportedThinkingLevels].
+  /// - When [forceMinimal] is `true`, the lowest supported level is used. This
+  ///   prevents sending `minimal` to models such as Gemini 3.7 Flash that do
+  ///   not support it, which would return an HTTP 400.
+  GeminiThinkingLevel? resolveThinkingLevel({
+    GeminiThinkingLevel? levelOverride,
+    bool forceMinimal = false,
+  }) {
+    if (thinkingLevel == null) return null;
+    final levels = supportedThinkingLevels;
+    if (levels.isEmpty) return null;
+
+    GeminiThinkingLevel candidate;
+    if (forceMinimal) {
+      candidate = levels.contains(GeminiThinkingLevel.minimal)
+          ? GeminiThinkingLevel.minimal
+          : levels.first;
+    } else {
+      candidate = levelOverride ?? thinkingLevel!;
+    }
+
+    return levels.contains(candidate) ? candidate : thinkingLevel!;
+  }
+
   Map<String, dynamic>? thinkingConfigWithLevel([
     GeminiThinkingLevel? levelOverride,
   ]) {
-    if (thinkingLevel != null) {
-      final effective = levelOverride ?? thinkingLevel!;
+    final effective = resolveThinkingLevel(levelOverride: levelOverride);
+    if (effective != null) {
       return {'thinkingLevel': effective.apiValue};
     }
     if (thinkingBudget != null) {
@@ -120,23 +147,47 @@ class GeminiModelConfig {
 class AppConfig {
   static const List<GeminiModelConfig> availableModels = [
     GeminiModelConfig(
-      id: 'gemini-2.5-flash',
-      name: 'Gemini 2.5 Flash',
-      modelName: 'gemini-2.5-flash',
-      vertexLocation: 'global',
-      thinkingBudget: 0,
-    ),
-    GeminiModelConfig(
-      id: 'gemini-2.5-flash-lite',
-      name: 'Gemini 2.5 Flash Lite',
-      modelName: 'gemini-2.5-flash-lite',
-      vertexLocation: 'global',
-      thinkingBudget: 0,
-    ),
-    GeminiModelConfig(
       id: 'gemini-3.7-flash',
       name: 'Gemini 3.7 Flash',
       modelName: 'gemini-3.7-flash',
+      vertexLocation: 'global',
+      thinkingLevel: GeminiThinkingLevel.medium,
+      supportedThinkingLevels: [
+        GeminiThinkingLevel.low,
+        GeminiThinkingLevel.medium,
+        GeminiThinkingLevel.high,
+      ],
+    ),
+    GeminiModelConfig(
+      id: 'gemini-3.6-flash',
+      name: 'Gemini 3.6 Flash',
+      modelName: 'gemini-3.6-flash',
+      vertexLocation: 'global',
+      thinkingLevel: GeminiThinkingLevel.medium,
+      supportedThinkingLevels: [
+        GeminiThinkingLevel.minimal,
+        GeminiThinkingLevel.low,
+        GeminiThinkingLevel.medium,
+        GeminiThinkingLevel.high,
+      ],
+    ),
+    GeminiModelConfig(
+      id: 'gemini-3.5-flash',
+      name: 'Gemini 3.5 Flash',
+      modelName: 'gemini-3.5-flash',
+      vertexLocation: 'global',
+      thinkingLevel: GeminiThinkingLevel.medium,
+      supportedThinkingLevels: [
+        GeminiThinkingLevel.minimal,
+        GeminiThinkingLevel.low,
+        GeminiThinkingLevel.medium,
+        GeminiThinkingLevel.high,
+      ],
+    ),
+    GeminiModelConfig(
+      id: 'gemini-3.5-flash-lite',
+      name: 'Gemini 3.5 Flash Lite',
+      modelName: 'gemini-3.5-flash-lite',
       vertexLocation: 'global',
       thinkingLevel: GeminiThinkingLevel.minimal,
       supportedThinkingLevels: [
@@ -152,46 +203,7 @@ class AppConfig {
       modelName: 'gemini-3-flash-preview',
       vertexLocation: 'global',
       isPreview: true,
-      thinkingLevel: GeminiThinkingLevel.minimal,
-      supportedThinkingLevels: [
-        GeminiThinkingLevel.minimal,
-        GeminiThinkingLevel.low,
-        GeminiThinkingLevel.medium,
-        GeminiThinkingLevel.high,
-      ],
-    ),
-    GeminiModelConfig(
-      id: 'gemini-3.5-flash',
-      name: 'Gemini 3.5 Flash',
-      modelName: 'gemini-3.5-flash',
-      vertexLocation: 'global',
-      thinkingLevel: GeminiThinkingLevel.minimal,
-      supportedThinkingLevels: [
-        GeminiThinkingLevel.minimal,
-        GeminiThinkingLevel.low,
-        GeminiThinkingLevel.medium,
-        GeminiThinkingLevel.high,
-      ],
-    ),
-    GeminiModelConfig(
-      id: 'gemini-3.1-flash-lite',
-      name: 'Gemini 3.1 Flash Lite',
-      modelName: 'gemini-3.1-flash-lite',
-      vertexLocation: 'global',
-      thinkingLevel: GeminiThinkingLevel.minimal,
-      supportedThinkingLevels: [
-        GeminiThinkingLevel.minimal,
-        GeminiThinkingLevel.low,
-        GeminiThinkingLevel.medium,
-        GeminiThinkingLevel.high,
-      ],
-    ),
-    GeminiModelConfig(
-      id: 'gemini-3.5-flash-lite',
-      name: 'Gemini 3.5 Flash Lite',
-      modelName: 'gemini-3.5-flash-lite',
-      vertexLocation: 'global',
-      thinkingLevel: GeminiThinkingLevel.minimal,
+      thinkingLevel: GeminiThinkingLevel.high,
       supportedThinkingLevels: [
         GeminiThinkingLevel.minimal,
         GeminiThinkingLevel.low,

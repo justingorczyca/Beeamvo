@@ -3,7 +3,7 @@ import 'package:flutter_test/flutter_test.dart';
 
 void main() {
   group('GeminiModelConfig', () {
-    test('thinkingConfig returns budget for Gemini 2.5 models', () {
+    test('thinkingConfig returns budget for Gemini 2.x style models', () {
       const flashModel = GeminiModelConfig(
         id: 'test-flash',
         name: 'Test Flash',
@@ -38,6 +38,54 @@ void main() {
         expect(previewModel.displayName, equals('Preview (Preview)'));
       },
     );
+
+    test(
+      'resolveThinkingLevel clamps unsupported overrides to the default',
+      () {
+        const model = GeminiModelConfig(
+          id: 'test-3-7',
+          name: 'Test 3.7',
+          modelName: 'gemini-3.7-flash',
+          thinkingLevel: GeminiThinkingLevel.medium,
+          supportedThinkingLevels: [
+            GeminiThinkingLevel.low,
+            GeminiThinkingLevel.medium,
+            GeminiThinkingLevel.high,
+          ],
+        );
+
+        expect(
+          model.resolveThinkingLevel(
+            levelOverride: GeminiThinkingLevel.minimal,
+          ),
+          equals(GeminiThinkingLevel.medium),
+        );
+        expect(
+          model.resolveThinkingLevel(levelOverride: GeminiThinkingLevel.high),
+          equals(GeminiThinkingLevel.high),
+        );
+      },
+    );
+
+    test('resolveThinkingLevel falls back to the lowest supported level when '
+        'forceMinimal is true and minimal is unavailable', () {
+      const model = GeminiModelConfig(
+        id: 'test-3-7',
+        name: 'Test 3.7',
+        modelName: 'gemini-3.7-flash',
+        thinkingLevel: GeminiThinkingLevel.medium,
+        supportedThinkingLevels: [
+          GeminiThinkingLevel.low,
+          GeminiThinkingLevel.medium,
+          GeminiThinkingLevel.high,
+        ],
+      );
+
+      expect(
+        model.resolveThinkingLevel(forceMinimal: true),
+        equals(GeminiThinkingLevel.low),
+      );
+    });
   });
 
   group('AppConfig defaults', () {
@@ -66,8 +114,8 @@ void main() {
       });
 
       test('keeps a valid, currently-offered model id untouched', () {
-        final kept = AppConfig.resolveModelId('gemini-2.5-flash');
-        expect(kept, equals('gemini-2.5-flash'));
+        final kept = AppConfig.resolveModelId('gemini-3.6-flash');
+        expect(kept, equals('gemini-3.6-flash'));
         expect(kept, isNot(equals(AppConfig.defaultModelId)));
       });
 
@@ -93,8 +141,8 @@ void main() {
       });
 
       test('keeps a valid prompt-capable model id untouched', () {
-        final kept = AppConfig.resolveRefinementModelId('gemini-2.5-flash');
-        expect(kept, equals('gemini-2.5-flash'));
+        final kept = AppConfig.resolveRefinementModelId('gemini-3.6-flash');
+        expect(kept, equals('gemini-3.6-flash'));
       });
     });
 
@@ -115,68 +163,92 @@ void main() {
       });
     });
 
-    test('Gemini 3 Flash preview defaults to minimal thinking in the app', () {
+    test('Gemini 3 Flash preview defaults to high thinking', () {
       final previewModel = AppConfig.availableModels.firstWhere(
         (model) => model.id == 'gemini-3-flash',
       );
 
       expect(previewModel.isPreview, isTrue);
       expect(previewModel.supportedThinkingLevels, isNotEmpty);
-      expect(previewModel.thinkingLevel, equals(GeminiThinkingLevel.minimal));
+      expect(previewModel.thinkingLevel, equals(GeminiThinkingLevel.high));
     });
 
-    test('Gemini 3.5 Flash is available as the current stable Flash model', () {
+    test('Gemini 3.5 Flash is available as a stable Flash model', () {
       final model = AppConfig.getModelById('gemini-3.5-flash');
 
       expect(model.modelName, equals('gemini-3.5-flash'));
       expect(model.isPreview, isFalse);
       expect(model.displayName, equals('Gemini 3.5 Flash'));
-      expect(model.thinkingLevel, equals(GeminiThinkingLevel.minimal));
+      expect(model.thinkingLevel, equals(GeminiThinkingLevel.medium));
       expect(model.supportedThinkingLevels, contains(GeminiThinkingLevel.high));
     });
 
-    test('Gemini 3.7 Flash is available with all thinking levels', () {
-      final model = AppConfig.getModelById('gemini-3.7-flash');
+    test('Gemini 3.6 Flash is available as the recommended replacement '
+        'for Gemini 2.5 Flash', () {
+      final model = AppConfig.getModelById('gemini-3.6-flash');
 
-      expect(model.modelName, equals('gemini-3.7-flash'));
+      expect(model.modelName, equals('gemini-3.6-flash'));
       expect(model.isPreview, isFalse);
-      expect(model.vertexLocation, equals('global'));
-      expect(model.thinkingLevel, equals(GeminiThinkingLevel.minimal));
-      expect(model.supportedThinkingLevels, [
-        GeminiThinkingLevel.minimal,
-        GeminiThinkingLevel.low,
-        GeminiThinkingLevel.medium,
-        GeminiThinkingLevel.high,
-      ]);
-    });
-
-    test('model list excludes deprecated Gemini 2.0 variants', () {
+      expect(model.displayName, equals('Gemini 3.6 Flash'));
+      expect(model.thinkingLevel, equals(GeminiThinkingLevel.medium));
       expect(
-        AppConfig.availableModels.map((model) => model.id),
-        isNot(containsAll(['gemini-2.0-flash', 'gemini-2.0-flash-lite'])),
+        model.supportedThinkingLevels,
+        contains(GeminiThinkingLevel.minimal),
       );
     });
 
-    test('Gemini 3.1 Flash-Lite uses the stable model id', () {
-      final model = AppConfig.getModelById('gemini-3.1-flash-lite');
+    test(
+      'Gemini 3.7 Flash defaults to medium thinking and does not support minimal',
+      () {
+        final model = AppConfig.getModelById('gemini-3.7-flash');
 
-      expect(model.modelName, equals('gemini-3.1-flash-lite'));
-      expect(model.isPreview, isFalse);
-      expect(model.displayName, equals('Gemini 3.1 Flash Lite'));
-      expect(model.supportedThinkingLevels, contains(GeminiThinkingLevel.high));
-    });
+        expect(model.modelName, equals('gemini-3.7-flash'));
+        expect(model.isPreview, isFalse);
+        expect(model.vertexLocation, equals('global'));
+        expect(model.thinkingLevel, equals(GeminiThinkingLevel.medium));
+        expect(
+          model.supportedThinkingLevels,
+          equals([
+            GeminiThinkingLevel.low,
+            GeminiThinkingLevel.medium,
+            GeminiThinkingLevel.high,
+          ]),
+        );
+      },
+    );
 
-    test('Gemini 3.5 Flash Lite matches the 3.1 Flash Lite settings', () {
-      final model = AppConfig.getModelById('gemini-3.5-flash-lite');
-      final reference = AppConfig.getModelById('gemini-3.1-flash-lite');
+    test(
+      'model list excludes deprecated Gemini 2.x and 3.1 Flash-Lite variants',
+      () {
+        expect(
+          AppConfig.availableModels.map((model) => model.id),
+          isNot(
+            containsAll([
+              'gemini-2.0-flash',
+              'gemini-2.0-flash-lite',
+              'gemini-2.5-flash',
+              'gemini-2.5-flash-lite',
+              'gemini-3.1-flash-lite',
+            ]),
+          ),
+        );
+      },
+    );
 
-      expect(model.modelName, equals('gemini-3.5-flash-lite'));
-      expect(model.isPreview, reference.isPreview);
-      expect(model.displayName, equals('Gemini 3.5 Flash Lite'));
-      expect(model.vertexLocation, reference.vertexLocation);
-      expect(model.thinkingBudget, reference.thinkingBudget);
-      expect(model.thinkingLevel, reference.thinkingLevel);
-      expect(model.supportedThinkingLevels, reference.supportedThinkingLevels);
-    });
+    test(
+      'Gemini 3.5 Flash Lite is the default and supports all thinking levels',
+      () {
+        final model = AppConfig.getModelById('gemini-3.5-flash-lite');
+
+        expect(model.modelName, equals('gemini-3.5-flash-lite'));
+        expect(model.isPreview, isFalse);
+        expect(model.displayName, equals('Gemini 3.5 Flash Lite'));
+        expect(model.thinkingLevel, equals(GeminiThinkingLevel.minimal));
+        expect(
+          model.supportedThinkingLevels,
+          contains(GeminiThinkingLevel.high),
+        );
+      },
+    );
   });
 }
