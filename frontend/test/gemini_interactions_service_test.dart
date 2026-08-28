@@ -143,7 +143,7 @@ void main() {
             payload['generation_config'] as Map<String, dynamic>;
         final transcriptionConfig =
             generationConfig['transcription_config'] as Map<String, dynamic>;
-        expect(transcriptionConfig['language_codes'], equals(['auto']));
+        expect(transcriptionConfig.containsKey('language_codes'), isFalse);
         expect(transcriptionConfig['mode'], {'type': 'verbatim'});
         expect(generationConfig.containsKey('thinking_level'), isFalse);
       },
@@ -231,7 +231,11 @@ void main() {
         );
 
         expect(
-          await service.transcribeAudio(Uint8List(0), 'audio/wav'),
+          await service.transcribeAudio(
+            Uint8List(0),
+            'audio/wav',
+            modelOverrideId: 'gemini-3.5-transcribe',
+          ),
           equals('Transcribed'),
         );
       },

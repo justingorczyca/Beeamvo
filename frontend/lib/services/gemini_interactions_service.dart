@@ -235,9 +235,10 @@ class GeminiInteractionsService implements CloudTranscriptionClient {
     final vocabulary =
         settings?.transcriptionCustomVocabulary ?? const <String>[];
 
-    final transcriptionConfig = <String, dynamic>{
-      'language_codes': [language],
-    };
+    final transcriptionConfig = <String, dynamic>{};
+    if (language != 'auto') {
+      transcriptionConfig['language_codes'] = [language];
+    }
     if (vocabulary.isNotEmpty) {
       transcriptionConfig['custom_vocabulary'] = vocabulary;
     }
@@ -378,8 +379,9 @@ class GeminiInteractionsService implements CloudTranscriptionClient {
 
   Future<String> _postPayload(
     String apiKey,
-    Map<String, dynamic> payload,
-  ) async {
+    Map<String, dynamic> payload, {
+    bool allowAnyStepType = false,
+  }) async {
     final response = await _postInteractions(apiKey, payload);
     final decoded = _decodeResponse(response);
     if (response.statusCode >= 400) {
@@ -406,6 +408,7 @@ class GeminiInteractionsService implements CloudTranscriptionClient {
     if (steps is List) {
       for (final step in steps) {
         if (step is! Map) continue;
+        if (!allowAnyStepType && step['type'] != 'model_output') continue;
         final content = step['content'];
         if (content is! List) continue;
         for (final item in content) {
@@ -488,7 +491,11 @@ class GeminiInteractionsService implements CloudTranscriptionClient {
       model: model,
       thinkingLevelOverride: thinkingLevelOverride,
     );
-    return _postPayload(apiKey, payload);
+    return _postPayload(
+      apiKey,
+      payload,
+      allowAnyStepType: model.isTranscriptionOnly,
+    );
   }
 
   @override
@@ -514,7 +521,11 @@ class GeminiInteractionsService implements CloudTranscriptionClient {
       model: model,
       thinkingLevelOverride: thinkingLevelOverride,
     );
-    return _postPayload(apiKey, payload);
+    return _postPayload(
+      apiKey,
+      payload,
+      allowAnyStepType: model.isTranscriptionOnly,
+    );
   }
 
   @override
@@ -541,6 +552,10 @@ class GeminiInteractionsService implements CloudTranscriptionClient {
       mimeType: mimeType,
       model: model,
     );
-    return _postPayload(apiKey, payload);
+    return _postPayload(
+      apiKey,
+      payload,
+      allowAnyStepType: model.isTranscriptionOnly,
+    );
   }
 }
