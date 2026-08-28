@@ -167,10 +167,12 @@ class CloudTranscriptionService {
         ? AppConfig.getModelById(modelOverrideId)
         : currentModel;
     final surface = _settingsService?.geminiApiSurface;
-    if (model.isTranscriptionOnly && surface != GeminiApiSurface.interactions) {
+    if (model.isTranscriptionOnly &&
+        (currentProvider != CloudProvider.geminiApiKey ||
+            surface != GeminiApiSurface.interactions)) {
       throw CloudTranscriptionException(
-        'Gemini 3.5 Transcribe requires the Interactions API surface. '
-        'Set Cloud Provider → Gemini API Key → API Surface to Interactions.',
+        'Gemini 3.5 Transcribe requires the Gemini API Key provider with the '
+        'Interactions API surface.',
       );
     }
     await _initializeIfNeeded(client);
