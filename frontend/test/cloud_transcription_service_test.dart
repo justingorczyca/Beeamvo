@@ -350,6 +350,32 @@ void main() {
       expect(result, equals('interactions transcript'));
     });
 
+    test(
+      'rejects transcription-only models when Vertex is the active provider',
+      () async {
+        final service = CloudTranscriptionService(
+          geminiApiService: FakeCloudClient(),
+          geminiInteractionsService: FakeCloudClient(),
+          vertexAiService: FakeCloudClient(response: 'vertex'),
+        );
+        service.attachSettings(
+          FakeCloudSettingsService(
+            provider: CloudProvider.vertexAi,
+            surface: GeminiApiSurface.interactions,
+          ),
+        );
+
+        await expectLater(
+          () => service.transcribeAudio(
+            Uint8List.fromList([1, 2, 3]),
+            'audio/wav',
+            modelOverrideId: 'gemini-3.5-transcribe',
+          ),
+          throwsA(isA<CloudTranscriptionException>()),
+        );
+      },
+    );
+
     test('runtime calls forward prompt model and thinking overrides', () async {
       final geminiClient = FakeCloudClient();
       final vertexClient = FakeCloudClient();
