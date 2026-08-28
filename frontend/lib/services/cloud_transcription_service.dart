@@ -103,6 +103,19 @@ class CloudTranscriptionService {
     await client.verifySetup();
   }
 
+  void _assertPromptCapable(String? modelOverrideId) {
+    final model = modelOverrideId != null
+        ? AppConfig.getModelById(modelOverrideId)
+        : currentModel;
+    if (model.isTranscriptionOnly) {
+      throw CloudTranscriptionException(
+        '${model.displayName} is a raw transcription model and cannot follow '
+        'mission prompts. Use it for a single-pass or Pass 1 raw '
+        'transcription, or choose a different model for refinement.',
+      );
+    }
+  }
+
   Future<String> improveTranscription(
     String rawText, {
     String? missionInstruction,
@@ -110,6 +123,7 @@ class CloudTranscriptionService {
     GeminiThinkingLevel? thinkingLevelOverride,
   }) async {
     _ensureNotDisposed();
+    _assertPromptCapable(modelOverrideId);
     final client = _currentClient;
     await _initializeIfNeeded(client);
     final result = await client.improveTranscription(
@@ -129,6 +143,7 @@ class CloudTranscriptionService {
     GeminiThinkingLevel? thinkingLevelOverride,
   }) async {
     _ensureNotDisposed();
+    _assertPromptCapable(modelOverrideId);
     final client = _currentClient;
     await _initializeIfNeeded(client);
     final result = await client.transcribeAndImprove(
@@ -151,7 +166,8 @@ class CloudTranscriptionService {
     final model = modelOverrideId != null
         ? AppConfig.getModelById(modelOverrideId)
         : currentModel;
-    if (model.isTranscriptionOnly && client is! GeminiInteractionsService) {
+    final surface = _settingsService?.geminiApiSurface;
+    if (model.isTranscriptionOnly && surface != GeminiApiSurface.interactions) {
       throw CloudTranscriptionException(
         'Gemini 3.5 Transcribe requires the Interactions API surface. '
         'Set Cloud Provider → Gemini API Key → API Surface to Interactions.',

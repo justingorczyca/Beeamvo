@@ -79,8 +79,10 @@ class GeminiModelConfig {
 
   final List<GeminiThinkingLevel> supportedThinkingLevels;
 
-  /// True when this model is a dedicated speech-to-text model and can only
-  /// be used for the first pass of a two-stage transcription pipeline.
+  /// True when this model is a dedicated speech-to-text model. It can be used
+  /// for any raw audio-to-text pass (single-pass or Pass 1 of two-pass), but
+  /// it cannot follow mission prompts, so it is excluded from refinement and
+  /// transcribe-and-improve paths.
   final bool isTranscriptionOnly;
 
   const GeminiModelConfig({
@@ -233,13 +235,24 @@ class AppConfig {
       availableModels.where((m) => m.isTranscriptionOnly).toList();
 
   /// Returns the model id that should be persisted on disk for [savedId]:
-  /// - `null` (never set) or an id no longer in [mainModels] → [defaultModelId]
-  /// - any currently-offered main model id → [savedId]
+  /// - `null` (never set) or an id no longer in [availableModels] → [defaultModelId]
+  /// - any currently-offered model id → [savedId]
   ///
   /// Pure + testable; used by [SettingsService]'s model migration so the
   /// `selected_model_id` key is always explicitly and validly populated.
-  /// Transcription-only models cannot be selected as the primary model.
+  /// The primary model can be a transcription-only model for raw
+  /// single-pass transcription.
   static String resolveModelId(String? savedId) {
+    if (savedId != null &&
+        availableModels.any((model) => model.id == savedId)) {
+      return savedId;
+    }
+    return defaultModelId;
+  }
+
+  /// Returns a model id suitable for refinement or prompt-following paths.
+  /// Transcription-only models are excluded and fall back to [defaultModelId].
+  static String resolveRefinementModelId(String? savedId) {
     if (savedId != null && mainModels.any((model) => model.id == savedId)) {
       return savedId;
     }

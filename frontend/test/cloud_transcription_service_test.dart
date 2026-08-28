@@ -289,6 +289,67 @@ void main() {
       },
     );
 
+    test(
+      'rejects transcription-only models for prompt-following paths',
+      () async {
+        final service = CloudTranscriptionService(
+          geminiApiService: FakeCloudClient(),
+          vertexAiService: FakeCloudClient(),
+        );
+        service.attachSettings(FakeCloudSettingsService());
+
+        await expectLater(
+          () => service.improveTranscription(
+            'raw',
+            modelOverrideId: 'gemini-3.5-transcribe',
+          ),
+          throwsA(
+            isA<CloudTranscriptionException>().having(
+              (error) => error.message,
+              'message',
+              contains('raw transcription model'),
+            ),
+          ),
+        );
+
+        await expectLater(
+          () => service.transcribeAndImprove(
+            Uint8List.fromList([1, 2, 3]),
+            'audio/wav',
+            modelOverrideId: 'gemini-3.5-transcribe',
+          ),
+          throwsA(
+            isA<CloudTranscriptionException>().having(
+              (error) => error.message,
+              'message',
+              contains('raw transcription model'),
+            ),
+          ),
+        );
+      },
+    );
+
+    test('allows transcription-only models for raw transcribeAudio', () async {
+      final geminiClient = FakeCloudClient(response: 'raw transcript');
+      final service = CloudTranscriptionService(
+        geminiApiService: geminiClient,
+        geminiInteractionsService: FakeCloudClient(
+          response: 'interactions transcript',
+        ),
+        vertexAiService: FakeCloudClient(),
+      );
+      service.attachSettings(
+        FakeCloudSettingsService(surface: GeminiApiSurface.interactions),
+      );
+
+      final result = await service.transcribeAudio(
+        Uint8List.fromList([1, 2, 3]),
+        'audio/wav',
+        modelOverrideId: 'gemini-3.5-transcribe',
+      );
+      expect(result, equals('interactions transcript'));
+    });
+
     test('runtime calls forward prompt model and thinking overrides', () async {
       final geminiClient = FakeCloudClient();
       final vertexClient = FakeCloudClient();

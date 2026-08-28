@@ -248,13 +248,7 @@ class MobileTranscriptionController extends ChangeNotifier {
                 thinkingLevel,
                 overrides,
               )
-            : await cloudService.transcribeAndImprove(
-                audio,
-                'audio/wav',
-                missionInstruction: instruction,
-                modelOverrideId: modelId,
-                thinkingLevelOverride: thinkingLevel,
-              );
+            : await _singlePass(audio, instruction, modelId, thinkingLevel);
       } finally {
         cloudService.clearProviderOverride();
       }
@@ -280,6 +274,29 @@ class MobileTranscriptionController extends ChangeNotifier {
     }
   }
 
+  Future<String> _singlePass(
+    Uint8List audio,
+    String instruction,
+    String modelId,
+    GeminiThinkingLevel? thinkingLevel,
+  ) async {
+    final effectiveModel = AppConfig.getModelById(modelId);
+    if (effectiveModel.isTranscriptionOnly) {
+      return cloudService.transcribeAudio(
+        audio,
+        'audio/wav',
+        modelOverrideId: modelId,
+      );
+    }
+    return cloudService.transcribeAndImprove(
+      audio,
+      'audio/wav',
+      missionInstruction: instruction,
+      modelOverrideId: modelId,
+      thinkingLevelOverride: thinkingLevel,
+    );
+  }
+
   Future<String> _twoPass(
     Uint8List audio,
     String instruction,
@@ -292,10 +309,14 @@ class MobileTranscriptionController extends ChangeNotifier {
       'audio/wav',
       modelOverrideId: overrides?.twoPassTranscriptionModelId ?? modelId,
     );
+    final refinementModelId = AppConfig.resolveRefinementModelId(
+      overrides?.twoPassRefinementModelId ??
+          settingsService.twoPassRefinementModelId,
+    );
     return cloudService.improveTranscription(
       raw,
       missionInstruction: instruction,
-      modelOverrideId: overrides?.twoPassRefinementModelId ?? modelId,
+      modelOverrideId: refinementModelId,
       thinkingLevelOverride:
           overrides?.twoPassRefinementThinkingLevel ?? thinkingLevel,
     );

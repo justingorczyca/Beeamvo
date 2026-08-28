@@ -19,6 +19,7 @@ class FakeSettings extends SettingsService {
     this.limitEnabled = false,
     this.limit = 5,
     this.historyEnabled = true,
+    this.modelId = AppConfig.defaultModelId,
   });
 
   bool credentials;
@@ -26,6 +27,7 @@ class FakeSettings extends SettingsService {
   bool limitEnabled;
   int limit;
   bool historyEnabled;
+  String modelId;
   String promptId = 'standard';
   PromptSettings? overrides;
   final entries = <ClipboardHistoryEntry>[];
@@ -41,7 +43,7 @@ class FakeSettings extends SettingsService {
   @override
   CloudProvider get cloudProvider => CloudProvider.geminiApiKey;
   @override
-  String get selectedModelId => AppConfig.defaultModelId;
+  String get selectedModelId => modelId;
   @override
   GeminiThinkingLevel? getThinkingLevelForModel(String _) => null;
   @override
@@ -266,6 +268,49 @@ void main() {
     expect(cloud.improveCalls, 1);
     controller.dispose();
   });
+
+  test(
+    'single-pass with a transcription-only model uses raw transcription',
+    () async {
+      final cloud = FakeCloud();
+      final settings = FakeSettings(modelId: 'gemini-3.5-transcribe');
+      final controller = MobileTranscriptionController(
+        settingsService: settings,
+        cloudService: cloud,
+        usageStatsService: FakeUsageStats(),
+        recorder: FakeRecorder(),
+      );
+      await controller.toggleRecording();
+      await controller.toggleRecording();
+      expect(controller.resultText, 'raw result');
+      expect(cloud.transcribeCalls, 1);
+      expect(cloud.improveCalls, 0);
+      controller.dispose();
+    },
+  );
+
+  test(
+    'two-pass falls back to a prompt-capable model for refinement',
+    () async {
+      final cloud = FakeCloud();
+      final settings = FakeSettings(
+        twoPass: true,
+        modelId: 'gemini-3.5-transcribe',
+      );
+      final controller = MobileTranscriptionController(
+        settingsService: settings,
+        cloudService: cloud,
+        usageStatsService: FakeUsageStats(),
+        recorder: FakeRecorder(),
+      );
+      await controller.toggleRecording();
+      await controller.toggleRecording();
+      expect(controller.resultText, 'two pass result');
+      expect(cloud.transcribeCalls, 1);
+      expect(cloud.improveCalls, 1);
+      controller.dispose();
+    },
+  );
 
   test('missing credentials and permission denial are actionable', () async {
     final missing = makeController(credentials: false);

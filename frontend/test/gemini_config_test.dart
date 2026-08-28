@@ -70,6 +70,32 @@ void main() {
         expect(kept, equals('gemini-2.5-flash'));
         expect(kept, isNot(equals(AppConfig.defaultModelId)));
       });
+
+      test('keeps a transcription-only model id for raw transcription', () {
+        final kept = AppConfig.resolveModelId('gemini-3.5-transcribe');
+        expect(kept, equals('gemini-3.5-transcribe'));
+      });
+    });
+
+    group('resolveRefinementModelId', () {
+      test('falls back to the default when no id was ever saved', () {
+        expect(
+          AppConfig.resolveRefinementModelId(null),
+          equals(AppConfig.defaultModelId),
+        );
+      });
+
+      test('falls back to the default for a transcription-only model', () {
+        expect(
+          AppConfig.resolveRefinementModelId('gemini-3.5-transcribe'),
+          equals(AppConfig.defaultModelId),
+        );
+      });
+
+      test('keeps a valid prompt-capable model id untouched', () {
+        final kept = AppConfig.resolveRefinementModelId('gemini-2.5-flash');
+        expect(kept, equals('gemini-2.5-flash'));
+      });
     });
 
     group('isOfferedModelId', () {

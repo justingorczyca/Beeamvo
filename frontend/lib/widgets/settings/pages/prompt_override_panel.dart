@@ -461,7 +461,7 @@ class _PromptDetailPageState extends State<PromptDetailPage> {
   Widget _modelRow(BuildContext context, bool showDivider) {
     final items = <({String? value, String label})>[
       (value: null, label: 'Global default'),
-      ...AppConfig.mainModels.map((m) => (value: m.id, label: m.name)),
+      ...AppConfig.availableModels.map((m) => (value: m.id, label: m.name)),
     ];
     return BeeSettingsRow(
       icon: Icons.psychology_rounded,
