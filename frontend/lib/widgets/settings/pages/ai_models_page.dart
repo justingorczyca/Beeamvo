@@ -50,6 +50,16 @@ class _AiModelsPageState extends State<AiModelsPage> {
   bool _cloudStatusIsError = false;
   bool _cloudStatusIsVerified = false;
 
+  /// Whether the current pipeline uses a transcription-only model for the
+  /// raw audio-to-text pass (primary in single-pass, Pass 1 in two-pass).
+  bool get _transcriptionSettingsVisible {
+    if (_transcriptionBackend != TranscriptionBackend.cloud) return false;
+    final activeModelId = _twoPassEnabled
+        ? _twoPassTranscriptionModelId
+        : _selectedModelId;
+    return AppConfig.getModelById(activeModelId).isTranscriptionOnly;
+  }
+
   late WhisperModelDownloadService _downloadService;
   DownloadStatus _lastDownloadStatus = DownloadStatus.idle;
   bool _hasWhisper = false;
@@ -667,14 +677,13 @@ class _AiModelsPageState extends State<AiModelsPage> {
                     BeeSettingsRow(
                       icon: Icons.cloud_outlined,
                       label: 'Primary Cloud Model',
-                      description:
-                          'The AI model used for high-speed cloud transcription and formatting.',
+                      description: _primaryModelDescription(),
                       showDivider: !AppConfig.getModelById(
                         _selectedModelId,
                       ).hasSelectableThinkingLevel,
                       trailing: BeeDropdown<String>(
                         value: _safeModelId(_selectedModelId),
-                        options: _cloudModelOptions(),
+                        options: _primaryModelOptions(),
                         onChanged: (v) async {
                           final settings = SettingsProviderScope.of(
                             context,
@@ -753,18 +762,10 @@ class _AiModelsPageState extends State<AiModelsPage> {
                   const SizedBox(height: BeePageHeader.groupGap),
 
                   // ── TRANSCRIPTION SETTINGS ────────────────────────
-                  if (_twoPassEnabled &&
-                      _transcriptionBackend == TranscriptionBackend.cloud &&
-                      AppConfig.getModelById(
-                        _twoPassTranscriptionModelId,
-                      ).isTranscriptionOnly)
+                  if (_transcriptionSettingsVisible)
                     _buildTranscriptionSettingsSection(),
 
-                  if (_twoPassEnabled &&
-                      _transcriptionBackend == TranscriptionBackend.cloud &&
-                      AppConfig.getModelById(
-                        _twoPassTranscriptionModelId,
-                      ).isTranscriptionOnly)
+                  if (_transcriptionSettingsVisible)
                     const SizedBox(height: BeePageHeader.groupGap),
 
                   // ── FOOTNOTE ──────────────────────────────────────
@@ -1355,7 +1356,8 @@ class _AiModelsPageState extends State<AiModelsPage> {
     }
 
     final effective =
-        selectedLevel ?? modelConfig.thinkingLevel ?? levels.first;
+        modelConfig.resolveThinkingLevel(levelOverride: selectedLevel) ??
+        levels.first;
 
     final options = levels
         .map(
@@ -1389,11 +1391,20 @@ class _AiModelsPageState extends State<AiModelsPage> {
     );
   }
 
-  /// Dropdown options for primary and Pass 2 refinement models.
+  /// Dropdown options for Pass 2 refinement models.
   /// Dedicated transcription-only models are excluded.
   List<BeeDropdownOption<String>> _cloudModelOptions() {
     return [
       for (final m in AppConfig.mainModels)
+        BeeDropdownOption(value: m.id, label: m.displayName),
+    ];
+  }
+
+  /// Dropdown options for the primary single-pass cloud model.
+  /// Includes general-purpose models and dedicated transcription-only models.
+  List<BeeDropdownOption<String>> _primaryModelOptions() {
+    return [
+      for (final m in AppConfig.availableModels)
         BeeDropdownOption(value: m.id, label: m.displayName),
     ];
   }
@@ -1405,6 +1416,22 @@ class _AiModelsPageState extends State<AiModelsPage> {
       for (final m in AppConfig.availableModels)
         BeeDropdownOption(value: m.id, label: m.displayName),
     ];
+  }
+
+  /// Description for the primary cloud model row. Warns when a
+  /// transcription-only model is selected because it cannot follow prompts.
+  String _primaryModelDescription() {
+    final model = AppConfig.getModelById(_selectedModelId);
+    if (model.isTranscriptionOnly) {
+      final isSupported =
+          _cloudProvider == CloudProvider.geminiApiKey &&
+          _geminiApiSurface == GeminiApiSurface.interactions;
+      if (isSupported) {
+        return 'Raw audio-to-text only. Mission prompts and rephrasing are ignored.';
+      }
+      return 'Requires Gemini + Interactions API surface. Raw audio-to-text only; prompts ignored.';
+    }
+    return 'The AI model used for high-speed cloud transcription and formatting.';
   }
 
   /// Resolves a (possibly stale) persisted model id to one that still

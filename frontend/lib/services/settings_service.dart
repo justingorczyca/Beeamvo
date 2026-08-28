@@ -663,8 +663,9 @@ class SettingsService extends ChangeNotifier {
     notifyListeners();
   }
 
-  String get twoPassRefinementModelId =>
-      _getString(_kTwoPassRefinementModelId) ?? selectedModelId;
+  String get twoPassRefinementModelId => AppConfig.resolveRefinementModelId(
+    _getString(_kTwoPassRefinementModelId) ?? selectedModelId,
+  );
 
   Future<void> setTwoPassRefinementModelId(String value) async {
     await _setString(_kTwoPassRefinementModelId, value);

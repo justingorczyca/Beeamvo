@@ -105,10 +105,16 @@ void main() {
       final service = _service(
         MockClient((_) async => _completedResponse('ok')),
       );
+      const budgetModel = GeminiModelConfig(
+        id: 'test-budget',
+        name: 'Test Budget',
+        modelName: 'gemini-2.5-flash',
+        thinkingBudget: 0,
+      );
       final payload = service.buildTranscribePayload(
         audioData: Uint8List.fromList([1]),
         mimeType: 'audio/wav',
-        model: AppConfig.getModelById('gemini-2.5-flash'),
+        model: budgetModel,
       );
 
       final generationConfig =

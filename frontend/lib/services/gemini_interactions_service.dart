@@ -94,12 +94,12 @@ class GeminiInteractionsService implements CloudTranscriptionClient {
     GeminiThinkingLevel? levelOverride,
     bool forceMinimal = false,
   }) {
-    if (model.thinkingLevel == null) return null;
-    return forceMinimal
-        ? GeminiThinkingLevel.minimal
-        : levelOverride ??
-              _settingsService?.getThinkingLevelForModel(model.id) ??
-              model.thinkingLevel!;
+    final override =
+        levelOverride ?? _settingsService?.getThinkingLevelForModel(model.id);
+    return model.resolveThinkingLevel(
+      levelOverride: override,
+      forceMinimal: forceMinimal,
+    );
   }
 
   /// Builds the Interactions API `generation_config`.

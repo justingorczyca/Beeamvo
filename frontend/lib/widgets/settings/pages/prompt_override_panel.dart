@@ -461,7 +461,7 @@ class _PromptDetailPageState extends State<PromptDetailPage> {
   Widget _modelRow(BuildContext context, bool showDivider) {
     final items = <({String? value, String label})>[
       (value: null, label: 'Global default'),
-      ...AppConfig.mainModels.map((m) => (value: m.id, label: m.name)),
+      ...AppConfig.availableModels.map((m) => (value: m.id, label: m.name)),
     ];
     return BeeSettingsRow(
       icon: Icons.psychology_rounded,
@@ -491,8 +491,9 @@ class _PromptDetailPageState extends State<PromptDetailPage> {
     final levels = model.supportedThinkingLevels;
     if (levels.isEmpty) return const SizedBox.shrink();
     final globalLevel =
-        _s.getThinkingLevelForModel(_effectiveCloudModelId) ??
-        model.thinkingLevel ??
+        model.resolveThinkingLevel(
+          levelOverride: _s.getThinkingLevelForModel(_effectiveCloudModelId),
+        ) ??
         levels.first;
     return BeeSettingsRow(
       icon: Icons.psychology_alt_rounded,
@@ -690,8 +691,9 @@ class _PromptDetailPageState extends State<PromptDetailPage> {
     final model = AppConfig.getModelById(_effectiveRefineModelId);
     final levels = model.supportedThinkingLevels;
     final globalLevel =
-        _s.getThinkingLevelForModel(_effectiveRefineModelId) ??
-        model.thinkingLevel ??
+        model.resolveThinkingLevel(
+          levelOverride: _s.getThinkingLevelForModel(_effectiveRefineModelId),
+        ) ??
         levels.first;
     return BeeSettingsRow(
       icon: Icons.psychology_rounded,

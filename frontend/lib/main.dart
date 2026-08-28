@@ -1595,10 +1595,11 @@ class _BeeamvoHomeState extends State<BeeamvoHome>
           overrides.twoPassTranscriptionModelId ??
           overrides.modelId ??
           _settingsService.twoPassTranscriptionModelId;
-      final effectiveRefinementModelId =
-          overrides.twoPassRefinementModelId ??
-          overrides.modelId ??
-          _settingsService.twoPassRefinementModelId;
+      final effectiveRefinementModelId = AppConfig.resolveRefinementModelId(
+        overrides.twoPassRefinementModelId ??
+            overrides.modelId ??
+            _settingsService.twoPassRefinementModelId,
+      );
       // Pure Whisper still runs a cloud refinement pass when a non-default
       // mode (or active rephraser) needs its instruction applied and cloud
       // credentials are available (see the fallback branch below).
@@ -1792,14 +1793,26 @@ class _BeeamvoHomeState extends State<BeeamvoHome>
               overrides.thinkingLevel,
         );
       } else {
-        // Single-pass cloud mode: transcribe and apply the selected mode.
-        improvedText = await _cloudService.transcribeAndImprove(
-          audioBytes!,
-          'audio/wav',
-          missionInstruction: effectiveInstruction,
-          modelOverrideId: overrides.modelId,
-          thinkingLevelOverride: overrides.thinkingLevel,
-        );
+        // Single-pass cloud mode.
+        final effectiveModelId =
+            overrides.modelId ?? _settingsService.selectedModelId;
+        final effectiveModel = AppConfig.getModelById(effectiveModelId);
+        if (effectiveModel.isTranscriptionOnly) {
+          // Transcription-only models cannot follow mission prompts.
+          improvedText = await _cloudService.transcribeAudio(
+            audioBytes!,
+            'audio/wav',
+            modelOverrideId: overrides.modelId,
+          );
+        } else {
+          improvedText = await _cloudService.transcribeAndImprove(
+            audioBytes!,
+            'audio/wav',
+            missionInstruction: effectiveInstruction,
+            modelOverrideId: overrides.modelId,
+            thinkingLevelOverride: overrides.thinkingLevel,
+          );
+        }
       }
       // If state changed (e.g. cancelled), don't paste
       if (_state != RecordingState.processing) return;

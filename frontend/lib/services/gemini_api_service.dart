@@ -89,13 +89,15 @@ class GeminiApiService implements CloudTranscriptionClient {
     bool forceMinimal = false,
   }) {
     final effectiveModel = model ?? _currentModel;
+    final override =
+        levelOverride ??
+        _settingsService?.getThinkingLevelForModel(effectiveModel.id);
+    final resolvedLevel = effectiveModel.resolveThinkingLevel(
+      levelOverride: override,
+      forceMinimal: forceMinimal,
+    );
 
-    if (effectiveModel.thinkingLevel != null) {
-      final resolvedLevel = forceMinimal
-          ? GeminiThinkingLevel.minimal
-          : levelOverride ??
-                _settingsService?.getThinkingLevelForModel(effectiveModel.id) ??
-                effectiveModel.thinkingLevel!;
+    if (resolvedLevel != null) {
       return {
         'thinkingConfig': {'thinkingLevel': resolvedLevel.apiValue},
       };
