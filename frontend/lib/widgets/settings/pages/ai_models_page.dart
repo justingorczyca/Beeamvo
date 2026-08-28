@@ -753,13 +753,15 @@ class _AiModelsPageState extends State<AiModelsPage> {
                   const SizedBox(height: BeePageHeader.groupGap),
 
                   // ── TRANSCRIPTION SETTINGS ────────────────────────
-                  if (_transcriptionBackend == TranscriptionBackend.cloud &&
+                  if (_twoPassEnabled &&
+                      _transcriptionBackend == TranscriptionBackend.cloud &&
                       AppConfig.getModelById(
                         _twoPassTranscriptionModelId,
                       ).isTranscriptionOnly)
                     _buildTranscriptionSettingsSection(),
 
-                  if (_transcriptionBackend == TranscriptionBackend.cloud &&
+                  if (_twoPassEnabled &&
+                      _transcriptionBackend == TranscriptionBackend.cloud &&
                       AppConfig.getModelById(
                         _twoPassTranscriptionModelId,
                       ).isTranscriptionOnly)
