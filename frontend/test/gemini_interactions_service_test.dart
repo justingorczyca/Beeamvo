@@ -209,27 +209,33 @@ void main() {
       expect(await service.improveTranscription('raw'), equals('Hello world'));
     });
 
-    test('extracts text from transcription-only steps without a step type', () async {
-      final service = _service(
-        MockClient(
-          (_) async => http.Response(
-            jsonEncode({
-              'status': 'completed',
-              'steps': [
-                {
-                  'content': [
-                    {'type': 'text', 'text': 'Transcribed'},
-                  ],
-                },
-              ],
-            }),
-            200,
+    test(
+      'extracts text from transcription-only steps without a step type',
+      () async {
+        final service = _service(
+          MockClient(
+            (_) async => http.Response(
+              jsonEncode({
+                'status': 'completed',
+                'steps': [
+                  {
+                    'content': [
+                      {'type': 'text', 'text': 'Transcribed'},
+                    ],
+                  },
+                ],
+              }),
+              200,
+            ),
           ),
-        ),
-      );
+        );
 
-      expect(await service.transcribeAudio(Uint8List(0), 'audio/wav'), equals('Transcribed'));
-    });
+        expect(
+          await service.transcribeAudio(Uint8List(0), 'audio/wav'),
+          equals('Transcribed'),
+        );
+      },
+    );
 
     test('reports non-completed interactions and empty text safely', () async {
       final pendingService = _service(

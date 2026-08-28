@@ -76,8 +76,7 @@ class SettingsService extends ChangeNotifier {
   static const _kTranscriptionCustomVocabulary =
       'transcription_custom_vocabulary';
   static const _kTranscriptionDiarization = 'transcription_diarization';
-  static const _kTranscriptionWordTimestamps =
-      'transcription_word_timestamps';
+  static const _kTranscriptionWordTimestamps = 'transcription_word_timestamps';
   static const _kCloudProvider = 'cloud_provider';
   static const _kGeminiApiSurface = 'gemini_api_surface';
   static const _kOpenAiCompatibleProviderId = 'openai_compatible_provider_id';
@@ -1204,8 +1203,10 @@ class SettingsService extends ChangeNotifier {
   }
 
   Future<void> setTranscriptionCustomVocabulary(List<String> value) async {
-    final normalized =
-        value.map((s) => s.trim()).where((s) => s.isNotEmpty).toList();
+    final normalized = value
+        .map((s) => s.trim())
+        .where((s) => s.isNotEmpty)
+        .toList();
     if (normalized.isEmpty) {
       await _remove(_kTranscriptionCustomVocabulary);
     } else {

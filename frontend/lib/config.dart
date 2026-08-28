@@ -240,8 +240,7 @@ class AppConfig {
   /// `selected_model_id` key is always explicitly and validly populated.
   /// Transcription-only models cannot be selected as the primary model.
   static String resolveModelId(String? savedId) {
-    if (savedId != null &&
-        mainModels.any((model) => model.id == savedId)) {
+    if (savedId != null && mainModels.any((model) => model.id == savedId)) {
       return savedId;
     }
     return defaultModelId;

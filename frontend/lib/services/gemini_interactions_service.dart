@@ -232,7 +232,8 @@ class GeminiInteractionsService implements CloudTranscriptionClient {
     final settings = _settingsService;
     final mode = settings?.transcriptionMode ?? TranscriptionMode.verbatim;
     final language = settings?.transcriptionLanguage ?? 'auto';
-    final vocabulary = settings?.transcriptionCustomVocabulary ?? const <String>[];
+    final vocabulary =
+        settings?.transcriptionCustomVocabulary ?? const <String>[];
 
     final transcriptionConfig = <String, dynamic>{
       'language_codes': [language],

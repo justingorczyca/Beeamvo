@@ -816,10 +816,7 @@ class _AiModelsPageState extends State<AiModelsPage> {
                   value: settings.transcriptionMode,
                   options: [
                     for (final m in TranscriptionMode.values)
-                      BeeDropdownOption(
-                        value: m,
-                        label: m.displayName,
-                      ),
+                      BeeDropdownOption(value: m, label: m.displayName),
                   ],
                   onChanged: (v) async {
                     await settings.setTranscriptionMode(v);
@@ -845,10 +842,9 @@ class _AiModelsPageState extends State<AiModelsPage> {
             BeeSettingsRow(
               icon: Icons.school_rounded,
               label: 'Custom Vocabulary',
-              description:
-                  customVocab.isEmpty
-                      ? 'No custom terms configured.'
-                      : '${customVocab.length} term${customVocab.length == 1 ? '' : 's'} configured',
+              description: customVocab.isEmpty
+                  ? 'No custom terms configured.'
+                  : '${customVocab.length} term${customVocab.length == 1 ? '' : 's'} configured',
               showDivider: false,
               trailing: BeeActionChip(
                 label: customVocab.isEmpty ? 'Add' : 'Edit',
@@ -921,9 +917,7 @@ class _AiModelsPageState extends State<AiModelsPage> {
               label: 'Pass 1 · Raw Transcription',
               description: 'Model for the raw audio-to-text pass.',
               trailing: BeeDropdown<String>(
-                value: _safeTranscriptionModelId(
-                  _twoPassTranscriptionModelId,
-                ),
+                value: _safeTranscriptionModelId(_twoPassTranscriptionModelId),
                 options: _transcriptionModelOptions(),
                 onChanged: (v) async {
                   await settings.setTwoPassTranscriptionModelId(v);
@@ -1422,9 +1416,7 @@ class _AiModelsPageState extends State<AiModelsPage> {
 
   /// Resolves a Pass 1 model id to a valid, still-offered id.
   String _safeTranscriptionModelId(String id) {
-    return AppConfig.isOfferedModelId(id)
-        ? id
-        : AppConfig.defaultModelId;
+    return AppConfig.isOfferedModelId(id) ? id : AppConfig.defaultModelId;
   }
 
   /// Spoken-language choices for the Whisper engine dropdown.
