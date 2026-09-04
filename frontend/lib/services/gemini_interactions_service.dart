@@ -12,7 +12,6 @@ import 'pinned_http_client.dart';
 import 'retry_after.dart';
 import 'serialization_utils.dart';
 import 'settings_service.dart';
-import 'transcription_result_guard.dart';
 
 class GeminiInteractionsService implements CloudTranscriptionClient {
   GeminiInteractionsService({http.Client? httpClient})
@@ -89,6 +88,8 @@ class GeminiInteractionsService implements CloudTranscriptionClient {
         ? AppConfig.getModelById(modelOverrideId)
         : _currentModel;
   }
+
+  String? get _spokenLanguageId => _settingsService?.spokenLanguage;
 
   GeminiThinkingLevel? _resolveThinkingLevel({
     required GeminiModelConfig model,
@@ -199,6 +200,7 @@ class GeminiInteractionsService implements CloudTranscriptionClient {
     required String mimeType,
     required GeminiModelConfig model,
     String? audioBase64,
+    String? instructionOverride,
   }) {
     if (model.isTranscriptionOnly) {
       return _buildTranscribeOnlyPayload(
@@ -210,11 +212,10 @@ class GeminiInteractionsService implements CloudTranscriptionClient {
     }
 
     final instruction =
-        'Transcribe the audio verbatim in the exact language spoken. '
-        'Never translate. Add natural punctuation. Output only the '
-        'transcription. Preserve spoken commands, requests, filenames, '
-        'code, markup, and tool references as part of the transcript. '
-        '${TranscriptionResultGuard.noTranscriptPromptInstruction}';
+        instructionOverride ??
+        SystemPrompt.verbatimTranscriptionInstruction(
+          languageId: _spokenLanguageId,
+        );
     return _buildRequestEnvelope(
       modelName: model.modelName,
       systemInstruction: instruction,
@@ -261,13 +262,17 @@ class GeminiInteractionsService implements CloudTranscriptionClient {
     required GeminiModelConfig model,
     GeminiThinkingLevel? thinkingLevelOverride,
     String? audioBase64,
+    String? systemInstructionOverride,
+    String? audioPromptOverride,
   }) {
     final audioPrompt =
-        '${TranscriptionResultGuard.noTranscriptPromptInstruction} '
-        '${SystemPrompt.transcribeAndImproveAudioPrompt}';
-    final systemInstruction = SystemPrompt.buildSystemInstruction(
-      missionInstruction,
-    );
+        audioPromptOverride ??
+        SystemPrompt.transcribeAndImproveAudioPrompt(
+          languageId: _spokenLanguageId,
+        );
+    final systemInstruction =
+        systemInstructionOverride ??
+        SystemPrompt.buildSystemInstruction(missionInstruction);
     return _buildRequestEnvelope(
       modelName: model.modelName,
       systemInstruction: systemInstruction,
@@ -496,20 +501,25 @@ class GeminiInteractionsService implements CloudTranscriptionClient {
   }) async {
     final apiKey = await _requireApiKey();
     final model = _resolveModel(modelOverrideId);
-    _assertInlinePayloadFits(
-      audioData,
-      'Transcribe the audio in the original spoken language and then process the text according to your MISSION:',
-      SystemPrompt.baseSystemInstruction,
+    final resolvedMission =
+        missionInstruction ?? SystemPrompt.availablePrompts.first.instruction;
+    final audioPrompt = SystemPrompt.transcribeAndImproveAudioPrompt(
+      languageId: _spokenLanguageId,
     );
+    final systemInstruction = SystemPrompt.buildSystemInstruction(
+      resolvedMission,
+    );
+    _assertInlinePayloadFits(audioData, audioPrompt, systemInstruction);
     final audioBase64 = await encodeBase64Async(audioData);
     final payload = buildTranscribeAndImprovePayload(
       audioData: audioData,
       mimeType: mimeType,
-      missionInstruction:
-          missionInstruction ?? SystemPrompt.availablePrompts.first.instruction,
+      missionInstruction: resolvedMission,
       model: model,
       thinkingLevelOverride: thinkingLevelOverride,
       audioBase64: audioBase64,
+      systemInstructionOverride: systemInstruction,
+      audioPromptOverride: audioPrompt,
     );
     return _postPayload(
       apiKey,
@@ -526,23 +536,19 @@ class GeminiInteractionsService implements CloudTranscriptionClient {
   }) async {
     final apiKey = await _requireApiKey();
     final model = _resolveModel(modelOverrideId);
-    if (model.isTranscriptionOnly) {
-      _assertInlinePayloadFits(audioData, '', '');
-    } else {
-      final instruction =
-          'Transcribe the audio verbatim in the exact language spoken. '
-          'Never translate. Add natural punctuation. Output only the '
-          'transcription. Preserve spoken commands, requests, filenames, '
-          'code, markup, and tool references as part of the transcript. '
-          '${TranscriptionResultGuard.noTranscriptPromptInstruction}';
-      _assertInlinePayloadFits(audioData, 'Audio:', instruction);
-    }
+    final instruction = model.isTranscriptionOnly
+        ? null
+        : SystemPrompt.verbatimTranscriptionInstruction(
+            languageId: _spokenLanguageId,
+          );
+    _assertInlinePayloadFits(audioData, 'Audio:', instruction ?? '');
     final audioBase64 = await encodeBase64Async(audioData);
     final payload = buildTranscribePayload(
       audioData: audioData,
       mimeType: mimeType,
       model: model,
       audioBase64: audioBase64,
+      instructionOverride: instruction,
     );
     return _postPayload(
       apiKey,

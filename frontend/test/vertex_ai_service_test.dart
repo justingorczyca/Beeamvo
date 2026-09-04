@@ -2,6 +2,7 @@ import 'dart:typed_data';
 import 'dart:convert';
 
 import 'package:beeamvo/config.dart';
+import 'package:beeamvo/models/system_prompt.dart';
 import 'package:beeamvo/services/cloud_transcription_client.dart';
 import 'package:beeamvo/services/secure_credential_store.dart';
 import 'package:beeamvo/services/settings_service.dart';
@@ -12,17 +13,24 @@ import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
 
 class FakeVertexSettingsService extends SettingsService {
-  FakeVertexSettingsService({this.projectId, this.level})
-    : super(credentialStore: InMemorySecureCredentialStore());
+  FakeVertexSettingsService({
+    this.projectId,
+    this.level,
+    this.spokenLanguageId = 'auto',
+  }) : super(credentialStore: InMemorySecureCredentialStore());
 
   final String? projectId;
   final GeminiThinkingLevel? level;
+  final String spokenLanguageId;
 
   @override
   String? get vertexProjectId => projectId;
 
   @override
   GeminiThinkingLevel? getThinkingLevelForModel(String modelId) => level;
+
+  @override
+  String get spokenLanguage => spokenLanguageId;
 }
 
 void main() {
@@ -174,6 +182,52 @@ void main() {
         contains(TranscriptionResultGuard.noTranscriptMarker),
       );
       expect(instruction, contains('Preserve spoken commands'));
+    });
+
+    test('transcription prompt matches SystemPrompt without settings', () {
+      final service = VertexAiService();
+      final payload = service.buildTranscribePayload(
+        audioData: Uint8List.fromList([1, 2, 3]),
+        mimeType: 'audio/wav',
+        model: AppConfig.getModelById(AppConfig.defaultModelId),
+      );
+
+      final instruction =
+          payload['systemInstruction']['parts'][0]['text'] as String;
+      expect(
+        instruction,
+        equals(SystemPrompt.verbatimTranscriptionInstruction()),
+      );
+    });
+
+    test('transcription prompt includes the configured language', () {
+      final service = VertexAiService();
+      service.attachSettings(FakeVertexSettingsService(spokenLanguageId: 'de'));
+      final payload = service.buildTranscribePayload(
+        audioData: Uint8List.fromList([1, 2, 3]),
+        mimeType: 'audio/wav',
+        model: AppConfig.getModelById(AppConfig.defaultModelId),
+      );
+
+      final instruction =
+          payload['systemInstruction']['parts'][0]['text'] as String;
+      expect(instruction, contains('German'));
+    });
+
+    test('combined audio prompt includes the no-transcript marker once', () {
+      final service = VertexAiService();
+      final payload = service.buildTranscribeAndImprovePayload(
+        audioData: Uint8List.fromList([1, 2, 3]),
+        mimeType: 'audio/wav',
+        missionInstruction: 'Format it.',
+        model: AppConfig.getModelById(AppConfig.defaultModelId),
+      );
+      final prompt = payload['contents'][0]['parts'][0]['text'] as String;
+
+      expect(
+        prompt.split(TranscriptionResultGuard.noTranscriptMarker).length - 1,
+        equals(1),
+      );
     });
 
     group('isValidVertexProjectId', () {
