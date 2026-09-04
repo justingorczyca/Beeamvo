@@ -410,7 +410,7 @@ class _TroubleshootingPageState extends State<TroubleshootingPage> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  BeePageHeader(title: 'Troubleshooting'),
+                  BeePageHeader(title: 'Help'),
 
                   // ── Permissions (macOS only) ──────────────────
                   if (Platform.isMacOS) ...[
@@ -547,15 +547,15 @@ class _TroubleshootingPageState extends State<TroubleshootingPage> {
                   _buildFaq(
                     'Recording produces no transcription',
                     'Verify your microphone is working in your system sound settings. '
-                        'If using Cloud backend, check that your API key is valid in Settings > AI Models. '
+                        'If using Cloud backend, check that your API key is valid in Settings > Transcription. '
                         'If using Offline (Whisper), make sure the model has been downloaded — '
-                        'go to Settings > AI Models and click Download next to the model.',
+                        'go to Settings > Transcription and click Download next to the model.',
                   ),
                   _buildFaq(
                     'How does the offline (Whisper) backend work?',
                     'Beeamvo uses whisper.cpp for local, offline transcription. '
                         'It runs entirely on your device — no data is sent to the cloud. '
-                        'You need to download a model file first (Settings > AI Models). '
+                        'You need to download a model file first (Settings > Transcription). '
                         'Larger models are more accurate but slower and use more RAM.',
                   ),
                   _buildFaq(

@@ -9,10 +9,8 @@ import 'package:path_provider/path_provider.dart';
 import '../models/enums.dart';
 export '../models/enums.dart';
 import '../models/system_prompt.dart';
-import '../models/prompt_settings.dart';
 import '../models/hotkey_config.dart';
 import '../models/clipboard_history_entry.dart';
-import '../models/openai_compatible_provider.dart';
 import '../config.dart';
 import 'secure_credential_store.dart';
 import 'update_check_service.dart';
@@ -42,11 +40,8 @@ class SettingsService extends ChangeNotifier {
   SettingsService({
     SecureCredentialStore? credentialStore,
     @visibleForTesting this._applicationSupportDirectory,
-    @visibleForTesting Iterable<String>? openAiCompatibleProviderIds,
   }) : _credentialStore =
-           credentialStore ?? const FlutterSecureCredentialStore(),
-       _openAiCompatibleProviderIds =
-           openAiCompatibleProviderIds ?? const <String>[];
+           credentialStore ?? const FlutterSecureCredentialStore();
   // ── keys ──────────────────────────────────────────────────────────────────
   static const _kLaunchAtStartup = 'launch_at_startup';
   static const _kSelectedPromptId = 'active_system_prompt_id';
@@ -55,7 +50,6 @@ class SettingsService extends ChangeNotifier {
   static const _kTwoPassTranscription = 'two_pass_transcription';
   static const _kTwoPassTranscriptionModelId =
       'two_pass_transcription_model_id';
-  static const _kTwoPassRefinementModelId = 'two_pass_refinement_model_id';
   static const _kHotkey = 'global_hotkey';
   static const _kClipboardHistoryEnabled = 'clipboard_history_enabled';
   static const _kClipboardWatcherEnabled = 'clipboard_watcher_enabled';
@@ -69,19 +63,27 @@ class SettingsService extends ChangeNotifier {
   static const _kDurationLimitEnabled = 'duration_limit_enabled';
   static const _kDurationLimit = 'duration_limit';
   static const _kWhisperModelId = 'whisper_model_id';
-  static const _kWhisperLanguage = 'whisper_language';
+  static const _kSpokenLanguage = 'spoken_language';
   static const _kTranscriptionBackend = 'transcription_backend';
-  static const _kTranscriptionMode = 'transcription_mode';
-  static const _kTranscriptionLanguage = 'transcription_language';
-  static const _kTranscriptionCustomVocabulary =
-      'transcription_custom_vocabulary';
-  static const _kTranscriptionDiarization = 'transcription_diarization';
-  static const _kTranscriptionWordTimestamps = 'transcription_word_timestamps';
   static const _kCloudProvider = 'cloud_provider';
-  static const _kGeminiApiSurface = 'gemini_api_surface';
-  static const _kOpenAiCompatibleProviderId = 'openai_compatible_provider_id';
-  static const _kOpenAiCompatibleModelId = 'openai_compatible_model_id';
-  static const _kOpenAiCompatibleBaseUrlPrefix = 'openai_compatible_base_url_';
+
+  /// Keys from earlier releases whose features no longer exist. Removed on
+  /// load so an upgraded install carries no stale state.
+  static const _retiredKeys = <String>[
+    'two_pass_refinement_model_id',
+    'whisper_language',
+    'transcription_language',
+    'transcription_mode',
+    'transcription_diarization',
+    'transcription_word_timestamps',
+    'gemini_api_surface',
+    'openai_compatible_provider_id',
+    'openai_compatible_model_id',
+    'rephrase_level',
+    'prompt_overrides',
+    'transcription_custom_vocabulary',
+  ];
+  static const _retiredKeyPrefixes = <String>['openai_compatible_base_url_'];
 
   // Update notifications
   static const _kLastUpdateCheckAt = 'last_update_check_at';
@@ -90,23 +92,18 @@ class SettingsService extends ChangeNotifier {
   static const _kAvailableUpdateNotes = 'available_update_notes';
 
   static const _kVertexProjectId = 'vertex_project_id';
-  static const _kRephraseLevel = 'rephrase_level';
   static const _kOnboardingComplete = 'onboarding_complete';
-  static const _kPromptOverrides = 'prompt_overrides';
   static const _kThemeMode = 'theme_mode';
 
   // ── internal state ────────────────────────────────────────────────────────
   final SecureCredentialStore _credentialStore;
   final Directory? _applicationSupportDirectory;
-  final Iterable<String> _openAiCompatibleProviderIds;
   late File _file;
   Map<String, dynamic> _data = {};
   List<SystemPrompt> _customPrompts = [];
-  Map<String, PromptSettings> _promptOverrides = {};
   List<ClipboardHistoryEntry> _clipboardHistory = [];
   bool _hasGeminiApiKey = false;
   String? _geminiApiKey;
-  final Map<String, bool> _hasOpenAiCompatibleApiKeys = {};
   bool _launchAtStartupRequiresApproval = false;
 
   // ── init ──────────────────────────────────────────────────────────────────
@@ -141,12 +138,9 @@ class SettingsService extends ChangeNotifier {
     }
 
     _loadCustomPrompts();
-    _loadPromptOverrides();
-    _migrateCustomPromptOverrides();
     _loadClipboardHistory();
-    _migrateModels();
+    await _migrate();
     await _loadSecureState();
-    await _migrateCloudSettings();
 
     debugPrint('[SettingsService] initialized');
   }
@@ -228,50 +222,69 @@ class SettingsService extends ChangeNotifier {
     final geminiApiKey = await _credentialStore.readGeminiApiKey();
     _geminiApiKey = geminiApiKey;
     _hasGeminiApiKey = geminiApiKey != null && geminiApiKey.trim().isNotEmpty;
-    final rawProviderId = _getString(_kOpenAiCompatibleProviderId)?.trim();
-    final providerId = selectedOpenAiCompatibleProviderId;
-    final account = rawProviderId == null
-        ? null
-        : tryOpenAiCompatibleApiKeyAccount(rawProviderId);
-    if (rawProviderId != null && account == null) {
-      _data.remove(_kOpenAiCompatibleProviderId);
-      await _save();
-    }
-    _hasOpenAiCompatibleApiKeys.clear();
-    final providerIds = <String>{
-      for (final provider in OpenAiCompatibleProviderRegistry.builtIn)
-        provider.id,
-      ..._openAiCompatibleProviderIds,
-      if (providerId != null) providerId,
-    };
-    for (final candidate in providerIds) {
-      final normalizedProviderId = candidate.trim();
-      final candidateAccount = tryOpenAiCompatibleApiKeyAccount(
-        normalizedProviderId,
-      );
-      if (candidateAccount == null) continue;
-      final key = await _credentialStore.readApiKey(candidateAccount);
-      _hasOpenAiCompatibleApiKeys[normalizedProviderId] =
-          key != null && key.trim().isNotEmpty;
-    }
   }
 
-  Future<void> _migrateCloudSettings() async {
-    final legacyBackend = _getString(_kTranscriptionBackend);
-    if (legacyBackend == 'gemini') {
-      _data[_kTranscriptionBackend] = TranscriptionBackend.cloud.name;
-    } else if (legacyBackend == null) {
-      _data[_kTranscriptionBackend] = TranscriptionBackend.cloud.name;
-    }
+  /// Brings a settings file from any earlier release up to the current
+  /// schema. Idempotent; writes only when something changed.
+  Future<void> _migrate() async {
+    var dirty = false;
 
+    final backend = _getString(_kTranscriptionBackend);
+    if (backend == null || backend == 'gemini') {
+      _data[_kTranscriptionBackend] = TranscriptionBackend.cloud.name;
+      dirty = true;
+    }
     if (_getString(_kCloudProvider) == null) {
       _data[_kCloudProvider] = CloudProvider.geminiApiKey.name;
-    }
-    if (_getString(_kGeminiApiSurface) == null) {
-      _data[_kGeminiApiSurface] = GeminiApiSurface.generateContent.name;
+      dirty = true;
     }
 
-    await _save();
+    // The rephraser became the built-in Professional prompt.
+    final rephrase = _getString('rephrase_level');
+    if (rephrase != null &&
+        rephrase != 'off' &&
+        selectedPromptId == SystemPrompt.defaultId) {
+      _data[_kSelectedPromptId] = SystemPrompt.professionalId;
+      dirty = true;
+    }
+
+    // Whisper and cloud language settings merged into one.
+    if (_getString(_kSpokenLanguage) == null) {
+      final legacy =
+          _getString('transcription_language') ??
+          _getString('whisper_language');
+      if (legacy != null) {
+        _data[_kSpokenLanguage] = legacy;
+        dirty = true;
+      }
+    }
+
+    // The primary model must be a valid, prompt-capable model; the step-1
+    // transcription model is optional and cleared when no longer offered.
+    final savedModel = _getString(_kSelectedModelId);
+    final resolvedModel = AppConfig.resolveRefinementModelId(savedModel);
+    if (savedModel != resolvedModel) {
+      _data[_kSelectedModelId] = resolvedModel;
+      dirty = true;
+    }
+    final savedStepOne = _getString(_kTwoPassTranscriptionModelId);
+    if (savedStepOne != null && !AppConfig.isOfferedModelId(savedStepOne)) {
+      _data.remove(_kTwoPassTranscriptionModelId);
+      dirty = true;
+    }
+
+    for (final key in _retiredKeys) {
+      if (_data.remove(key) != null) dirty = true;
+    }
+    final prefixed = _data.keys
+        .where((k) => _retiredKeyPrefixes.any(k.startsWith))
+        .toList();
+    for (final key in prefixed) {
+      _data.remove(key);
+      dirty = true;
+    }
+
+    if (dirty) await _save();
   }
 
   // ── typed accessors ───────────────────────────────────────────────────────
@@ -320,53 +333,6 @@ class SettingsService extends ChangeNotifier {
     await _save();
   }
 
-  // ── model migration ───────────────────────────────────────────────────────
-  //
-  // Ensure every model id in settings.json is valid:
-  //
-  //  • `selected_model_id` is always explicitly and validly persisted (never
-  //    relies on an in-memory fallback):
-  //      - never set (first launch)      → write the current default
-  //      - set but no longer offered     → reset to the current default
-  //      - a still-valid explicit choice → left untouched
-  //
-  //  • `two_pass_transcription_model_id` and `two_pass_refinement_model_id`
-  //    are *optional overrides* that inherit `selected_model_id` when unset.
-  //    They are never auto-populated on first launch, but a stale id pointing
-  //    at a model no longer offered is *cleared* so it cleanly falls back to
-  //    inheritance instead of silently using a dead model.
-  void _migrateModels() {
-    var dirty = false;
-
-    // Primary model — always materialise a valid selection.
-    final saved = _getString(_kSelectedModelId);
-    final resolved = AppConfig.resolveModelId(saved);
-    if (saved != resolved) {
-      _data[_kSelectedModelId] = resolved;
-      dirty = true;
-    }
-
-    // Two-pass overrides — clear any stale id, leave valid/null untouched so
-    // the inheritance (`?? selectedModelId`) keeps working as designed.
-    // Pass 2 refinement can never be a transcription-only model.
-    for (final key in [
-      _kTwoPassTranscriptionModelId,
-      _kTwoPassRefinementModelId,
-    ]) {
-      final v = _getString(key);
-      if (!AppConfig.isOfferedModelId(v) ||
-          (key == _kTwoPassRefinementModelId &&
-              AppConfig.getModelById(v ?? '').isTranscriptionOnly)) {
-        _data.remove(key);
-        dirty = dirty || v != null;
-      }
-    }
-
-    if (dirty) {
-      unawaited(_save()); // fire-and-forget OK here
-    }
-  }
-
   // ── custom prompts ────────────────────────────────────────────────────────
   void _loadCustomPrompts() {
     final raw = _getString(_kCustomPrompts);
@@ -383,83 +349,6 @@ class SettingsService extends ChangeNotifier {
   Future<void> _saveCustomPrompts() async {
     final encoded = jsonEncode(_customPrompts.map((p) => p.toMap()).toList());
     await _setString(_kCustomPrompts, encoded);
-  }
-
-  // ── prompt overrides ──────────────────────────────────────────────────────
-  void _loadPromptOverrides() {
-    final raw = _getString(_kPromptOverrides);
-    if (raw == null) {
-      _promptOverrides = {};
-      return;
-    }
-    try {
-      final Map<String, dynamic> decoded = jsonDecode(raw);
-      _promptOverrides = decoded.map(
-        (k, v) =>
-            MapEntry(k, PromptSettings.fromMap(v as Map<String, dynamic>)),
-      );
-    } catch (_) {
-      _promptOverrides = {};
-    }
-  }
-
-  Future<void> _savePromptOverrides() async {
-    final encoded = jsonEncode(
-      _promptOverrides.map((k, v) => MapEntry(k, v.toMap())),
-    );
-    await _setString(_kPromptOverrides, encoded);
-  }
-
-  /// One-time migration: move per-prompt overrides from inline custom prompt
-  /// settings into the centralized override map.
-  void _migrateCustomPromptOverrides() {
-    var changed = false;
-    for (final prompt in _customPrompts) {
-      if (prompt.settings.hasAnyOverride) {
-        _promptOverrides[prompt.id] = prompt.settings;
-        // Replace with empty settings
-        final idx = _customPrompts.indexWhere((p) => p.id == prompt.id);
-        if (idx != -1) {
-          _customPrompts[idx] = SystemPrompt(
-            id: prompt.id,
-            name: prompt.name,
-            instruction: prompt.instruction,
-            settings: const PromptSettings(),
-          );
-        }
-        changed = true;
-      }
-    }
-    if (changed) {
-      unawaited(_saveCustomPrompts()); // fire-and-forget
-      unawaited(_savePromptOverrides());
-    }
-  }
-
-  /// Get the per-prompt setting overrides for [promptId], or null if none.
-  PromptSettings? getPromptOverrides(String promptId) =>
-      _promptOverrides[promptId];
-
-  /// Set per-prompt setting overrides for [promptId].
-  /// If [settings] has no overrides, the entry is removed.
-  Future<void> setPromptOverrides(
-    String promptId,
-    PromptSettings settings,
-  ) async {
-    if (settings.hasAnyOverride) {
-      _promptOverrides[promptId] = settings;
-    } else {
-      _promptOverrides.remove(promptId);
-    }
-    await _savePromptOverrides();
-    notifyListeners();
-  }
-
-  /// Clear all per-prompt setting overrides for [promptId].
-  Future<void> clearPromptOverrides(String promptId) async {
-    _promptOverrides.remove(promptId);
-    await _savePromptOverrides();
-    notifyListeners();
   }
 
   // ── clipboard history ─────────────────────────────────────────────────────
@@ -563,27 +452,17 @@ class SettingsService extends ChangeNotifier {
       status == 'enabled' || status == 'requiresApproval';
 
   // ── Prompt selection ──────────────────────────────────────────────────────
-  String get selectedPromptId => _getString(_kSelectedPromptId) ?? 'standard';
+  String get selectedPromptId =>
+      _getString(_kSelectedPromptId) ?? SystemPrompt.defaultId;
 
   Future<void> setSelectedPromptId(String value) async {
     await _setString(_kSelectedPromptId, value);
     notifyListeners();
   }
 
-  // ── Rephraser Level ───────────────────────────────────────────────────────
-  RephraseLevel get rephraseLevel {
-    final value = _getString(_kRephraseLevel);
-    if (value == RephraseLevel.medium.name) return RephraseLevel.medium;
-    if (value == RephraseLevel.high.name) return RephraseLevel.high;
-    return RephraseLevel.off;
-  }
-
-  Future<void> setRephraseLevel(RephraseLevel level) async {
-    await _setString(_kRephraseLevel, level.name);
-    // Notify so UI bound to rephrase level (segmented control in the
-    // prompts page, mode picker tooltip, etc.) rebuilds immediately.
-    notifyListeners();
-  }
+  /// The currently selected prompt (built-in or custom).
+  SystemPrompt get selectedPrompt =>
+      SystemPrompt.getById(selectedPromptId, customPrompts: _customPrompts);
 
   // ── Custom prompts ────────────────────────────────────────────────────────
   List<SystemPrompt> get customPrompts => _customPrompts;
@@ -597,7 +476,7 @@ class SettingsService extends ChangeNotifier {
   Future<void> removeCustomPrompt(String id) async {
     _customPrompts.removeWhere((p) => p.id == id);
     if (selectedPromptId == id) {
-      await setSelectedPromptId('standard');
+      await setSelectedPromptId(SystemPrompt.defaultId);
     }
     await _saveCustomPrompts();
     notifyListeners();
@@ -614,7 +493,7 @@ class SettingsService extends ChangeNotifier {
 
   // ── Model selection ───────────────────────────────────────────────────────
   String get selectedModelId =>
-      _getString(_kSelectedModelId) ?? AppConfig.defaultModelId;
+      AppConfig.resolveRefinementModelId(_getString(_kSelectedModelId));
 
   Future<void> setSelectedModelId(String value) async {
     await _setString(_kSelectedModelId, value);
@@ -647,32 +526,43 @@ class SettingsService extends ChangeNotifier {
     notifyListeners();
   }
 
-  // ── Two-pass Transcription ────────────────────────────────────────────────
+  // ── Two-step refinement ───────────────────────────────────────────────────
+  //
+  // Step 1 turns audio into raw text (a dedicated transcription model in the
+  // cloud, or Whisper offline); step 2 applies the selected prompt with the
+  // primary AI model.
   bool get twoPassTranscriptionEnabled => _getBool(_kTwoPassTranscription);
 
   Future<void> setTwoPassTranscriptionEnabled(bool value) async {
     await _setBool(_kTwoPassTranscription, value);
-    // Notify so UI bound to two-pass state (rephraser effectiveness
-    // in the prompts page, mode picker tooltip, tray menu) rebuilds.
     notifyListeners();
   }
 
-  String get twoPassTranscriptionModelId =>
-      _getString(_kTwoPassTranscriptionModelId) ?? selectedModelId;
+  /// Cloud model for the raw transcription step. The dedicated transcription
+  /// model is only served through the Gemini API key provider; on Vertex the
+  /// primary model transcribes.
+  String get twoPassTranscriptionModelId {
+    final saved = _getString(_kTwoPassTranscriptionModelId);
+    final onGemini = cloudProvider == CloudProvider.geminiApiKey;
+    if (saved != null &&
+        AppConfig.isOfferedModelId(saved) &&
+        (onGemini || !AppConfig.getModelById(saved).isTranscriptionOnly)) {
+      return saved;
+    }
+    return onGemini ? AppConfig.defaultTranscriptionModelId : selectedModelId;
+  }
 
   Future<void> setTwoPassTranscriptionModelId(String value) async {
     await _setString(_kTwoPassTranscriptionModelId, value);
     notifyListeners();
   }
 
-  String get twoPassRefinementModelId => AppConfig.resolveRefinementModelId(
-    _getString(_kTwoPassRefinementModelId) ?? selectedModelId,
-  );
-
-  Future<void> setTwoPassRefinementModelId(String value) async {
-    await _setString(_kTwoPassRefinementModelId, value);
-    notifyListeners();
-  }
+  /// Whether the selected prompt shapes the output. Prompts need a cloud AI
+  /// model: always on the Cloud engine, and offline only with two-step
+  /// refinement enabled.
+  bool get promptIsApplied =>
+      transcriptionBackend == TranscriptionBackend.cloud ||
+      twoPassTranscriptionEnabled;
 
   // ── Hotkey ────────────────────────────────────────────────────────────────
   HotkeyConfig get hotkey {
@@ -918,63 +808,10 @@ class SettingsService extends ChangeNotifier {
 
   Future<void> setTranscriptionBackend(TranscriptionBackend backend) async {
     await _setString(_kTranscriptionBackend, backend.name);
-    // Notify so UI bound to backend choice (mode picker, tray menu,
-    // prompts page rephraser availability) rebuilds immediately.
     notifyListeners();
   }
 
-  // ── Prompt & rephraser activation ─────────────────────────────────────────
-  /// Whether a cloud LLM is currently in the transcription pipeline — either
-  /// the Cloud backend (cloud transcribes + refines) or Whisper with two-pass
-  /// cloud refinement (Whisper transcribes locally, a cloud model refines).
-  ///
-  /// Prompt instructions and the rephraser only change the output text when
-  /// this is true; on pure offline Whisper (no two-pass) the transcript is
-  /// returned verbatim and neither takes effect.
-  bool get isCloudRefinementInPipeline =>
-      transcriptionBackend == TranscriptionBackend.cloud ||
-      twoPassTranscriptionEnabled;
-
-  /// Whether the prompt with [promptId] would have NO effect with the
-  /// pipeline it would actually run on.
-  ///
-  /// The Default prompt (`standard`) is never considered inactive — it is the
-  /// implicit baseline Whisper uses. The check mirrors the runtime session
-  /// resolution: per-prompt backend/two-pass overrides take precedence over
-  /// the global defaults, in either direction. A prompt whose overrides force
-  /// pure offline Whisper (no two-pass) is flagged even when the global
-  /// backend is Cloud, so the user is prompted to pick an explicit
-  /// configuration that applies the instruction (the runtime still falls back
-  /// to a cloud refinement pass when cloud credentials are available).
-  bool isPromptInactiveOnLocalBackend(String promptId) {
-    if (promptId == 'standard') return false;
-    final overrides = getPromptOverrides(promptId);
-    final effectiveBackend = TranscriptionBackendExtension.fromValue(
-      overrides?.transcriptionBackend ?? transcriptionBackend.name,
-    );
-    final effectiveTwoPass =
-        overrides?.twoPassTranscriptionEnabled ?? twoPassTranscriptionEnabled;
-    return effectiveBackend == TranscriptionBackend.whisper &&
-        !effectiveTwoPass;
-  }
-
-  /// Keep local Whisper transcription but enable the two-pass cloud
-  /// refinement pass so the selected prompt is applied during refinement.
-  /// Used when the user wants prompts to take effect without giving up
-  /// offline transcription of the audio itself.
-  Future<void> enableLocalTwoPassRefinement() async {
-    await setTranscriptionBackend(TranscriptionBackend.whisper);
-    await setTwoPassTranscriptionEnabled(true);
-  }
-
-  /// Switch to single-pass cloud transcription. Two-pass is turned off
-  /// because a single cloud pass already transcribes and applies the prompt.
-  Future<void> switchToCloudTranscription() async {
-    await setTranscriptionBackend(TranscriptionBackend.cloud);
-    await setTwoPassTranscriptionEnabled(false);
-  }
-
-  // ── Whisper Model Selection ───────────────────────────────────────────────
+  // ── Cloud provider & credentials ──────────────────────────────────────────
   CloudProvider get cloudProvider {
     final value = _getString(_kCloudProvider);
     if (value == CloudProvider.vertexAi.name) return CloudProvider.vertexAi;
@@ -983,14 +820,6 @@ class SettingsService extends ChangeNotifier {
 
   Future<void> setCloudProvider(CloudProvider provider) async {
     await _setString(_kCloudProvider, provider.name);
-    notifyListeners();
-  }
-
-  GeminiApiSurface get geminiApiSurface =>
-      GeminiApiSurfaceExtension.fromValue(_getString(_kGeminiApiSurface));
-
-  Future<void> setGeminiApiSurface(GeminiApiSurface surface) async {
-    await _setString(_kGeminiApiSurface, surface.name);
     notifyListeners();
   }
 
@@ -1031,106 +860,6 @@ class SettingsService extends ChangeNotifier {
     await _credentialStore.deleteGeminiApiKey();
     _geminiApiKey = null;
     _hasGeminiApiKey = false;
-    notifyListeners();
-  }
-
-  String? get selectedOpenAiCompatibleProviderId {
-    final providerId = _getString(_kOpenAiCompatibleProviderId)?.trim();
-    if (providerId == null ||
-        tryOpenAiCompatibleApiKeyAccount(providerId) == null) {
-      return null;
-    }
-    return providerId;
-  }
-
-  Future<void> setSelectedOpenAiCompatibleProviderId(String? providerId) async {
-    if (providerId == null || providerId.trim().isEmpty) {
-      await _remove(_kOpenAiCompatibleProviderId);
-    } else {
-      final normalized = providerId.trim();
-      openAiCompatibleApiKeyAccount(normalized);
-      await _setString(_kOpenAiCompatibleProviderId, normalized);
-    }
-    notifyListeners();
-  }
-
-  String? get selectedOpenAiCompatibleModelId =>
-      _getString(_kOpenAiCompatibleModelId);
-
-  Future<void> setSelectedOpenAiCompatibleModelId(String? modelId) async {
-    if (modelId == null || modelId.trim().isEmpty) {
-      await _remove(_kOpenAiCompatibleModelId);
-    } else {
-      await _setString(_kOpenAiCompatibleModelId, modelId.trim());
-    }
-    notifyListeners();
-  }
-
-  /// Namespaces the override key per provider. Reuses the credential account
-  /// validation so a provider id can never escape its own settings key.
-  String? _openAiCompatibleBaseUrlKey(String providerId) {
-    final normalized = providerId.trim();
-    if (tryOpenAiCompatibleApiKeyAccount(normalized) == null) return null;
-    return '$_kOpenAiCompatibleBaseUrlPrefix$normalized';
-  }
-
-  String? getOpenAiCompatibleBaseUrlOverride(String providerId) {
-    final key = _openAiCompatibleBaseUrlKey(providerId);
-    return key == null ? null : _getString(key);
-  }
-
-  Future<void> setOpenAiCompatibleBaseUrlOverride(
-    String providerId,
-    String? baseUrl,
-  ) async {
-    final normalizedProviderId = validateOpenAiCompatibleProviderId(providerId);
-    final key = '$_kOpenAiCompatibleBaseUrlPrefix$normalizedProviderId';
-    if (baseUrl == null || baseUrl.trim().isEmpty) {
-      await _remove(key);
-    } else {
-      await _setString(key, baseUrl.trim());
-    }
-    notifyListeners();
-  }
-
-  Future<String?> readOpenAiCompatibleApiKey(String providerId) async {
-    final normalizedProviderId = providerId.trim();
-    final account = tryOpenAiCompatibleApiKeyAccount(normalizedProviderId);
-    if (account == null) return null;
-    final value = await _credentialStore.readApiKey(account);
-    _hasOpenAiCompatibleApiKeys[normalizedProviderId] =
-        value != null && value.trim().isNotEmpty;
-    return value;
-  }
-
-  bool hasOpenAiCompatibleApiKey(String providerId) {
-    final normalizedProviderId = providerId.trim();
-    if (tryOpenAiCompatibleApiKeyAccount(normalizedProviderId) == null) {
-      return false;
-    }
-    return _hasOpenAiCompatibleApiKeys[normalizedProviderId] ?? false;
-  }
-
-  Future<void> setOpenAiCompatibleApiKey(
-    String providerId,
-    String value,
-  ) async {
-    final account = openAiCompatibleApiKeyAccount(providerId);
-    final trimmed = value.trim();
-    if (trimmed.isEmpty) {
-      await clearOpenAiCompatibleApiKey(providerId);
-      return;
-    }
-    await _credentialStore.writeApiKey(account, trimmed);
-    _hasOpenAiCompatibleApiKeys[providerId.trim()] = true;
-    notifyListeners();
-  }
-
-  Future<void> clearOpenAiCompatibleApiKey(String providerId) async {
-    await _credentialStore.deleteApiKey(
-      openAiCompatibleApiKeyAccount(providerId),
-    );
-    _hasOpenAiCompatibleApiKeys.remove(providerId.trim());
     notifyListeners();
   }
 
@@ -1176,67 +905,13 @@ class SettingsService extends ChangeNotifier {
     notifyListeners();
   }
 
-  // ── Whisper Language ─────────────────────────────────────────────────────
-  String get whisperLanguage => _getString(_kWhisperLanguage) ?? 'en';
+  // ── Spoken language & vocabulary ──────────────────────────────────────────
+  /// ISO 639-1 code of the language being spoken, or `'auto'` to detect.
+  /// Shared by Whisper and the cloud transcription step.
+  String get spokenLanguage => _getString(_kSpokenLanguage) ?? 'auto';
 
-  Future<void> setWhisperLanguage(String value) async {
-    await _setString(_kWhisperLanguage, value);
-    notifyListeners();
-  }
-
-  // ── Gemini Transcription Settings ────────────────────────────────────────
-  TranscriptionMode get transcriptionMode =>
-      TranscriptionModeExtension.fromValue(_getString(_kTranscriptionMode));
-
-  Future<void> setTranscriptionMode(TranscriptionMode value) async {
-    await _setString(_kTranscriptionMode, value.value);
-    notifyListeners();
-  }
-
-  String get transcriptionLanguage =>
-      _getString(_kTranscriptionLanguage) ?? 'auto';
-
-  Future<void> setTranscriptionLanguage(String value) async {
-    await _setString(_kTranscriptionLanguage, value);
-    notifyListeners();
-  }
-
-  List<String> get transcriptionCustomVocabulary {
-    final raw = _getString(_kTranscriptionCustomVocabulary);
-    if (raw == null || raw.isEmpty) return const [];
-    return raw
-        .split(',')
-        .map((s) => s.trim())
-        .where((s) => s.isNotEmpty)
-        .toList();
-  }
-
-  Future<void> setTranscriptionCustomVocabulary(List<String> value) async {
-    final normalized = value
-        .map((s) => s.trim())
-        .where((s) => s.isNotEmpty)
-        .toList();
-    if (normalized.isEmpty) {
-      await _remove(_kTranscriptionCustomVocabulary);
-    } else {
-      await _setString(_kTranscriptionCustomVocabulary, normalized.join(', '));
-    }
-    notifyListeners();
-  }
-
-  bool get transcriptionDiarization =>
-      _getBool(_kTranscriptionDiarization, defaultValue: false);
-
-  Future<void> setTranscriptionDiarization(bool value) async {
-    await _setBool(_kTranscriptionDiarization, value);
-    notifyListeners();
-  }
-
-  bool get transcriptionWordTimestamps =>
-      _getBool(_kTranscriptionWordTimestamps, defaultValue: false);
-
-  Future<void> setTranscriptionWordTimestamps(bool value) async {
-    await _setBool(_kTranscriptionWordTimestamps, value);
+  Future<void> setSpokenLanguage(String value) async {
+    await _setString(_kSpokenLanguage, value);
     notifyListeners();
   }
 

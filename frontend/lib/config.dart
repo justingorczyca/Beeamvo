@@ -237,8 +237,7 @@ class AppConfig {
     return availableModels.any((model) => model.id == id);
   }
 
-  /// Models suitable for primary cloud selection and the Pass 2 refinement
-  /// pass. Dedicated transcription-only models are excluded.
+  /// Models that can follow prompts: the only choices for the primary model.
   static List<GeminiModelConfig> get mainModels =>
       availableModels.where((m) => !m.isTranscriptionOnly).toList();
 
@@ -246,24 +245,8 @@ class AppConfig {
   static List<GeminiModelConfig> get transcriptionModels =>
       availableModels.where((m) => m.isTranscriptionOnly).toList();
 
-  /// Returns the model id that should be persisted on disk for [savedId]:
-  /// - `null` (never set) or an id no longer in [availableModels] → [defaultModelId]
-  /// - any currently-offered model id → [savedId]
-  ///
-  /// Pure + testable; used by [SettingsService]'s model migration so the
-  /// `selected_model_id` key is always explicitly and validly populated.
-  /// The primary model can be a transcription-only model for raw
-  /// single-pass transcription.
-  static String resolveModelId(String? savedId) {
-    if (savedId != null &&
-        availableModels.any((model) => model.id == savedId)) {
-      return savedId;
-    }
-    return defaultModelId;
-  }
-
-  /// Returns a model id suitable for refinement or prompt-following paths.
-  /// Transcription-only models are excluded and fall back to [defaultModelId].
+  /// Returns a model id that can follow prompts. Transcription-only or
+  /// retired ids fall back to [defaultModelId].
   static String resolveRefinementModelId(String? savedId) {
     if (savedId != null && mainModels.any((model) => model.id == savedId)) {
       return savedId;
@@ -299,6 +282,9 @@ class AppConfig {
   }
 
   static const String defaultModelId = 'gemini-3.5-flash-lite';
+
+  /// Cloud model used for the raw transcription step of two-step refinement.
+  static const String defaultTranscriptionModelId = 'gemini-3.5-transcribe';
   static const String defaultHotkey = 'ctrl+shift+v';
   static const String appName = 'Beeamvo';
   static const String audioFormat = 'wav';

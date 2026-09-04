@@ -16,7 +16,6 @@ class SettingsWindow extends StatefulWidget {
   final SettingsProvider provider;
   final UsageStatsService usageStatsService;
   final VoidCallback onClose;
-  final ValueChanged<String>? onModelChanged;
   final ValueChanged<String>? onPromptChanged;
   final ValueChanged<dynamic>? onHotkeyChanged;
   final ValueChanged<HotkeyConfig>? onModeSelectionHotkeyChanged;
@@ -24,7 +23,6 @@ class SettingsWindow extends StatefulWidget {
   final ValueChanged<String?>? onAudioDeviceChanged;
   final Future<void> Function()? onResetAllHotkeys;
   final ValueChanged<HotkeyConfig>? onClipboardHotkeyChanged;
-  final ValueChanged<dynamic>? onBackendChanged;
   final Future<void> Function(CloudProvider provider)? onVerifyCloudProvider;
   final VoidCallback? onModelDownloaded;
   final VoidCallback? onRunOnboarding;
@@ -34,7 +32,6 @@ class SettingsWindow extends StatefulWidget {
     required this.provider,
     required this.usageStatsService,
     required this.onClose,
-    this.onModelChanged,
     this.onPromptChanged,
     this.onHotkeyChanged,
     this.onModeSelectionHotkeyChanged,
@@ -42,7 +39,6 @@ class SettingsWindow extends StatefulWidget {
     this.onAudioDeviceChanged,
     this.onResetAllHotkeys,
     this.onClipboardHotkeyChanged,
-    this.onBackendChanged,
     this.onVerifyCloudProvider,
     this.onModelDownloaded,
     this.onRunOnboarding,
@@ -90,7 +86,6 @@ class _SettingsWindowState extends State<SettingsWindow> {
                             Expanded(
                               child: SettingsPageContainer(
                                 usageStatsService: widget.usageStatsService,
-                                onModelChanged: widget.onModelChanged,
                                 onPromptChanged: widget.onPromptChanged,
                                 onHotkeyChanged: widget.onHotkeyChanged,
                                 onModeSelectionHotkeyChanged:
@@ -102,7 +97,6 @@ class _SettingsWindowState extends State<SettingsWindow> {
                                 onResetAllHotkeys: widget.onResetAllHotkeys,
                                 onClipboardHotkeyChanged:
                                     widget.onClipboardHotkeyChanged,
-                                onBackendChanged: widget.onBackendChanged,
                                 onVerifyCloudProvider:
                                     widget.onVerifyCloudProvider,
                                 onModelDownloaded: widget.onModelDownloaded,

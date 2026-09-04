@@ -98,33 +98,6 @@ void main() {
       expect(defaultModel.vertexLocation, equals('global'));
     });
 
-    group('resolveModelId', () {
-      test('falls back to the default when no id was ever saved', () {
-        expect(
-          AppConfig.resolveModelId(null),
-          equals(AppConfig.defaultModelId),
-        );
-      });
-
-      test('returns the default for an id that is no longer offered', () {
-        expect(
-          AppConfig.resolveModelId('retired-stable-diffusion-pro'),
-          equals(AppConfig.defaultModelId),
-        );
-      });
-
-      test('keeps a valid, currently-offered model id untouched', () {
-        final kept = AppConfig.resolveModelId('gemini-3.6-flash');
-        expect(kept, equals('gemini-3.6-flash'));
-        expect(kept, isNot(equals(AppConfig.defaultModelId)));
-      });
-
-      test('keeps a transcription-only model id for raw transcription', () {
-        final kept = AppConfig.resolveModelId('gemini-3.5-transcribe');
-        expect(kept, equals('gemini-3.5-transcribe'));
-      });
-    });
-
     group('resolveRefinementModelId', () {
       test('falls back to the default when no id was ever saved', () {
         expect(

@@ -23,10 +23,10 @@ sequence (security/privacy, supply-chain, correctness, build/CI/packaging).
 - Fully offline transcription via whisper.cpp (Tiny, Tiny English, Tiny Q5, Base, Small models)
 - Cloud transcription via Gemini API key or Vertex AI (Gemini 2.5 Flash, 2.5 Flash Lite, 3 Flash, 3.5 Flash, 3.1 Flash Lite)
 - Thinking levels (Minimal / Low / Medium / High) for Gemini 3+ models
-- Two-pass refinement: local Whisper transcription followed by an AI polish pass
-- Built-in and unlimited custom system prompts, plus a Rephraser (Off / Medium / High)
+- Two-step refinement: a raw transcript step followed by an AI polish step
+- Built-in writing styles (including Professional) and unlimited custom styles
 - Clipboard history with full-text search, pinning, and a popup hotkey (`Ctrl+Shift+H`)
-- System tray menu for switching prompts, rephraser levels, and models
+- System tray menu for switching writing styles
 - Onboarding wizard, settings UI, and usage statistics dashboard
 - API keys stored in OS secure storage (macOS Keychain, platform secure storage on Windows)
 - Windows and macOS support; experimental Linux runner (built in CI)

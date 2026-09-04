@@ -12,26 +12,22 @@ class FakeAiModelsSettingsService extends SettingsService {
   FakeAiModelsSettingsService({
     this.backend = TranscriptionBackend.cloud,
     this.provider = CloudProvider.geminiApiKey,
-    this.surface = GeminiApiSurface.generateContent,
     this.geminiKeyPresent = false,
     this.vertexProjectIdValue,
     this.selectedModel = 'legacy-model',
     this.twoPassEnabled = true,
     this.twoPassModel = 'legacy-pass-1',
-    this.twoPassRefinementModel = 'legacy-pass-2',
-    this.whisperLanguageValue = 'legacy-language',
+    this.spokenLanguageValue = 'legacy-language',
   }) : super(credentialStore: InMemorySecureCredentialStore());
 
   final TranscriptionBackend backend;
   CloudProvider provider;
-  GeminiApiSurface surface;
   bool geminiKeyPresent;
   String? vertexProjectIdValue;
   final String selectedModel;
   final bool twoPassEnabled;
   final String twoPassModel;
-  final String twoPassRefinementModel;
-  final String whisperLanguageValue;
+  final String spokenLanguageValue;
   String whisperModelValue = 'ggml-tiny.bin';
 
   @override
@@ -43,14 +39,6 @@ class FakeAiModelsSettingsService extends SettingsService {
   @override
   Future<void> setCloudProvider(CloudProvider provider) async {
     this.provider = provider;
-  }
-
-  @override
-  GeminiApiSurface get geminiApiSurface => surface;
-
-  @override
-  Future<void> setGeminiApiSurface(GeminiApiSurface surface) async {
-    this.surface = surface;
   }
 
   @override
@@ -76,10 +64,7 @@ class FakeAiModelsSettingsService extends SettingsService {
   String get twoPassTranscriptionModelId => twoPassModel;
 
   @override
-  String get twoPassRefinementModelId => twoPassRefinementModel;
-
-  @override
-  String get whisperLanguage => whisperLanguageValue;
+  String get spokenLanguage => spokenLanguageValue;
 
   @override
   String get whisperModelId => whisperModelValue;
@@ -146,8 +131,21 @@ void main() {
     await _pumpAiModelsPage(tester, FakeAiModelsSettingsService());
 
     expect(tester.takeException(), isNull);
-    expect(find.text('Primary Cloud Model'), findsOneWidget);
-    expect(find.text(AppConfig.availableModels.first.name), findsWidgets);
+    expect(find.text('Model'), findsOneWidget);
+    expect(
+      find.text(AppConfig.getModelById(AppConfig.defaultModelId).displayName),
+      findsWidgets,
+    );
+    expect(find.text('Step 1 · Transcribe'), findsOneWidget);
+    expect(find.text('Step 2 · Polish'), findsOneWidget);
+    expect(
+      find.text(
+        AppConfig.getModelById(
+          AppConfig.defaultTranscriptionModelId,
+        ).displayName,
+      ),
+      findsOneWidget,
+    );
   });
 
   testWidgets('renders whisper controls when stored language is stale', (
@@ -164,6 +162,8 @@ void main() {
     expect(tester.takeException(), isNull);
     expect(find.text('Spoken Language'), findsOneWidget);
     expect(find.text('Auto-Detect'), findsOneWidget);
+    expect(find.text('Model'), findsNothing);
+    expect(find.text('Step 1 · Transcribe'), findsNothing);
   });
 
   testWidgets('api key save is updated, not verified', (
@@ -204,20 +204,19 @@ void main() {
     expect(find.text('Verified'), findsNothing);
   });
 
-  testWidgets('Gemini API surface can be switched from the cloud controls', (
+  testWidgets('offline two-step shows the cloud model inline', (
     WidgetTester tester,
   ) async {
-    final settings = FakeAiModelsSettingsService();
-    await _pumpAiModelsPage(tester, settings);
-
-    expect(find.text('API Surface'), findsOneWidget);
-    await tester.tap(find.text('Interactions'));
-    await tester.pumpAndSettle();
-
-    expect(settings.surface, equals(GeminiApiSurface.interactions));
-    expect(
-      find.textContaining('current recommended Interactions API.'),
-      findsOneWidget,
+    await _pumpAiModelsPage(
+      tester,
+      FakeAiModelsSettingsService(backend: TranscriptionBackend.whisper),
     );
+
+    expect(tester.takeException(), isNull);
+    expect(find.text('Step 1 · Transcribe'), findsOneWidget);
+    expect(find.text('Step 2 · Polish'), findsOneWidget);
+    expect(find.text('Offline'), findsWidgets);
+    expect(find.text('Model'), findsOneWidget);
+    expect(find.text('Provider'), findsOneWidget);
   });
 }

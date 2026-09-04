@@ -7,8 +7,8 @@ import '../settings/settings_shared.dart';
 import 'onboarding_shared.dart';
 import 'onboarding_steps.dart';
 
-/// Total number of onboarding steps (0-indexed: 0..8 = 9 steps).
-const int _kTotalSteps = 9;
+/// Total number of onboarding steps (0-indexed: 0..6 = 7 steps).
+const int _kTotalSteps = 7;
 
 /// The onboarding wizard widget.
 ///
@@ -268,29 +268,13 @@ class _OnboardingWizardState extends State<OnboardingWizard>
 
       case 4:
         return Center(
-          child: TranscriptionModeStep(
-            onNext: _nextStep,
-            settingsService: widget.settingsService,
-          ),
-        );
-
-      case 5:
-        return Center(
-          child: TwoPassRephraseStep(
-            onNext: _nextStep,
-            settingsService: widget.settingsService,
-          ),
-        );
-
-      case 6:
-        return Center(
           child: RecordingModeStep(
             onNext: _nextStep,
             settingsService: widget.settingsService,
           ),
         );
 
-      case 7:
+      case 5:
         return Center(
           child: HotkeyStep(
             onNext: _nextStep,
@@ -299,7 +283,7 @@ class _OnboardingWizardState extends State<OnboardingWizard>
           ),
         );
 
-      case 8:
+      case 6:
         return Center(
           child: ReadyStep(
             onFinish: _finish,

@@ -223,7 +223,7 @@ class WhisperModelDownloadService extends ChangeNotifier {
       final response = await _httpClient!.send(request).timeout(requestTimeout);
 
       if (_isCancelled) {
-        return _finishCancellation();
+        return await _finishCancellation();
       }
 
       if (response.statusCode != 200) {
@@ -258,7 +258,7 @@ class WhisperModelDownloadService extends ChangeNotifier {
       try {
         while (await streamIterator.moveNext()) {
           if (_isCancelled) {
-            return _finishCancellation();
+            return await _finishCancellation();
           }
 
           final chunk = streamIterator.current;
@@ -284,7 +284,7 @@ class WhisperModelDownloadService extends ChangeNotifier {
       }
 
       if (_isCancelled) {
-        return _finishCancellation();
+        return await _finishCancellation();
       }
 
       await _fileSink!.flush();
@@ -292,7 +292,7 @@ class WhisperModelDownloadService extends ChangeNotifier {
       _fileSink = null;
 
       if (_isCancelled) {
-        return _finishCancellation();
+        return await _finishCancellation();
       }
 
       if (!await _verifyIntegrity(downloadModel)) {
@@ -306,7 +306,7 @@ class WhisperModelDownloadService extends ChangeNotifier {
       }
 
       if (_isCancelled) {
-        return _finishCancellation();
+        return await _finishCancellation();
       }
 
       // Move temp file to final destination
@@ -335,7 +335,7 @@ class WhisperModelDownloadService extends ChangeNotifier {
       return true;
     } catch (e) {
       if (_isCancelled) {
-        return _finishCancellation();
+        return await _finishCancellation();
       }
       _debugLog('[WhisperDownload] Download error: ${e.runtimeType}');
       _errorMessage = e.toString();

@@ -5,7 +5,6 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:beeamvo/config.dart';
 import 'package:beeamvo/mobile/mobile_transcription_controller.dart';
 import 'package:beeamvo/models/clipboard_history_entry.dart';
-import 'package:beeamvo/models/prompt_settings.dart';
 import 'package:beeamvo/models/system_prompt.dart';
 import 'package:beeamvo/services/cloud_transcription_client.dart';
 import 'package:beeamvo/services/cloud_transcription_service.dart';
@@ -29,7 +28,6 @@ class FakeSettings extends SettingsService {
   bool historyEnabled;
   String modelId;
   String promptId = 'standard';
-  PromptSettings? overrides;
   final entries = <ClipboardHistoryEntry>[];
 
   @override
@@ -39,15 +37,11 @@ class FakeSettings extends SettingsService {
   @override
   List<SystemPrompt> get customPrompts => const [];
   @override
-  PromptSettings? getPromptOverrides(String _) => overrides;
-  @override
   CloudProvider get cloudProvider => CloudProvider.geminiApiKey;
   @override
   String get selectedModelId => modelId;
   @override
   GeminiThinkingLevel? getThinkingLevelForModel(String _) => null;
-  @override
-  RephraseLevel get rephraseLevel => RephraseLevel.off;
   @override
   bool get twoPassTranscriptionEnabled => twoPass;
   @override
@@ -128,28 +122,15 @@ class FakeRecorder implements MobileAudioRecorder {
 }
 
 class FakeCloud extends CloudTranscriptionService {
-  FakeCloud() : super(geminiApiService: _FakeClient());
+  FakeCloud() : super(geminiInteractionsService: _FakeClient());
 
   bool fail = false;
   int transcribeCalls = 0;
   int improveCalls = 0;
-  bool overrideActive = false;
-  int clearOverrideCalls = 0;
   Completer<String>? pendingResult;
 
   @override
   void attachSettings(SettingsService settings) {}
-
-  @override
-  void setProviderOverride(CloudProvider provider) {
-    overrideActive = true;
-  }
-
-  @override
-  void clearProviderOverride() {
-    overrideActive = false;
-    clearOverrideCalls++;
-  }
 
   @override
   Future<String> transcribeAndImprove(
@@ -269,48 +250,22 @@ void main() {
     controller.dispose();
   });
 
-  test(
-    'single-pass with a transcription-only model uses raw transcription',
-    () async {
-      final cloud = FakeCloud();
-      final settings = FakeSettings(modelId: 'gemini-3.5-transcribe');
-      final controller = MobileTranscriptionController(
-        settingsService: settings,
-        cloudService: cloud,
-        usageStatsService: FakeUsageStats(),
-        recorder: FakeRecorder(),
-      );
-      await controller.toggleRecording();
-      await controller.toggleRecording();
-      expect(controller.resultText, 'raw result');
-      expect(cloud.transcribeCalls, 1);
-      expect(cloud.improveCalls, 0);
-      controller.dispose();
-    },
-  );
-
-  test(
-    'two-pass falls back to a prompt-capable model for refinement',
-    () async {
-      final cloud = FakeCloud();
-      final settings = FakeSettings(
-        twoPass: true,
-        modelId: 'gemini-3.5-transcribe',
-      );
-      final controller = MobileTranscriptionController(
-        settingsService: settings,
-        cloudService: cloud,
-        usageStatsService: FakeUsageStats(),
-        recorder: FakeRecorder(),
-      );
-      await controller.toggleRecording();
-      await controller.toggleRecording();
-      expect(controller.resultText, 'two pass result');
-      expect(cloud.transcribeCalls, 1);
-      expect(cloud.improveCalls, 1);
-      controller.dispose();
-    },
-  );
+  test('two-pass transcribes raw first and then applies the style', () async {
+    final cloud = FakeCloud();
+    final settings = FakeSettings(twoPass: true);
+    final controller = MobileTranscriptionController(
+      settingsService: settings,
+      cloudService: cloud,
+      usageStatsService: FakeUsageStats(),
+      recorder: FakeRecorder(),
+    );
+    await controller.toggleRecording();
+    await controller.toggleRecording();
+    expect(controller.resultText, 'two pass result');
+    expect(cloud.transcribeCalls, 1);
+    expect(cloud.improveCalls, 1);
+    controller.dispose();
+  });
 
   test('missing credentials and permission denial are actionable', () async {
     final missing = makeController(credentials: false);
@@ -338,44 +293,12 @@ void main() {
     expect(controller.state, MobileTranscriptionState.error);
     expect(recorder.deleted, isFalse);
     expect(controller.canRetry, isTrue);
-    expect(cloud.clearOverrideCalls, 1);
     cloud.fail = false;
     await controller.retry();
     expect(controller.resultText, 'single result');
     expect(recorder.deleted, isTrue);
     expect(controller.canRetry, isFalse);
     controller.dispose();
-  });
-
-  test('provider override is cleared when processing is invalidated', () async {
-    final cloud = FakeCloud()..pendingResult = Completer<String>();
-    final controller = makeController(cloud: cloud);
-    await controller.toggleRecording();
-    final processing = controller.toggleRecording();
-    while (!cloud.overrideActive) {
-      await Future<void>.delayed(Duration.zero);
-    }
-    await controller.cancel();
-    cloud.pendingResult!.complete('late result');
-    await processing;
-    expect(cloud.overrideActive, isFalse);
-    expect(cloud.clearOverrideCalls, 1);
-    controller.dispose();
-  });
-
-  test('provider override is cleared when controller is disposed', () async {
-    final cloud = FakeCloud()..pendingResult = Completer<String>();
-    final controller = makeController(cloud: cloud);
-    await controller.toggleRecording();
-    final processing = controller.toggleRecording();
-    while (!cloud.overrideActive) {
-      await Future<void>.delayed(Duration.zero);
-    }
-    controller.dispose();
-    cloud.pendingResult!.complete('late result');
-    await processing;
-    expect(cloud.overrideActive, isFalse);
-    expect(cloud.clearOverrideCalls, 1);
   });
 
   test(

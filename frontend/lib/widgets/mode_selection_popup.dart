@@ -198,16 +198,10 @@ class _PromptTileState extends State<_PromptTile>
   @override
   Widget build(BuildContext context) {
     super.build(context); // Required for AutomaticKeepAliveClientMixin
-    final overrides = widget.settingsService.getPromptOverrides(
-      widget.prompt.id,
-    );
-    final hasOverrides = overrides != null && overrides.hasAnyOverride;
-    // On the local-only backend a non-default prompt has no effect until a
-    // cloud model is in the pipeline. It stays tappable (selecting it opens
-    // the switch-to-cloud prompt) but reads as grayed-out/inactive.
-    final isBlocked = widget.settingsService.isPromptInactiveOnLocalBackend(
-      widget.prompt.id,
-    );
+    // Prompts other than Default only shape the output when a cloud model is
+    // in the pipeline; on pure offline Whisper they read as inactive.
+    final isBlocked =
+        !widget.isDefault && !widget.settingsService.promptIsApplied;
 
     return GestureDetector(
       onTap: widget.onTap,
@@ -292,38 +286,6 @@ class _PromptTileState extends State<_PromptTile>
                     ),
                   ),
                 ),
-              if (hasOverrides) ...[
-                if (widget.isDefault) const SizedBox(width: 4),
-                Container(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 5,
-                    vertical: 2,
-                  ),
-                  decoration: BoxDecoration(
-                    color: beeSuccess(context).withValues(alpha: 0.12),
-                    borderRadius: BorderRadius.circular(kBeeRadiusXs),
-                  ),
-                  child: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Icon(
-                        Icons.tune_rounded,
-                        size: 10,
-                        color: beeSuccess(context),
-                      ),
-                      const SizedBox(width: 2),
-                      Text(
-                        '${overrides.overrideCount}',
-                        style: GoogleFonts.inter(
-                          fontSize: 8,
-                          fontWeight: FontWeight.w700,
-                          color: beeSuccess(context),
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              ],
             ],
           ),
         ),

@@ -13,7 +13,6 @@ import 'pages/troubleshooting_page.dart';
 /// Container that displays the appropriate settings page based on selected category
 class SettingsPageContainer extends StatelessWidget {
   final UsageStatsService usageStatsService;
-  final ValueChanged<String>? onModelChanged;
   final ValueChanged<String>? onPromptChanged;
   final ValueChanged<dynamic>? onHotkeyChanged;
   final ValueChanged<HotkeyConfig>? onModeSelectionHotkeyChanged;
@@ -21,7 +20,6 @@ class SettingsPageContainer extends StatelessWidget {
   final ValueChanged<String?>? onAudioDeviceChanged;
   final Future<void> Function()? onResetAllHotkeys;
   final ValueChanged<HotkeyConfig>? onClipboardHotkeyChanged;
-  final ValueChanged<dynamic>? onBackendChanged;
   final Future<void> Function(CloudProvider provider)? onVerifyCloudProvider;
   final VoidCallback? onModelDownloaded;
   final VoidCallback? onRunOnboarding;
@@ -29,7 +27,6 @@ class SettingsPageContainer extends StatelessWidget {
   const SettingsPageContainer({
     super.key,
     required this.usageStatsService,
-    this.onModelChanged,
     this.onPromptChanged,
     this.onHotkeyChanged,
     this.onModeSelectionHotkeyChanged,
@@ -37,7 +34,6 @@ class SettingsPageContainer extends StatelessWidget {
     this.onAudioDeviceChanged,
     this.onResetAllHotkeys,
     this.onClipboardHotkeyChanged,
-    this.onBackendChanged,
     this.onVerifyCloudProvider,
     this.onModelDownloaded,
     this.onRunOnboarding,
@@ -94,8 +90,6 @@ class SettingsPageContainer extends StatelessWidget {
       case SettingsCategory.aiModels:
         return AiModelsPage(
           key: const ValueKey('ai_models'),
-          onModelChanged: onModelChanged,
-          onBackendChanged: onBackendChanged,
           onVerifyCloudProvider: onVerifyCloudProvider,
           onModelDownloaded: onModelDownloaded,
         );

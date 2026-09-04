@@ -3,9 +3,6 @@ import 'dart:async';
 import 'package:flutter/services.dart';
 import 'package:flutter/foundation.dart';
 
-import '../config.dart';
-import '../models/prompt_settings.dart';
-import '../models/system_prompt.dart';
 import '../services/cloud_transcription_client.dart';
 import '../services/cloud_transcription_service.dart';
 import '../services/recording_service.dart';
@@ -216,42 +213,10 @@ class MobileTranscriptionController extends ChangeNotifier {
           'No audio was captured. Please try recording again.',
         );
       }
-      final prompt = SystemPrompt.getById(
-        settingsService.selectedPromptId,
-        customPrompts: settingsService.customPrompts,
-      );
-      final overrides = settingsService.getPromptOverrides(prompt.id);
-      final provider = CloudProviderExtension.fromValue(
-        overrides?.cloudProvider ?? settingsService.cloudProvider.name,
-      );
-      final modelId = overrides?.modelId ?? settingsService.selectedModelId;
-      final thinkingLevel =
-          overrides?.thinkingLevel ??
-          settingsService.getThinkingLevelForModel(modelId);
-      final rephrase =
-          overrides?.rephraseLevel ?? settingsService.rephraseLevel;
-      final instruction = [
-        prompt.instruction,
-        if (rephrase.promptFragment != null) rephrase.promptFragment!,
-      ].join('\n');
-      final twoPass =
-          overrides?.twoPassTranscriptionEnabled ??
-          settingsService.twoPassTranscriptionEnabled;
-      late final String text;
-      try {
-        cloudService.setProviderOverride(provider);
-        text = twoPass
-            ? await _twoPass(
-                audio,
-                instruction,
-                modelId,
-                thinkingLevel,
-                overrides,
-              )
-            : await _singlePass(audio, instruction, modelId, thinkingLevel);
-      } finally {
-        cloudService.clearProviderOverride();
-      }
+      final prompt = settingsService.selectedPrompt;
+      final text = settingsService.twoPassTranscriptionEnabled
+          ? await _twoPass(audio, prompt.instruction)
+          : await _singlePass(audio, prompt.instruction);
       if (_disposed || operation != _operation) return;
       await Clipboard.setData(ClipboardData(text: text));
       await settingsService.addClipboardEntry(text);
@@ -274,51 +239,23 @@ class MobileTranscriptionController extends ChangeNotifier {
     }
   }
 
-  Future<String> _singlePass(
-    Uint8List audio,
-    String instruction,
-    String modelId,
-    GeminiThinkingLevel? thinkingLevel,
-  ) async {
-    final effectiveModel = AppConfig.getModelById(modelId);
-    if (effectiveModel.isTranscriptionOnly) {
-      return cloudService.transcribeAudio(
-        audio,
-        'audio/wav',
-        modelOverrideId: modelId,
-      );
-    }
+  Future<String> _singlePass(Uint8List audio, String instruction) {
     return cloudService.transcribeAndImprove(
       audio,
       'audio/wav',
       missionInstruction: instruction,
-      modelOverrideId: modelId,
-      thinkingLevelOverride: thinkingLevel,
     );
   }
 
-  Future<String> _twoPass(
-    Uint8List audio,
-    String instruction,
-    String modelId,
-    GeminiThinkingLevel? thinkingLevel,
-    PromptSettings? overrides,
-  ) async {
+  Future<String> _twoPass(Uint8List audio, String instruction) async {
     final raw = await cloudService.transcribeAudio(
       audio,
       'audio/wav',
-      modelOverrideId: overrides?.twoPassTranscriptionModelId ?? modelId,
-    );
-    final refinementModelId = AppConfig.resolveRefinementModelId(
-      overrides?.twoPassRefinementModelId ??
-          settingsService.twoPassRefinementModelId,
+      modelOverrideId: settingsService.twoPassTranscriptionModelId,
     );
     return cloudService.improveTranscription(
       raw,
       missionInstruction: instruction,
-      modelOverrideId: refinementModelId,
-      thinkingLevelOverride:
-          overrides?.twoPassRefinementThinkingLevel ?? thinkingLevel,
     );
   }
 

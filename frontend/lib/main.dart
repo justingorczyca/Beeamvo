@@ -23,15 +23,12 @@ import 'services/update_check_service.dart';
 import 'services/usage_stats_service.dart';
 import 'services/whisper_service.dart';
 import 'models/system_prompt.dart';
-import 'models/prompt_settings.dart';
-import 'models/transcription_backend_resolver.dart';
 import 'models/hotkey_config.dart';
 import 'widgets/frosted_orb.dart';
 import 'widgets/onboarding/onboarding_wizard.dart';
 import 'widgets/onboarding/permission_onboarding_dialog.dart';
 import 'widgets/settings/settings_window.dart';
 import 'widgets/mode_selection_popup.dart';
-import 'widgets/mode_cloud_confirm_popup.dart';
 import 'providers/settings_provider.dart';
 import 'theme/app_theme.dart';
 import 'mobile/mobile_app.dart';
@@ -167,7 +164,6 @@ enum RecordingState {
   settings,
   onboarding,
   modeSelection,
-  modeCloudConfirm,
 }
 
 class _BeeamvoHomeState extends State<BeeamvoHome>
@@ -196,12 +192,6 @@ class _BeeamvoHomeState extends State<BeeamvoHome>
   String?
   _temporaryPromptId; // non-null overrides saved prompt for mode-selection session
   int? _modeSelectionIndex; // keyboard highlight index in mode popup
-  // Inline cloud-switch confirm (Ctrl+M flow): the prompt awaiting a cloud
-  // model and the highlighted option (0 = local two-pass, 1 = cloud).
-  SystemPrompt? _modeCloudConfirmPrompt;
-  int _modeCloudConfirmIndex = 0;
-  bool _promptModelOverrideActive = false;
-  bool _promptProviderOverrideActive = false;
   final Stopwatch _recordingStopwatch = Stopwatch();
   Duration? _retryRecordingDuration;
   bool _returnToRetryAfterSettings = false;
@@ -247,11 +237,9 @@ class _BeeamvoHomeState extends State<BeeamvoHome>
     _settingsService = widget.settingsService;
     _settingsProvider = SettingsProvider(settingsService: _settingsService);
 
-    // Listen for transcription backend changes from ANY source (the
-    // AI Models page, the prompts-page rephraser popover, etc.) so
-    // Whisper is always initialized or torn down correctly. Without
-    // this, the popover's "Switch to cloud" button would flip the
-    // persisted setting but leave Whisper loaded in memory.
+    // Listen for transcription backend changes from ANY source (settings
+    // page, tray menu, etc.) so Whisper is always initialized or torn down
+    // correctly.
     _settingsService.addListener(_onSettingsChanged);
 
     _initialize();
@@ -261,7 +249,7 @@ class _BeeamvoHomeState extends State<BeeamvoHome>
   TranscriptionBackend? _lastSeenBackend;
 
   /// SettingsService change listener. Routes backend changes through
-  /// [_onBackendChanged] so Whisper is correctly initialized or
+  /// [_scheduleBackendTransition] so Whisper is correctly initialized or
   /// disposed regardless of WHERE the change originated.
   void _onSettingsChanged() {
     final current = _settingsService.transcriptionBackend;
@@ -289,7 +277,6 @@ class _BeeamvoHomeState extends State<BeeamvoHome>
     _clipboardMonitorTimer?.cancel();
     _clipboardMonitorTimer = null;
     await _unregisterModeSelectionHotkeys();
-    await _unregisterModeCloudConfirmHotkeys();
     await _hotkeyService.unregisterHotkey('cancel');
     await _hotkeyService.unregisterHotkey('commit');
     await _recordingService.dispose();
@@ -385,12 +372,6 @@ class _BeeamvoHomeState extends State<BeeamvoHome>
           onPromptChanged: () {
             debugPrint(
               'Prompt changed to: ${_settingsService.selectedPromptId}',
-            );
-          },
-          onModelChanged: () {
-            _cloudService.setModelById(_settingsService.selectedModelId);
-            debugPrint(
-              'Model changed via tray to: ${_cloudService.currentModel.name}',
             );
           },
         );
@@ -723,12 +704,6 @@ class _BeeamvoHomeState extends State<BeeamvoHome>
     return transition;
   }
 
-  /// Called by settings widgets; queues instead of racing native operations.
-  Future<void> _onBackendChanged(TranscriptionBackend backend) {
-    _lastSeenBackend = backend;
-    return _scheduleBackendTransition(backend);
-  }
-
   Future<void> _verifyCloudProvider(CloudProvider provider) async {
     await _cloudService.verifyProvider(provider);
   }
@@ -770,38 +745,9 @@ class _BeeamvoHomeState extends State<BeeamvoHome>
     return modelId.endsWith('.en.bin');
   }
 
-  /// Resolve the transcription backend for [promptId], honoring a per-prompt
-  /// override on top of the global default.
-  ///
-  /// Centralized so recording-start and recording-stop agree on the backend.
-  /// A session pins the result at start time (see [_activeRecordingBackend]);
-  /// callers must use that captured value rather than re-resolving at stop.
-  TranscriptionBackend _resolveBackendForPrompt(String? promptId) {
-    final effectivePromptId = promptId ?? _settingsService.selectedPromptId;
-    final overrides =
-        _settingsService.getPromptOverrides(effectivePromptId) ??
-        const PromptSettings();
-    return resolveSessionBackend(
-      globalDefault: _settingsService.transcriptionBackend,
-      promptBackendOverride: overrides.transcriptionBackend,
-    );
-  }
-
-  /// Resolve the transcription backend that applies to a fresh (non-retry)
-  /// session, honoring the active prompt's per-prompt override.
-  ///
-  /// This is captured into [_activeRecordingBackend] at recording start so the
-  /// stop path uses the session decision rather than mutable settings.
-  TranscriptionBackend _effectiveBackendForSession() {
-    final promptId = _temporaryPromptId ?? _settingsService.selectedPromptId;
-    return _resolveBackendForPrompt(promptId);
-  }
-
   Future<void> _dismissModeInteractions() async {
     await _unregisterModeSelectionHotkeys();
-    await _unregisterModeCloudConfirmHotkeys();
     _modeSelectionIndex = null;
-    _modeCloudConfirmPrompt = null;
   }
 
   void _showSettings() async {
@@ -1005,18 +951,6 @@ class _BeeamvoHomeState extends State<BeeamvoHome>
 
     final prompt = allPrompts[index];
 
-    // Non-default prompts only take effect with a cloud model in the
-    // pipeline. On pure Whisper (no two-pass, no per-prompt Cloud override)
-    // let the user choose how to enable it before recording: keep local
-    // transcription + cloud refinement, or switch fully to cloud. This is
-    // rendered INLINE inside the existing 320x360 popup (no resize, no modal)
-    // so it reads as a natural drill-in of the mode list.
-    if (_settingsService.isPromptInactiveOnLocalBackend(prompt.id)) {
-      if (!mounted) return;
-      _enterModeCloudConfirm(prompt);
-      return;
-    }
-
     _temporaryPromptId = prompt.id;
     _modeSelectionIndex = null;
 
@@ -1024,187 +958,6 @@ class _BeeamvoHomeState extends State<BeeamvoHome>
     await windowManager.setSize(const Size(150, 150));
 
     _startRecording();
-  }
-
-  // ── Inline cloud-switch confirm (Ctrl+M flow) ───────────────────────────
-  //
-  // Renders [ModeCloudConfirmPopup] inside the focused 320x360 popup. Its
-  // Escape/arrow/Enter bindings are app-scoped, so no keys are captured while
-  // the user is working in another application.
-
-  /// Drill into the inline cloud-switch confirm for [prompt]. The
-  /// mode-selection navigation hotkeys are already unregistered by the caller,
-  /// so there is no collision on the arrow/Enter/Esc keys.
-  void _enterModeCloudConfirm(SystemPrompt prompt) async {
-    _modeCloudConfirmPrompt = prompt;
-    _modeCloudConfirmIndex = 0;
-    // With no provider configured there is nothing to switch to yet — Enter
-    // routes to Transcription settings instead of confirming an option.
-    final needsCloudSetup = !_settingsService.hasCloudCredentials;
-
-    setState(() => _state = RecordingState.modeCloudConfirm);
-
-    await _hotkeyService.registerHotkey(
-      id: 'mode_cloud_cancel',
-      key: LogicalKeyboardKey.escape,
-      scope: HotKeyScope.inapp,
-      onPressed: _cancelModeCloudConfirm,
-    );
-    if (needsCloudSetup) {
-      await _hotkeyService.registerHotkey(
-        id: 'mode_cloud_enter',
-        key: LogicalKeyboardKey.enter,
-        scope: HotKeyScope.inapp,
-        onPressed: _openSettingsFromCloudConfirm,
-      );
-      return;
-    }
-    await _hotkeyService.registerHotkey(
-      id: 'mode_cloud_up',
-      key: LogicalKeyboardKey.arrowUp,
-      scope: HotKeyScope.inapp,
-      onPressed: () {
-        setState(() {
-          _modeCloudConfirmIndex = _modeCloudConfirmIndex > 0
-              ? _modeCloudConfirmIndex - 1
-              : 0;
-        });
-      },
-    );
-    await _hotkeyService.registerHotkey(
-      id: 'mode_cloud_down',
-      key: LogicalKeyboardKey.arrowDown,
-      scope: HotKeyScope.inapp,
-      onPressed: () {
-        setState(() {
-          // Two options: 0 = local two-pass, 1 = cloud.
-          _modeCloudConfirmIndex = (_modeCloudConfirmIndex + 1).clamp(0, 1);
-        });
-      },
-    );
-    await _hotkeyService.registerHotkey(
-      id: 'mode_cloud_enter',
-      key: LogicalKeyboardKey.enter,
-      scope: HotKeyScope.inapp,
-      onPressed: () => _confirmModeCloudConfirm(_modeCloudConfirmIndex),
-    );
-  }
-
-  Future<void> _unregisterModeCloudConfirmHotkeys() async {
-    await _hotkeyService.unregisterHotkey('mode_cloud_cancel');
-    await _hotkeyService.unregisterHotkey('mode_cloud_up');
-    await _hotkeyService.unregisterHotkey('mode_cloud_down');
-    await _hotkeyService.unregisterHotkey('mode_cloud_enter');
-  }
-
-  /// Apply the chosen transcription mode (0 = local two-pass, 1 = cloud) and
-  /// proceed to record with the pending prompt — mirroring what the settings
-  /// modal does before it returns.
-  void _confirmModeCloudConfirm(int optionIndex) async {
-    await _unregisterModeCloudConfirmHotkeys();
-    final prompt = _modeCloudConfirmPrompt;
-    if (prompt == null) {
-      _cancelModeSelection();
-      return;
-    }
-    try {
-      if (optionIndex == 0) {
-        await _settingsService.enableLocalTwoPassRefinement();
-      } else {
-        await _settingsService.switchToCloudTranscription();
-      }
-    } catch (_) {
-      // Leave the user on the mode list if the backend change failed.
-      _modeCloudConfirmPrompt = null;
-      _reopeningModeSelection();
-      return;
-    }
-
-    _modeCloudConfirmPrompt = null;
-    _temporaryPromptId = prompt.id;
-    _modeSelectionIndex = null;
-
-    await windowManager.setMinimumSize(const Size(150, 150));
-    await windowManager.setSize(const Size(150, 150));
-
-    _startRecording();
-  }
-
-  /// Esc / cancel from the inline confirm — return to the mode-selection list.
-  void _cancelModeCloudConfirm() async {
-    await _unregisterModeCloudConfirmHotkeys();
-    _modeCloudConfirmPrompt = null;
-    _reopeningModeSelection();
-  }
-
-  /// No cloud provider configured — send the user to Transcription settings.
-  void _openSettingsFromCloudConfirm() async {
-    await _unregisterModeCloudConfirmHotkeys();
-    _modeCloudConfirmPrompt = null;
-    _modeSelectionIndex = null;
-    _settingsProvider.selectCategory(SettingsCategory.aiModels);
-    _showSettings();
-  }
-
-  /// Re-open the mode selection popup after a cancelled inline cloud-confirm.
-  /// Re-registers keyboard hotkeys and restores the popup state. The window
-  /// already sits at the popup size (the inline confirm never resizes it).
-  void _reopeningModeSelection() async {
-    const popupWidth = 320.0;
-    const popupHeight = 360.0;
-    await windowManager.setMinimumSize(const Size(popupWidth, popupHeight));
-    await windowManager.setSize(const Size(popupWidth, popupHeight));
-    await WindowHelper.positionAtActiveMonitorBottomCenter(
-      popupWidth.toInt(),
-      popupHeight.toInt(),
-    );
-    setState(() {
-      _state = RecordingState.modeSelection;
-      _modeSelectionIndex = _modeSelectionIndex ?? 0;
-    });
-    await WindowHelper.show();
-
-    // Re-register focused-window keyboard navigation hotkeys.
-    await _hotkeyService.registerHotkey(
-      id: 'mode_cancel',
-      key: LogicalKeyboardKey.escape,
-      scope: HotKeyScope.inapp,
-      onPressed: _cancelModeSelection,
-    );
-    await _hotkeyService.registerHotkey(
-      id: 'mode_up',
-      key: LogicalKeyboardKey.arrowUp,
-      scope: HotKeyScope.inapp,
-      onPressed: () {
-        setState(() {
-          _modeSelectionIndex = (_modeSelectionIndex ?? 0) > 0
-              ? _modeSelectionIndex! - 1
-              : 0;
-        });
-      },
-    );
-    await _hotkeyService.registerHotkey(
-      id: 'mode_down',
-      key: LogicalKeyboardKey.arrowDown,
-      scope: HotKeyScope.inapp,
-      onPressed: () {
-        final count =
-            SystemPrompt.availablePrompts.length +
-            _settingsService.customPrompts.length;
-        setState(() {
-          _modeSelectionIndex = ((_modeSelectionIndex ?? 0) + 1).clamp(
-            0,
-            count - 1,
-          );
-        });
-      },
-    );
-    await _hotkeyService.registerHotkey(
-      id: 'mode_enter',
-      key: LogicalKeyboardKey.enter,
-      scope: HotKeyScope.inapp,
-      onPressed: () => _selectModeByIndex(_modeSelectionIndex ?? 0),
-    );
   }
 
   void _onSettingsClose() async {
@@ -1247,8 +1000,7 @@ class _BeeamvoHomeState extends State<BeeamvoHome>
     _returnToRetryAfterSettings = false;
 
     if (_state == RecordingState.settings ||
-        _state == RecordingState.modeSelection ||
-        _state == RecordingState.modeCloudConfirm) {
+        _state == RecordingState.modeSelection) {
       setState(() => _state = RecordingState.idle);
       // Wait a frame for the UI to switch to the orb before resizing the window down to 150x150
       await Future.delayed(const Duration(milliseconds: 50));
@@ -1298,7 +1050,7 @@ class _BeeamvoHomeState extends State<BeeamvoHome>
       //
       // The backend is resolved ONCE here and captured so a mid-session
       // settings change cannot redirect the captured audio to the wrong path.
-      final sessionBackend = _effectiveBackendForSession();
+      final sessionBackend = _settingsService.transcriptionBackend;
       final isOffline = sessionBackend == TranscriptionBackend.whisper;
       bool started;
       if (isOffline && RecordingService.prefersStreamCapture) {
@@ -1556,7 +1308,6 @@ class _BeeamvoHomeState extends State<BeeamvoHome>
     var currentAttemptIsRetryable = false;
 
     try {
-      // ── Resolve effective settings (prompt override > global default) ─────
       final effectivePromptId = (_useCurrentSettingsForRetry && retryExisting)
           ? _settingsService.selectedPromptId
           : (_temporaryPromptId ?? _settingsService.selectedPromptId);
@@ -1564,9 +1315,6 @@ class _BeeamvoHomeState extends State<BeeamvoHome>
         effectivePromptId,
         customPrompts: _settingsService.customPrompts,
       );
-      final overrides =
-          _settingsService.getPromptOverrides(effectivePromptId) ??
-          const PromptSettings();
 
       // A session pins its backend at recording start. During a non-retry
       // stop we reuse that captured decision so a mid-session settings change
@@ -1575,61 +1323,12 @@ class _BeeamvoHomeState extends State<BeeamvoHome>
       // Retry intentionally resolves fresh so the user can re-run with the
       // newly chosen settings.
       final backend = retryExisting
-          ? _resolveBackendForPrompt(effectivePromptId)
-          : (_activeRecordingBackend ??
-                _resolveBackendForPrompt(effectivePromptId));
+          ? _settingsService.transcriptionBackend
+          : (_activeRecordingBackend ?? _settingsService.transcriptionBackend);
       final isOffline = backend == TranscriptionBackend.whisper;
-
-      final effectiveRephraseLevel = overrides.rephraseLevel != null
-          ? overrides.rephraseLevel!
-          : _settingsService.rephraseLevel;
-
-      final effectiveWhisperModelId =
-          overrides.whisperModelId ?? _settingsService.whisperModelId;
-      final effectiveWhisperLanguage =
-          overrides.whisperLanguage ?? _settingsService.whisperLanguage;
-      final effectiveTwoPassEnabled =
-          overrides.twoPassTranscriptionEnabled ??
-          _settingsService.twoPassTranscriptionEnabled;
-      final effectiveTranscriptionModelId =
-          overrides.twoPassTranscriptionModelId ??
-          overrides.modelId ??
-          _settingsService.twoPassTranscriptionModelId;
-      final effectiveRefinementModelId = AppConfig.resolveRefinementModelId(
-        overrides.twoPassRefinementModelId ??
-            overrides.modelId ??
-            _settingsService.twoPassRefinementModelId,
-      );
-      // Pure Whisper still runs a cloud refinement pass when a non-default
-      // mode (or active rephraser) needs its instruction applied and cloud
-      // credentials are available (see the fallback branch below).
-      final whisperPromptFallback =
-          isOffline &&
-          !effectiveTwoPassEnabled &&
-          (selectedPrompt.id != 'standard' ||
-              effectiveRephraseLevel.promptFragment != null) &&
-          _settingsService.hasCloudCredentials;
-      final cloudInPipeline =
-          !isOffline || effectiveTwoPassEnabled || whisperPromptFallback;
-
-      // ── Per-prompt model & provider override ─────────────────────────────
-      _promptModelOverrideActive = false;
-      _promptProviderOverrideActive = false;
-      if (overrides.modelId != null && !isOffline) {
-        _promptModelOverrideActive = true;
-        _cloudService.setModelById(overrides.modelId!);
-        debugPrint(
-          'Per-prompt model override: using ${_cloudService.currentModel.name}',
-        );
-      }
-      if (overrides.cloudProvider != null && cloudInPipeline) {
-        _promptProviderOverrideActive = true;
-        final provider = CloudProviderExtension.fromValue(
-          overrides.cloudProvider,
-        );
-        _cloudService.setProviderOverride(provider);
-        debugPrint('Per-prompt provider override: $provider');
-      }
+      final twoPassEnabled = _settingsService.twoPassTranscriptionEnabled;
+      final whisperModelId = _settingsService.whisperModelId;
+      final whisperLanguage = _settingsService.spokenLanguage;
 
       // Stop recording — decide stream vs. file from the ACTUAL capture mode
       // (not the pinned backend) so the WAV fallback path stays correct even
@@ -1678,24 +1377,20 @@ class _BeeamvoHomeState extends State<BeeamvoHome>
         }
       }
 
-      // Compose the final instruction: base prompt + optional rephraser addon
-      final rephraserFragment = effectiveRephraseLevel.promptFragment;
-      final effectiveInstruction = rephraserFragment != null
-          ? '${selectedPrompt.instruction}$rephraserFragment'
-          : selectedPrompt.instruction;
+      final instruction = selectedPrompt.instruction;
 
       String improvedText;
       if (backend == TranscriptionBackend.whisper) {
         // ── Offline via whisper.cpp (tiny model) ─────────────────────────
-        await _initWhisper(modelId: effectiveWhisperModelId);
+        await _initWhisper(modelId: whisperModelId);
         if (!_whisperService.isInitialized) {
           throw Exception(
             'Whisper model not loaded. Download or select a Whisper model in '
-            'Settings → AI Models and keep Offline (Whisper) selected.',
+            'Settings → Transcription and keep Offline (Whisper) selected.',
           );
         }
-        final lang = effectiveWhisperLanguage;
-        final modelId = effectiveWhisperModelId;
+        final lang = whisperLanguage;
+        final modelId = whisperModelId;
         if (_isEnglishOnlyWhisperModel(modelId) && lang != 'en') {
           throw Exception(
             'The selected Whisper model ($modelId) is English-only. '
@@ -1746,73 +1441,32 @@ class _BeeamvoHomeState extends State<BeeamvoHome>
             ),
           );
         }
-        if (effectiveTwoPassEnabled) {
-          final refinementModelId = effectiveRefinementModelId;
+        if (twoPassEnabled) {
           improvedText = await _cloudService.improveTranscription(
             rawTranscript,
-            missionInstruction: effectiveInstruction,
-            modelOverrideId: refinementModelId,
-            thinkingLevelOverride:
-                overrides.twoPassRefinementThinkingLevel ??
-                overrides.thinkingLevel,
+            missionInstruction: instruction,
           );
-          debugPrint('Whisper two-pass: refined with $refinementModelId');
-        } else if (whisperPromptFallback) {
-          // A non-default mode (or active rephraser) still needs a cloud
-          // refinement pass to apply its instruction — otherwise the selected
-          // prompt would be silently dropped on pure Whisper.
-          improvedText = await _cloudService.improveTranscription(
-            rawTranscript,
-            missionInstruction: effectiveInstruction,
-            modelOverrideId: effectiveRefinementModelId,
-            thinkingLevelOverride:
-                overrides.twoPassRefinementThinkingLevel ??
-                overrides.thinkingLevel,
-          );
-          debugPrint(
-            'Whisper: applied prompt "${selectedPrompt.id}" via cloud '
-            'refinement (single-pass fallback)',
-          );
+          debugPrint('Whisper two-step: refined with cloud model');
         } else {
           improvedText = rawTranscript;
         }
-      } else if (effectiveTwoPassEnabled) {
-        // Phase 1: fixed transcription-only pass.
+      } else if (twoPassEnabled) {
+        // Step 1: raw transcription. Step 2: apply the prompt to text only.
         final rawTranscript = await _cloudService.transcribeAudio(
           audioBytes!,
           'audio/wav',
-          modelOverrideId: effectiveTranscriptionModelId,
+          modelOverrideId: _settingsService.twoPassTranscriptionModelId,
         );
-        // Phase 2: apply the selected mode to transcript text only.
         improvedText = await _cloudService.improveTranscription(
           rawTranscript,
-          missionInstruction: effectiveInstruction,
-          modelOverrideId: effectiveRefinementModelId,
-          thinkingLevelOverride:
-              overrides.twoPassRefinementThinkingLevel ??
-              overrides.thinkingLevel,
+          missionInstruction: instruction,
         );
       } else {
-        // Single-pass cloud mode.
-        final effectiveModelId =
-            overrides.modelId ?? _settingsService.selectedModelId;
-        final effectiveModel = AppConfig.getModelById(effectiveModelId);
-        if (effectiveModel.isTranscriptionOnly) {
-          // Transcription-only models cannot follow mission prompts.
-          improvedText = await _cloudService.transcribeAudio(
-            audioBytes!,
-            'audio/wav',
-            modelOverrideId: overrides.modelId,
-          );
-        } else {
-          improvedText = await _cloudService.transcribeAndImprove(
-            audioBytes!,
-            'audio/wav',
-            missionInstruction: effectiveInstruction,
-            modelOverrideId: overrides.modelId,
-            thinkingLevelOverride: overrides.thinkingLevel,
-          );
-        }
+        improvedText = await _cloudService.transcribeAndImprove(
+          audioBytes!,
+          'audio/wav',
+          missionInstruction: instruction,
+        );
       }
       // If state changed (e.g. cancelled), don't paste
       if (_state != RecordingState.processing) return;
@@ -1873,18 +1527,6 @@ class _BeeamvoHomeState extends State<BeeamvoHome>
           'Clearing temporary prompt override (was: $_temporaryPromptId)',
         );
         _temporaryPromptId = null;
-      }
-      // Restore cloud model if a per-prompt override was active
-      if (_promptModelOverrideActive) {
-        _promptModelOverrideActive = false;
-        _cloudService.setModelById(_settingsService.selectedModelId);
-        debugPrint('Restored default model after per-prompt override');
-      }
-      // Restore cloud provider if a per-prompt override was active
-      if (_promptProviderOverrideActive) {
-        _promptProviderOverrideActive = false;
-        _cloudService.clearProviderOverride();
-        debugPrint('Restored default provider after per-prompt override');
       }
     }
   }
@@ -2060,13 +1702,6 @@ class _BeeamvoHomeState extends State<BeeamvoHome>
                     );
                     await _trayService.updateContextMenu();
                   },
-                  onModelChanged: (modelId) {
-                    _cloudService.setModelById(modelId);
-                    _trayService.updateContextMenu();
-                    debugPrint(
-                      'Model changed to: ${_cloudService.currentModel.name}',
-                    );
-                  },
                   onPromptChanged: (promptId) {
                     _trayService.updateContextMenu();
                     debugPrint('Prompt changed via settings to: $promptId');
@@ -2079,8 +1714,6 @@ class _BeeamvoHomeState extends State<BeeamvoHome>
                   onAudioDeviceChanged: _onAudioDeviceChanged,
                   onResetAllHotkeys: _resetShortcutDefaults,
                   onClipboardHotkeyChanged: _onClipboardHotkeyChanged,
-                  onBackendChanged: (dynamic backend) =>
-                      _onBackendChanged(backend as TranscriptionBackend),
                   onVerifyCloudProvider: _verifyCloudProvider,
                   onModelDownloaded: _onModelDownloaded,
                 )
@@ -2098,16 +1731,6 @@ class _BeeamvoHomeState extends State<BeeamvoHome>
                     _selectModeByIndex(idx >= 0 ? idx : 0);
                   },
                   onCancel: _cancelModeSelection,
-                )
-              : _state == RecordingState.modeCloudConfirm
-              ? ModeCloudConfirmPopup(
-                  key: const ValueKey('modeCloudConfirm'),
-                  settingsService: _settingsService,
-                  promptName: _modeCloudConfirmPrompt?.name ?? '',
-                  selectedIndex: _modeCloudConfirmIndex,
-                  onSelect: _confirmModeCloudConfirm,
-                  onOpenSettings: _openSettingsFromCloudConfirm,
-                  onCancel: _cancelModeCloudConfirm,
                 )
               : FrostedOrb(
                   key: ValueKey(_state),

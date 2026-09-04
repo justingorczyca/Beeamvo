@@ -34,8 +34,6 @@ class _Settings extends SettingsService {
   @override
   List<SystemPrompt> get customPrompts => const [];
   @override
-  GeminiApiSurface get geminiApiSurface => GeminiApiSurface.generateContent;
-  @override
   String get themeMode => 'system';
   @override
   Future<String?> readGeminiApiKey() async =>
@@ -236,8 +234,6 @@ void main() {
     await tester.drag(find.byType(ListView), const Offset(0, -1000));
     await tester.pump();
     expect(find.text('1.2.3'), findsOneWidget);
-    expect(find.text('Interactions'), findsOneWidget);
-    expect(find.text('Legacy'), findsOneWidget);
   });
 
   testWidgets('settings history switch can disable local history', (

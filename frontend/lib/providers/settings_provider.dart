@@ -22,7 +22,7 @@ extension SettingsCategoryExtension on SettingsCategory {
       case SettingsCategory.aiModels:
         return 'Transcription';
       case SettingsCategory.prompts:
-        return 'Prompts';
+        return 'Writing Style';
       case SettingsCategory.clipboard:
         return 'Clipboard';
       case SettingsCategory.troubleshooting:
@@ -39,7 +39,7 @@ extension SettingsCategoryExtension on SettingsCategory {
       case SettingsCategory.aiModels:
         return Icons.graphic_eq_rounded;
       case SettingsCategory.prompts:
-        return Icons.chat_rounded;
+        return Icons.edit_note_rounded;
       case SettingsCategory.clipboard:
         return Icons.content_paste_rounded;
       case SettingsCategory.troubleshooting:
