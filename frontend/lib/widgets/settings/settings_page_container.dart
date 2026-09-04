@@ -13,7 +13,6 @@ import 'pages/troubleshooting_page.dart';
 /// Container that displays the appropriate settings page based on selected category
 class SettingsPageContainer extends StatelessWidget {
   final UsageStatsService usageStatsService;
-  final ValueChanged<String>? onModelChanged;
   final ValueChanged<String>? onPromptChanged;
   final ValueChanged<dynamic>? onHotkeyChanged;
   final ValueChanged<HotkeyConfig>? onModeSelectionHotkeyChanged;
@@ -28,7 +27,6 @@ class SettingsPageContainer extends StatelessWidget {
   const SettingsPageContainer({
     super.key,
     required this.usageStatsService,
-    this.onModelChanged,
     this.onPromptChanged,
     this.onHotkeyChanged,
     this.onModeSelectionHotkeyChanged,
@@ -92,7 +90,6 @@ class SettingsPageContainer extends StatelessWidget {
       case SettingsCategory.aiModels:
         return AiModelsPage(
           key: const ValueKey('ai_models'),
-          onModelChanged: onModelChanged,
           onVerifyCloudProvider: onVerifyCloudProvider,
           onModelDownloaded: onModelDownloaded,
         );

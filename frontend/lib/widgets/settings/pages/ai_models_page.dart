@@ -14,13 +14,11 @@ import '../bee_input.dart';
 import '../bee_page_header.dart';
 
 class AiModelsPage extends StatefulWidget {
-  final ValueChanged<String>? onModelChanged;
   final Future<void> Function(CloudProvider provider)? onVerifyCloudProvider;
   final VoidCallback? onModelDownloaded;
 
   const AiModelsPage({
     super.key,
-    this.onModelChanged,
     this.onVerifyCloudProvider,
     this.onModelDownloaded,
   });
@@ -175,7 +173,6 @@ class _AiModelsPageState extends State<AiModelsPage> {
       _selectedModelId = modelId;
       _selectedThinkingLevel = settings.getThinkingLevelForModel(modelId);
     });
-    widget.onModelChanged?.call(modelId);
   }
 
   Future<String?> _showTextInputDialog({

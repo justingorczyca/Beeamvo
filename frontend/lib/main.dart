@@ -1702,13 +1702,6 @@ class _BeeamvoHomeState extends State<BeeamvoHome>
                     );
                     await _trayService.updateContextMenu();
                   },
-                  onModelChanged: (modelId) {
-                    _cloudService.setModelById(modelId);
-                    _trayService.updateContextMenu();
-                    debugPrint(
-                      'Model changed to: ${_cloudService.currentModel.name}',
-                    );
-                  },
                   onPromptChanged: (promptId) {
                     _trayService.updateContextMenu();
                     debugPrint('Prompt changed via settings to: $promptId');

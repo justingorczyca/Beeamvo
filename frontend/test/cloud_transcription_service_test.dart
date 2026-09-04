@@ -198,6 +198,29 @@ void main() {
       expect(vertexClient.improveCalls, equals(0));
     });
 
+    test('model follows later SettingsService changes', () async {
+      final geminiClient = FakeCloudClient();
+      final vertexClient = FakeCloudClient();
+      final settings = FakeCloudSettingsService(modelId: 'gemini-3-flash');
+      final service = CloudTranscriptionService(
+        geminiInteractionsService: geminiClient,
+        vertexAiService: vertexClient,
+      );
+      service.attachSettings(settings);
+      expect(service.currentModel.id, equals('gemini-3-flash'));
+
+      settings.modelId = 'gemini-3.6-flash';
+      settings.notifyListeners();
+      expect(service.currentModel.id, equals('gemini-3.6-flash'));
+      expect(geminiClient.selectedModelIds.last, equals('gemini-3.6-flash'));
+      expect(vertexClient.selectedModelIds.last, equals('gemini-3.6-flash'));
+
+      service.dispose();
+      settings.modelId = 'gemini-3-flash';
+      settings.notifyListeners();
+      expect(geminiClient.selectedModelIds.last, equals('gemini-3.6-flash'));
+    });
+
     test('audio calls reject the no-transcript marker', () async {
       final geminiClient = FakeCloudClient(response: '[NO_TRANSCRIPT]');
       final vertexClient = FakeCloudClient();

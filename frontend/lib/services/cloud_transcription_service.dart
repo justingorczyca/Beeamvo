@@ -20,11 +20,22 @@ class CloudTranscriptionService {
   SettingsService? _settingsService;
   bool _isDisposed = false;
 
+  /// Binds to [settings] and keeps the active model in sync with
+  /// [SettingsService.selectedModelId] for as long as the service lives.
   void attachSettings(SettingsService settings) {
+    _settingsService?.removeListener(_syncModelFromSettings);
     _settingsService = settings;
+    settings.addListener(_syncModelFromSettings);
     _geminiInteractionsService.attachSettings(settings);
     _vertexAiService.attachSettings(settings);
     setModelById(settings.selectedModelId);
+  }
+
+  void _syncModelFromSettings() {
+    final settings = _settingsService;
+    if (settings == null || _isDisposed) return;
+    final id = settings.selectedModelId;
+    if (id != currentModel.id) setModelById(id);
   }
 
   Future<void> initialize() async {
@@ -38,6 +49,7 @@ class CloudTranscriptionService {
   void dispose() {
     if (_isDisposed) return;
     _isDisposed = true;
+    _settingsService?.removeListener(_syncModelFromSettings);
     _geminiInteractionsService.dispose();
     _vertexAiService.dispose();
   }

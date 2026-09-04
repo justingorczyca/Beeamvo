@@ -16,7 +16,6 @@ class SettingsWindow extends StatefulWidget {
   final SettingsProvider provider;
   final UsageStatsService usageStatsService;
   final VoidCallback onClose;
-  final ValueChanged<String>? onModelChanged;
   final ValueChanged<String>? onPromptChanged;
   final ValueChanged<dynamic>? onHotkeyChanged;
   final ValueChanged<HotkeyConfig>? onModeSelectionHotkeyChanged;
@@ -33,7 +32,6 @@ class SettingsWindow extends StatefulWidget {
     required this.provider,
     required this.usageStatsService,
     required this.onClose,
-    this.onModelChanged,
     this.onPromptChanged,
     this.onHotkeyChanged,
     this.onModeSelectionHotkeyChanged,
@@ -88,7 +86,6 @@ class _SettingsWindowState extends State<SettingsWindow> {
                             Expanded(
                               child: SettingsPageContainer(
                                 usageStatsService: widget.usageStatsService,
-                                onModelChanged: widget.onModelChanged,
                                 onPromptChanged: widget.onPromptChanged,
                                 onHotkeyChanged: widget.onHotkeyChanged,
                                 onModeSelectionHotkeyChanged:
