@@ -2,26 +2,35 @@ import 'dart:convert';
 import 'dart:typed_data';
 
 import 'package:beeamvo/config.dart';
+import 'package:beeamvo/models/system_prompt.dart';
 import 'package:beeamvo/services/cloud_transcription_client.dart';
 import 'package:beeamvo/services/gemini_interactions_service.dart';
 import 'package:beeamvo/services/secure_credential_store.dart';
 import 'package:beeamvo/services/settings_service.dart';
+import 'package:beeamvo/services/transcription_result_guard.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
 
 class FakeInteractionsSettingsService extends SettingsService {
-  FakeInteractionsSettingsService({this.apiKey = 'test-key', this.level})
-    : super(credentialStore: InMemorySecureCredentialStore());
+  FakeInteractionsSettingsService({
+    this.apiKey = 'test-key',
+    this.level,
+    this.spokenLanguageId = 'auto',
+  }) : super(credentialStore: InMemorySecureCredentialStore());
 
   final String? apiKey;
   final GeminiThinkingLevel? level;
+  final String spokenLanguageId;
 
   @override
   Future<String?> readGeminiApiKey() async => apiKey;
 
   @override
   GeminiThinkingLevel? getThinkingLevelForModel(String modelId) => level;
+
+  @override
+  String get spokenLanguage => spokenLanguageId;
 }
 
 http.Response _completedResponse(String text) {
@@ -99,6 +108,56 @@ void main() {
         'mime_type': 'audio/wav',
       });
       expect(payload['system_instruction'], isA<String>());
+    });
+
+    test('transcription prompt matches SystemPrompt without settings', () {
+      final service = GeminiInteractionsService(
+        httpClient: MockClient((_) async => _completedResponse('ok')),
+      );
+      final payload = service.buildTranscribePayload(
+        audioData: Uint8List.fromList([1, 2, 3]),
+        mimeType: 'audio/wav',
+        model: AppConfig.getModelById('gemini-3-flash'),
+      );
+
+      expect(
+        payload['system_instruction'],
+        equals(SystemPrompt.verbatimTranscriptionInstruction()),
+      );
+    });
+
+    test('transcription prompt includes the configured language', () {
+      final service = _service(
+        MockClient((_) async => _completedResponse('ok')),
+      );
+      service.attachSettings(
+        FakeInteractionsSettingsService(spokenLanguageId: 'de'),
+      );
+      final payload = service.buildTranscribePayload(
+        audioData: Uint8List.fromList([1, 2, 3]),
+        mimeType: 'audio/wav',
+        model: AppConfig.getModelById('gemini-3-flash'),
+      );
+
+      expect(payload['system_instruction'], contains('German'));
+    });
+
+    test('combined audio prompt includes the no-transcript marker once', () {
+      final service = _service(
+        MockClient((_) async => _completedResponse('ok')),
+      );
+      final payload = service.buildTranscribeAndImprovePayload(
+        audioData: Uint8List.fromList([1, 2, 3]),
+        mimeType: 'audio/wav',
+        missionInstruction: 'Format it.',
+        model: AppConfig.getModelById('gemini-3-flash'),
+      );
+      final prompt = payload['input'][0]['text'] as String;
+
+      expect(
+        prompt.split(TranscriptionResultGuard.noTranscriptMarker).length - 1,
+        equals(1),
+      );
     });
 
     test('thinking budget models omit Interactions thinking config', () {
