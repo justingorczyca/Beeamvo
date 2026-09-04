@@ -2,17 +2,17 @@
 
 Use this path if you want the simplest cloud setup.
 
-> **Platforms:** Windows and macOS are supported; Linux is experimental. **Whisper Local** (offline) needs none of the steps below — choose it in Settings → Intelligence instead.
+> **Platforms:** Windows and macOS are supported; Linux is experimental. **Whisper Local** (offline) needs none of the steps below — choose it in Settings → Transcription instead.
 
 ## What it does
 
-Beeamvo stores your Gemini API key in local OS secure storage and sends cloud requests directly to the Gemini API. No Google Cloud project is required for this mode. When you are on the **Whisper Local** engine, audio never leaves your machine; audio is only sent to Google after you explicitly choose **Cloud** (or enable two-pass refinement), and the app shows a confirmation dialog the first time a cloud model enters an offline-only pipeline.
+Beeamvo stores your Gemini API key in local OS secure storage and sends cloud requests directly to the Gemini API. No Google Cloud project is required for this mode. When you are on the **Whisper Local** engine, audio never leaves your machine; audio is only sent to Google after you explicitly choose **Cloud AI**; with Two-Step Refinement on the offline engine, only the transcript text (never audio) is sent for polishing.
 
 ## Steps
 
 1. Open Google AI Studio and create a Gemini API key.
 2. Start Beeamvo.
-3. Go to Settings -> Intelligence.
+3. Go to Settings -> Transcription.
 4. Keep `Processing Engine` set to `Cloud`.
 5. Set `Cloud Provider` to `Gemini API Key`.
 6. Click `Add API Key`, paste the key, and save it. For development-only overrides, you can alternatively set `GEMINI_API_KEY` in `.env`.

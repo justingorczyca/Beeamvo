@@ -27,10 +27,6 @@ class BeeDropdownOption<T> {
 
 /// A flat, BeeChip-style dropdown that opens a native [showMenu] popup.
 ///
-/// Merges the two former bespoke implementations — `_buildRefinedDropdown`
-/// (AI Models page) and `_OverrideDropdown` (Prompt Override panel) — into a
-/// single generic, reusable control.
-///
 /// The trigger paints the current value's label in `beeTextSub` at 12px next
 /// to a chevron-down affordance, with a subtle `kBeeTintHover` ink fill that
 /// animates in on hover/focus (powered by [BeeInteractive]). Tapping it opens

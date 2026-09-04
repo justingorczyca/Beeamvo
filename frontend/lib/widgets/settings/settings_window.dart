@@ -24,7 +24,6 @@ class SettingsWindow extends StatefulWidget {
   final ValueChanged<String?>? onAudioDeviceChanged;
   final Future<void> Function()? onResetAllHotkeys;
   final ValueChanged<HotkeyConfig>? onClipboardHotkeyChanged;
-  final ValueChanged<dynamic>? onBackendChanged;
   final Future<void> Function(CloudProvider provider)? onVerifyCloudProvider;
   final VoidCallback? onModelDownloaded;
   final VoidCallback? onRunOnboarding;
@@ -42,7 +41,6 @@ class SettingsWindow extends StatefulWidget {
     this.onAudioDeviceChanged,
     this.onResetAllHotkeys,
     this.onClipboardHotkeyChanged,
-    this.onBackendChanged,
     this.onVerifyCloudProvider,
     this.onModelDownloaded,
     this.onRunOnboarding,
@@ -102,7 +100,6 @@ class _SettingsWindowState extends State<SettingsWindow> {
                                 onResetAllHotkeys: widget.onResetAllHotkeys,
                                 onClipboardHotkeyChanged:
                                     widget.onClipboardHotkeyChanged,
-                                onBackendChanged: widget.onBackendChanged,
                                 onVerifyCloudProvider:
                                     widget.onVerifyCloudProvider,
                                 onModelDownloaded: widget.onModelDownloaded,

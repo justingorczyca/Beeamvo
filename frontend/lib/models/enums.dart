@@ -8,16 +8,13 @@ enum TranscriptionBackend {
 }
 
 extension TranscriptionBackendExtension on TranscriptionBackend {
-  /// Serialized string value used in JSON persistence and prompt overrides.
-  String get value => name;
-
   /// Human-readable label shown in the UI.
   String get displayName {
     switch (this) {
       case TranscriptionBackend.cloud:
         return 'Cloud';
       case TranscriptionBackend.whisper:
-        return 'Offline (Whisper)';
+        return 'Offline';
     }
   }
 
@@ -31,47 +28,10 @@ extension TranscriptionBackendExtension on TranscriptionBackend {
   }
 }
 
-/// Transcription output formatting mode for dedicated speech-to-text models.
-enum TranscriptionMode { verbatim, smart }
-
-extension TranscriptionModeExtension on TranscriptionMode {
-  /// Serialized string value used in JSON persistence and API requests.
-  String get value {
-    switch (this) {
-      case TranscriptionMode.verbatim:
-        return 'verbatim';
-      case TranscriptionMode.smart:
-        return 'smart';
-    }
-  }
-
-  /// Human-readable label shown in the UI.
-  String get displayName {
-    switch (this) {
-      case TranscriptionMode.verbatim:
-        return 'Verbatim';
-      case TranscriptionMode.smart:
-        return 'Smart';
-    }
-  }
-
-  /// Resolve a stored [value] string back to an enum member, defaulting
-  /// to [verbatim] when the value is unrecognised.
-  static TranscriptionMode fromValue(String? value) {
-    if (value == TranscriptionMode.smart.value) {
-      return TranscriptionMode.smart;
-    }
-    return TranscriptionMode.verbatim;
-  }
-}
-
 /// Which cloud provider to use for transcription.
 enum CloudProvider { geminiApiKey, vertexAi }
 
 extension CloudProviderExtension on CloudProvider {
-  /// Serialized string value used in JSON persistence and prompt overrides.
-  String get value => name;
-
   /// Human-readable label shown in the UI.
   String get displayName {
     switch (this) {
@@ -88,7 +48,7 @@ extension CloudProviderExtension on CloudProvider {
       case CloudProvider.geminiApiKey:
         return 'Use your own Gemini API key stored locally on this device.';
       case CloudProvider.vertexAi:
-        return 'Use direct Vertex AI REST with your own Google Cloud project credentials.';
+        return 'Use your own Google Cloud project via Vertex AI.';
     }
   }
 
@@ -99,42 +59,5 @@ extension CloudProviderExtension on CloudProvider {
       return CloudProvider.vertexAi;
     }
     return CloudProvider.geminiApiKey;
-  }
-}
-
-/// Which Gemini API surface to use for API-key cloud transcription.
-enum GeminiApiSurface { generateContent, interactions }
-
-extension GeminiApiSurfaceExtension on GeminiApiSurface {
-  /// Serialized string value used in JSON persistence.
-  String get value => name;
-
-  /// Human-readable label shown in the UI.
-  String get displayName {
-    switch (this) {
-      case GeminiApiSurface.generateContent:
-        return 'Legacy generateContent';
-      case GeminiApiSurface.interactions:
-        return 'Interactions';
-    }
-  }
-
-  /// Human-readable description shown in the UI.
-  String get description {
-    switch (this) {
-      case GeminiApiSurface.generateContent:
-        return 'Use Gemini’s legacy generateContent API.';
-      case GeminiApiSurface.interactions:
-        return 'Use Google’s current recommended Interactions API.';
-    }
-  }
-
-  /// Resolve a stored [value] string back to an enum member, defaulting
-  /// to [generateContent] when the value is unrecognised.
-  static GeminiApiSurface fromValue(String? value) {
-    if (value == GeminiApiSurface.interactions.name) {
-      return GeminiApiSurface.interactions;
-    }
-    return GeminiApiSurface.generateContent;
   }
 }

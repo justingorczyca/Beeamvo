@@ -168,29 +168,10 @@ class _MobileSettingsScreenState extends State<MobileSettingsScreen> {
               onChanged: settings.setClipboardHistoryEnabled,
             ),
             const SizedBox(height: 20),
-            const _SectionTitle('Gemini API surface'),
-            SegmentedButton<GeminiApiSurface>(
-              segments: GeminiApiSurface.values
-                  .map(
-                    (surface) => ButtonSegment(
-                      value: surface,
-                      label: Text(
-                        surface == GeminiApiSurface.interactions
-                            ? 'Interactions'
-                            : 'Legacy',
-                      ),
-                    ),
-                  )
-                  .toList(),
-              selected: {settings.geminiApiSurface},
-              onSelectionChanged: (selected) =>
-                  settings.setGeminiApiSurface(selected.first),
-            ),
-            const SizedBox(height: 20),
             const _SectionTitle('Model'),
             DropdownButtonFormField<String>(
               initialValue: settings.selectedModelId,
-              items: AppConfig.availableModels
+              items: AppConfig.mainModels
                   .map(
                     (model) => DropdownMenuItem(
                       value: model.id,

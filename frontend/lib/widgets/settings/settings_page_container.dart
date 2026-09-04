@@ -21,7 +21,6 @@ class SettingsPageContainer extends StatelessWidget {
   final ValueChanged<String?>? onAudioDeviceChanged;
   final Future<void> Function()? onResetAllHotkeys;
   final ValueChanged<HotkeyConfig>? onClipboardHotkeyChanged;
-  final ValueChanged<dynamic>? onBackendChanged;
   final Future<void> Function(CloudProvider provider)? onVerifyCloudProvider;
   final VoidCallback? onModelDownloaded;
   final VoidCallback? onRunOnboarding;
@@ -37,7 +36,6 @@ class SettingsPageContainer extends StatelessWidget {
     this.onAudioDeviceChanged,
     this.onResetAllHotkeys,
     this.onClipboardHotkeyChanged,
-    this.onBackendChanged,
     this.onVerifyCloudProvider,
     this.onModelDownloaded,
     this.onRunOnboarding,
@@ -95,7 +93,6 @@ class SettingsPageContainer extends StatelessWidget {
         return AiModelsPage(
           key: const ValueKey('ai_models'),
           onModelChanged: onModelChanged,
-          onBackendChanged: onBackendChanged,
           onVerifyCloudProvider: onVerifyCloudProvider,
           onModelDownloaded: onModelDownloaded,
         );

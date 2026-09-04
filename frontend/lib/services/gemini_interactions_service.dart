@@ -235,19 +235,13 @@ class GeminiInteractionsService implements CloudTranscriptionClient {
     String? audioBase64,
   }) {
     final settings = _settingsService;
-    final mode = settings?.transcriptionMode ?? TranscriptionMode.verbatim;
-    final language = settings?.transcriptionLanguage ?? 'auto';
-    final vocabulary =
-        settings?.transcriptionCustomVocabulary ?? const <String>[];
+    final language = settings?.spokenLanguage ?? 'auto';
 
     final transcriptionConfig = <String, dynamic>{};
     if (language != 'auto') {
       transcriptionConfig['language_codes'] = [language];
     }
-    if (vocabulary.isNotEmpty) {
-      transcriptionConfig['custom_vocabulary'] = vocabulary;
-    }
-    transcriptionConfig['mode'] = _buildModeConfig(mode);
+    transcriptionConfig['mode'] = const {'type': 'verbatim'};
 
     return _buildRequestEnvelope(
       modelName: model.modelName,
@@ -257,20 +251,6 @@ class GeminiInteractionsService implements CloudTranscriptionClient {
       ],
       generationConfig: {'transcription_config': transcriptionConfig},
     );
-  }
-
-  Map<String, dynamic> _buildModeConfig(TranscriptionMode mode) {
-    final modeConfig = <String, dynamic>{'type': mode.value};
-    final settings = _settingsService;
-    if (mode == TranscriptionMode.verbatim) {
-      if (settings?.transcriptionDiarization == true) {
-        modeConfig['diarization_mode'] = 'speaker';
-      }
-      if (settings?.transcriptionWordTimestamps == true) {
-        modeConfig['timestamp_granularities'] = ['word'];
-      }
-    }
-    return modeConfig;
   }
 
   @visibleForTesting

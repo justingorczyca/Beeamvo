@@ -2,7 +2,7 @@
 
 Use this path if you want Beeamvo to call Vertex AI directly through your own Google Cloud project.
 
-> **Platforms:** Windows and macOS are supported; Linux is experimental. This is the **cloud** path — with **Whisper Local** selected, audio never leaves your machine. Audio is only sent to Vertex AI after you explicitly choose **Cloud** (or enable two-pass refinement), and the app shows a confirmation dialog the first time a cloud model enters an offline-only pipeline.
+> **Platforms:** Windows and macOS are supported; Linux is experimental. This is the **cloud** path — with **Whisper Local** selected, audio never leaves your machine. Audio is only sent to Vertex AI after you explicitly choose **Cloud AI**; with Two-Step Refinement on the offline engine, only the transcript text (never audio) is sent for polishing.
 
 ## How it works
 
@@ -29,7 +29,7 @@ Beeamvo talks directly to the Vertex AI REST API using your machine's Applicatio
    or set `GOOGLE_APPLICATION_CREDENTIALS` to a credential file path.
 
 4. Start Beeamvo.
-5. Open Settings -> Intelligence.
+5. Open Settings -> Transcription.
 6. Keep `Processing Engine` on `Cloud`.
 7. Set `Cloud Provider` to `Vertex AI`.
 8. Set your Google Cloud project ID. For development-only overrides, you can alternatively set `VERTEX_PROJECT_ID` in `.env`.

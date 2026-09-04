@@ -2,7 +2,6 @@ import 'dart:typed_data';
 
 import '../config.dart';
 import 'cloud_transcription_client.dart';
-import 'gemini_api_service.dart';
 import 'gemini_interactions_service.dart';
 import 'settings_service.dart';
 import 'transcription_result_guard.dart';
@@ -10,24 +9,19 @@ import 'vertex_ai_service.dart';
 
 class CloudTranscriptionService {
   CloudTranscriptionService({
-    CloudTranscriptionClient? geminiApiService,
     CloudTranscriptionClient? geminiInteractionsService,
     CloudTranscriptionClient? vertexAiService,
-  }) : _geminiApiService = geminiApiService ?? GeminiApiService(),
-       _geminiInteractionsService =
+  }) : _geminiInteractionsService =
            geminiInteractionsService ?? GeminiInteractionsService(),
        _vertexAiService = vertexAiService ?? VertexAiService();
 
-  final CloudTranscriptionClient _geminiApiService;
   final CloudTranscriptionClient _geminiInteractionsService;
   final CloudTranscriptionClient _vertexAiService;
   SettingsService? _settingsService;
-  CloudProvider? _providerOverride;
   bool _isDisposed = false;
 
   void attachSettings(SettingsService settings) {
     _settingsService = settings;
-    _geminiApiService.attachSettings(settings);
     _geminiInteractionsService.attachSettings(settings);
     _vertexAiService.attachSettings(settings);
     setModelById(settings.selectedModelId);
@@ -44,7 +38,6 @@ class CloudTranscriptionService {
   void dispose() {
     if (_isDisposed) return;
     _isDisposed = true;
-    _geminiApiService.dispose();
     _geminiInteractionsService.dispose();
     _vertexAiService.dispose();
   }
@@ -56,25 +49,12 @@ class CloudTranscriptionService {
   }
 
   CloudProvider get currentProvider =>
-      _providerOverride ??
-      _settingsService?.cloudProvider ??
-      CloudProvider.geminiApiKey;
-
-  void setProviderOverride(CloudProvider provider) {
-    _providerOverride = provider;
-  }
-
-  void clearProviderOverride() {
-    _providerOverride = null;
-  }
+      _settingsService?.cloudProvider ?? CloudProvider.geminiApiKey;
 
   CloudTranscriptionClient _clientFor(CloudProvider provider) {
     switch (provider) {
       case CloudProvider.geminiApiKey:
-        return _settingsService?.geminiApiSurface ==
-                GeminiApiSurface.interactions
-            ? _geminiInteractionsService
-            : _geminiApiService;
+        return _geminiInteractionsService;
       case CloudProvider.vertexAi:
         return _vertexAiService;
     }
@@ -91,7 +71,6 @@ class CloudTranscriptionService {
   GeminiModelConfig get currentModel => _currentClient.currentModel;
 
   void setModelById(String modelId) {
-    _geminiApiService.setModelById(modelId);
     _geminiInteractionsService.setModelById(modelId);
     _vertexAiService.setModelById(modelId);
   }
@@ -109,9 +88,8 @@ class CloudTranscriptionService {
         : currentModel;
     if (model.isTranscriptionOnly) {
       throw CloudTranscriptionException(
-        '${model.displayName} is a raw transcription model and cannot follow '
-        'mission prompts. Use it for a single-pass or Pass 1 raw '
-        'transcription, or choose a different model for refinement.',
+        '${model.displayName} only transcribes and cannot apply a writing '
+        'style. Choose a different AI model.',
       );
     }
   }
@@ -166,13 +144,10 @@ class CloudTranscriptionService {
     final model = modelOverrideId != null
         ? AppConfig.getModelById(modelOverrideId)
         : currentModel;
-    final surface = _settingsService?.geminiApiSurface;
     if (model.isTranscriptionOnly &&
-        (currentProvider != CloudProvider.geminiApiKey ||
-            surface != GeminiApiSurface.interactions)) {
+        currentProvider != CloudProvider.geminiApiKey) {
       throw CloudTranscriptionException(
-        'Gemini 3.5 Transcribe requires the Gemini API Key provider with the '
-        'Interactions API surface.',
+        '${model.displayName} is only available with a Gemini API key.',
       );
     }
     await _initializeIfNeeded(client);

@@ -112,25 +112,3 @@ class InMemorySecureCredentialStore implements SecureCredentialStore {
   @override
   Future<void> deleteGeminiApiKey() => deleteApiKey('gemini_api_key');
 }
-
-String openAiCompatibleApiKeyAccount(String providerId) {
-  return 'openai_compatible_api_key_'
-      '${validateOpenAiCompatibleProviderId(providerId)}';
-}
-
-String validateOpenAiCompatibleProviderId(String providerId) {
-  final normalized = providerId.trim();
-  if (!RegExp(r'^[a-z0-9_-]+$').hasMatch(normalized)) {
-    throw ArgumentError(
-      'OpenAI-compatible provider IDs may contain only lowercase letters, '
-      'digits, underscores, and hyphens.',
-    );
-  }
-  return normalized;
-}
-
-String? tryOpenAiCompatibleApiKeyAccount(String providerId) {
-  final normalized = providerId.trim();
-  if (!RegExp(r'^[a-z0-9_-]+$').hasMatch(normalized)) return null;
-  return 'openai_compatible_api_key_$normalized';
-}

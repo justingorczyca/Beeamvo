@@ -1,79 +1,20 @@
-import 'prompt_settings.dart';
-
-/// How aggressively the rephraser rewrites the transcription.
-enum RephraseLevel { off, medium, high }
-
-extension RephraseLevelExtension on RephraseLevel {
-  String get displayName {
-    switch (this) {
-      case RephraseLevel.off:
-        return 'Off';
-      case RephraseLevel.medium:
-        return 'Medium';
-      case RephraseLevel.high:
-        return 'High';
-    }
-  }
-
-  String get description {
-    switch (this) {
-      case RephraseLevel.off:
-        return 'No rephrasing — output matches the selected prompt only.';
-      case RephraseLevel.medium:
-        return 'Light professional polish: smoother wording, minor tone lift.';
-      case RephraseLevel.high:
-        return 'Stronger rewrite: clearer structure, noticeably more professional tone.';
-    }
-  }
-
-  /// Returns the additional system-prompt fragment for this level,
-  /// or `null` when rephrasing is off.
-  String? get promptFragment {
-    switch (this) {
-      case RephraseLevel.off:
-        return null;
-      case RephraseLevel.medium:
-        return '''
-
-### REPHRASER (medium):
-After applying the mission above, lightly polish the result toward a professional tone suitable for workplace communication (emails, messages, documents):
-- Smooth out awkward phrasing and tighten wordy sentences.
-- Replace overly casual words with natural professional alternatives (e.g., "stuff" → "materials", "gonna" → "going to", "a lot of" → "significant").
-- Keep the original meaning, voice, and sentence structure intact — the change should feel like a light edit, not a rewrite.
-- Do NOT change technical terms, proper nouns, or domain-specific language.
-''';
-      case RephraseLevel.high:
-        return '''
-
-### REPHRASER (high):
-After applying the mission above, substantially rewrite the result into polished professional prose suitable for formal documents, reports, or executive communication:
-- Rewrite sentences for clarity, conciseness, and formal register.
-- Upgrade vocabulary and phrasing noticeably (e.g., "looked into" → "investigated", "set up" → "established", "figure out" → "determine").
-- Improve paragraph flow with clear logical transitions between ideas.
-- Let the content determine the appropriate style: use precise technical language for technical content, clear business language for business content.
-- Preserve the original meaning and all factual content exactly, but the wording may change significantly.
-''';
-    }
-  }
-}
-
+/// A writing style: the mission instruction that shapes the transcript.
 class SystemPrompt {
   final String id;
   final String name;
   final String instruction;
 
-  /// Per-prompt setting overrides. Null fields = use global default.
-  final PromptSettings settings;
-
   const SystemPrompt({
     required this.id,
     required this.name,
     required this.instruction,
-    this.settings = const PromptSettings(),
   });
 
-  /// Backward-compatible convenience getter.
-  String? get modelId => settings.modelId;
+  static const String defaultId = 'standard';
+  static const String professionalId = 'professional';
+
+  /// Built-in prompts cannot be edited or deleted.
+  bool get isBuiltIn => availablePrompts.any((p) => p.id == id);
 
   static const String _coreRules = '''
 ### ROLE:
@@ -294,6 +235,32 @@ FIDELITY RULES:
 - Output only the final text — no commentary about what you changed
 ''',
     ),
+    SystemPrompt(
+      id: professionalId,
+      name: 'Professional',
+      instruction: '''
+Turn the spoken input into polished professional prose suitable for workplace communication (emails, messages, reports, documents).
+
+CLEANUP RULES:
+- Remove filler words, hesitations, false starts, and self-corrections (keep only the corrected version).
+- Fix grammar, punctuation, capitalization, and sentence boundaries.
+
+REPHRASING:
+- Rewrite sentences for clarity, conciseness, and a professional register.
+- Replace casual wording with natural professional alternatives (e.g., "stuff" → "materials", "gonna" → "going to", "looked into" → "investigated").
+- Improve flow with clear logical transitions between ideas.
+- Let the content determine the style: precise technical language for technical content, clear business language for business content.
+
+PRESERVE EXACTLY:
+- The original meaning, intent, and all factual content (names, numbers, dates, decisions, requests).
+- Technical terms, proper nouns, and domain-specific language.
+- Questions stay questions; requests stay requests.
+
+FORMATTING:
+- Plain text with real line breaks between paragraphs.
+- If the speech is clearly an email or message, lay it out as one: greeting on its own line, body paragraphs separated by blank lines, sign-off and name on their own lines. Never invent a greeting, sign-off, or name the speaker did not give.
+''',
+    ),
   ];
 
   static SystemPrompt getById(String id, {List<SystemPrompt>? customPrompts}) {
@@ -305,37 +272,17 @@ FIDELITY RULES:
   }
 
   Map<String, dynamic> toMap() {
-    return {
-      'id': id,
-      'name': name,
-      'instruction': instruction,
-      if (settings.hasAnyOverride) 'settings': settings.toMap(),
-      // Write modelId at top level for backward compat
-      if (settings.modelId != null) 'modelId': settings.modelId,
-    };
+    return {'id': id, 'name': name, 'instruction': instruction};
   }
 
   factory SystemPrompt.fromMap(Map<String, dynamic> map) {
-    // Legacy: modelId was a top-level field.
-    // New: settings is a nested map.
-    final legacyModelId = map['modelId'] as String?;
-    final settingsMap = map['settings'] as Map<String, dynamic>?;
-
-    PromptSettings settings;
-    if (settingsMap != null) {
-      settings = PromptSettings.fromMap(settingsMap);
-    } else if (legacyModelId != null) {
-      // Migrate legacy modelId into the new structure.
-      settings = PromptSettings(modelId: legacyModelId);
-    } else {
-      settings = const PromptSettings();
-    }
-
+    final id = map['id'];
+    final name = map['name'];
+    final instruction = map['instruction'];
     return SystemPrompt(
-      id: map['id'] ?? '',
-      name: map['name'] ?? '',
-      instruction: map['instruction'] ?? '',
-      settings: settings,
+      id: id is String ? id : '',
+      name: name is String ? name : '',
+      instruction: instruction is String ? instruction : '',
     );
   }
 }

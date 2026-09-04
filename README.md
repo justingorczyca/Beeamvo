@@ -91,7 +91,7 @@ Pick the engine that fits your workflow — switch anytime from Settings or the 
 
 No account, no network, no data leaving your machine.
 
-1. Settings → Intelligence → **Processing Engine** → Whisper Local
+1. Settings → Transcription → **Engine** → Offline
 2. Download a model (Tiny, ~75 MB, is a good start)
 3. Start recording
 
@@ -99,10 +99,10 @@ Available models: Tiny, Tiny English, Tiny Q5 (~32 MB), Base, Small. Models are 
 
 ### Gemini API key (cloud)
 
-The fastest cloud setup — no Google Cloud project needed. Audio is sent to Google's Gemini API for transcription (and optional AI refinement); a confirmation dialog appears the first time you switch an offline-only prompt to a cloud pipeline.
+The fastest cloud setup — no Google Cloud project needed. Audio is sent to Google's Gemini API for transcription and AI refinement only while the Cloud AI engine is selected.
 
 1. Create an API key in [Google AI Studio](https://aistudio.google.com/apikey)
-2. Settings → Intelligence → **Cloud Provider** → Gemini API Key
+2. Settings → Transcription → **Provider** → Gemini API Key
 3. Click **Add API Key**, paste the key, save, then **Verify**
 
 In the Gemini API Key settings, choose the recommended **Interactions** API
@@ -121,7 +121,7 @@ For users with existing Google Cloud infrastructure.
    gcloud auth application-default login
    ```
 
-2. Settings → Intelligence → **Cloud Provider** → Vertex AI
+2. Settings → Transcription → **Provider** → Vertex AI
 3. Enter your Google Cloud project ID, then **Verify**
 
 Full guide: [docs/vertex-rest-setup.md](docs/vertex-rest-setup.md)
@@ -135,12 +135,11 @@ Full guide: [docs/vertex-rest-setup.md](docs/vertex-rest-setup.md)
 | **Cancel / commit** | `Esc` cancels, `Enter` commits early |
 | **Cloud models** | Gemini 2.5 Flash, 2.5 Flash Lite, 3.7 Flash, 3 Flash (preview), 3.5 Flash, 3.1 Flash Lite |
 | **Thinking levels** | Minimal / Low / Medium / High (Gemini 3+ models) |
-| **Two-pass refinement** | Local Whisper transcription followed by an AI polish pass |
-| **System prompts** | Built-in prompts plus unlimited custom prompts |
-| **Rephraser** | Off / Medium / High — professional polish on top of any prompt |
+| **Two-step refinement** | A dedicated transcript step (offline Whisper or a speech model) followed by an AI polish step |
+| **Writing styles** | Built-in styles (Standard, Concise, Smart, Professional, …) plus unlimited custom styles |
 | **Clipboard history** | Auto-saved transcriptions, full-text search, pinning |
-| **System tray** | Switch prompts, rephraser levels, and models without opening Settings |
-| **Languages** | Auto-detect, English, German, French, Spanish (Whisper) |
+| **System tray** | Switch writing styles without opening Settings |
+| **Spoken language** | Auto-detect, English, German, French, Spanish — one setting for offline and cloud |
 
 ## Default Hotkeys
 
@@ -156,7 +155,7 @@ All hotkeys are configurable in **Settings → General**.
 ## Privacy & Security
 
 - **Offline by default** — with Whisper Local, audio never leaves your machine.
-- **Cloud is opt-in** — Gemini API and Vertex AI only run when you choose Cloud (or enable two-pass refinement). The first time a cloud model enters the pipeline you get a confirmation dialog, so audio is never sent silently.
+- **Cloud is opt-in** — Gemini API and Vertex AI only run when you choose Cloud AI, or when you explicitly turn on Two-Step Refinement on the offline engine (which sends the transcript text, never audio).
 - **API keys live in OS secure storage**, entered through the UI. They are sent to Google only via request headers, never logged or written to plaintext files. (Vertex AI uses Application Default Credentials — no stored secret.)
 - **Cloud connections use standard TLS** — Gemini API, Vertex AI, model downloads, and update checks go over HTTPS and are validated by your operating system's certificate trust store. Certificate pinning is **not** used; keep your OS and trusted root certificates up to date.
 - **Local storage** — settings, model files, usage statistics, and clipboard history live in your OS application-data directory under your user account. Clipboard history is stored as **plaintext**; enable a best-effort sensitive-text filter in Settings, and avoid enabling history for sensitive work.
@@ -204,9 +203,9 @@ The same steps (plus a per-platform `flutter build`) run in CI — see [`.github
 ## Troubleshooting
 
 - **macOS: auto-paste stops working after a rebuild** — ad-hoc signed builds get a new signature each time, so the Accessibility permission goes stale. Rebuild with a stable self-signed identity (see [frontend/macos/CODESIGN_README.md](frontend/macos/CODESIGN_README.md)) or use **Settings → Troubleshooting → Auto-repair**, which resets only Beeamvo's TCC entry.
-- **Cloud says "no API key" or "no project ID"** — set the Gemini key or Vertex project ID in **Settings → Intelligence**. See [docs/gemini-api-setup.md](docs/gemini-api-setup.md) / [docs/vertex-rest-setup.md](docs/vertex-rest-setup.md).
+- **Cloud says "no API key" or "no project ID"** — set the Gemini key or Vertex project ID in **Settings → Transcription**. See [docs/gemini-api-setup.md](docs/gemini-api-setup.md) / [docs/vertex-rest-setup.md](docs/vertex-rest-setup.md).
 - **First Windows/Linux build needs the internet** — whisper.cpp is fetched from the pinned upstream commit at build time (see the note above).
-- **A non-default prompt "has no effect"** — on the offline Whisper backend with two-pass refinement off, only verbatim transcription runs. Switch to Cloud or enable two-pass refinement to apply prompts and the Rephraser. The app surfaces this in the mode popup and Settings.
+- **A writing style "has no effect"** — the offline engine transcribes word-for-word. Switch to Cloud AI or turn on Two-Step Refinement (Settings → Transcription) to apply a writing style. The Writing Style page says so when styles are paused.
 - More help is available in **Settings → Troubleshooting**.
 
 ## Known limitations

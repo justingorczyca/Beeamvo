@@ -5,7 +5,6 @@ import 'package:google_fonts/google_fonts.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
 import '../../../providers/settings_provider.dart';
 import '../../../config.dart';
-import '../../../models/system_prompt.dart';
 import '../../../services/settings_service.dart';
 import '../../../services/whisper_service.dart';
 import '../../../services/whisper_model_download_service.dart';
@@ -16,14 +15,12 @@ import '../bee_page_header.dart';
 
 class AiModelsPage extends StatefulWidget {
   final ValueChanged<String>? onModelChanged;
-  final ValueChanged<dynamic>? onBackendChanged;
   final Future<void> Function(CloudProvider provider)? onVerifyCloudProvider;
   final VoidCallback? onModelDownloaded;
 
   const AiModelsPage({
     super.key,
     this.onModelChanged,
-    this.onBackendChanged,
     this.onVerifyCloudProvider,
     this.onModelDownloaded,
   });
@@ -36,12 +33,9 @@ class _AiModelsPageState extends State<AiModelsPage> {
   String _selectedModelId = '';
   TranscriptionBackend _transcriptionBackend = TranscriptionBackend.cloud;
   CloudProvider _cloudProvider = CloudProvider.geminiApiKey;
-  GeminiApiSurface _geminiApiSurface = GeminiApiSurface.generateContent;
   bool _twoPassEnabled = false;
   String _twoPassTranscriptionModelId = '';
-  String _twoPassRefinementModelId = '';
   GeminiThinkingLevel? _selectedThinkingLevel; // null = model default
-  GeminiThinkingLevel? _selectedRefinementThinkingLevel; // null = model default
   bool _settingsLoaded = false;
   bool _geminiApiKeyPresent = false;
   String? _vertexProjectId;
@@ -50,22 +44,15 @@ class _AiModelsPageState extends State<AiModelsPage> {
   bool _cloudStatusIsError = false;
   bool _cloudStatusIsVerified = false;
 
-  /// Whether the current pipeline uses a transcription-only model for the
-  /// raw audio-to-text pass (primary in single-pass, Pass 1 in two-pass).
-  bool get _transcriptionSettingsVisible {
-    if (_transcriptionBackend != TranscriptionBackend.cloud) return false;
-    final activeModelId = _twoPassEnabled
-        ? _twoPassTranscriptionModelId
-        : _selectedModelId;
-    return AppConfig.getModelById(activeModelId).isTranscriptionOnly;
-  }
-
   late WhisperModelDownloadService _downloadService;
   DownloadStatus _lastDownloadStatus = DownloadStatus.idle;
   bool _hasWhisper = false;
   bool _showModelSelector = false;
   List<String> _downloadedWhisperModelIds = const [];
   Set<String> _existingWhisperModelIds = const {};
+
+  bool get _isOffline => _transcriptionBackend == TranscriptionBackend.whisper;
+  bool get _isGemini => _cloudProvider == CloudProvider.geminiApiKey;
 
   @override
   void initState() {
@@ -86,12 +73,8 @@ class _AiModelsPageState extends State<AiModelsPage> {
 
   void _onDownloadStateChanged() {
     if (!mounted) return;
-
     final status = _downloadService.status;
-    if (status == _lastDownloadStatus) {
-      return;
-    }
-
+    if (status == _lastDownloadStatus) return;
     _lastDownloadStatus = status;
     if (status == DownloadStatus.completed) {
       _refreshDownloadedWhisperModels();
@@ -102,16 +85,9 @@ class _AiModelsPageState extends State<AiModelsPage> {
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
-    // Always re-read settings on rebuild so changes from other pages
-    // (e.g. the prompts-page rephraser popover flipping the backend
-    // to cloud) are reflected here. SettingsProviderScope is an
-    // InheritedNotifier, so any SettingsService.notifyListeners()
-    // triggers a rebuild of this page; we piggyback on that to
-    // refresh our cached state.
-    //
-    // We skip the initial build's mounting frame to avoid a setState
-    // during build — _settingsLoaded is set on first load and then
-    // kept in sync on subsequent dependency changes.
+    // SettingsProviderScope is an InheritedNotifier, so any
+    // SettingsService.notifyListeners() rebuilds this page; re-read the
+    // values other surfaces (tray, prompts page) can change.
     if (!_settingsLoaded) {
       _settingsLoaded = true;
       _loadSettings();
@@ -120,38 +96,29 @@ class _AiModelsPageState extends State<AiModelsPage> {
     }
   }
 
-  /// Lightweight version of [_loadSettings] that only refreshes
-  /// the values that can change from outside this page (backend,
-  /// two-pass, API-key presence, etc.). Called on every rebuild
-  /// after the initial load. The Whisper-model list is NOT re-read
-  /// here because it's only mutated by user actions on this page.
   void _syncFromSettings() {
     final s = SettingsProviderScope.of(context).settingsService;
     final newBackend = s.transcriptionBackend;
     final newTwoPass = s.twoPassTranscriptionEnabled;
-    final newTwoPassTranscriptionModel = s.twoPassTranscriptionModelId;
-    final newTwoPassModel = s.twoPassRefinementModelId;
+    final newStepOneModel = s.twoPassTranscriptionModelId;
+    final newModel = s.selectedModelId;
     final newHasGeminiKey = s.hasGeminiApiKey;
     final newVertexProjectId = s.vertexProjectId;
-    final newGeminiApiSurface = s.geminiApiSurface;
-    // Avoid setState if nothing changed (keeps no-op rebuilds cheap).
     if (newBackend == _transcriptionBackend &&
         newTwoPass == _twoPassEnabled &&
-        newTwoPassTranscriptionModel == _twoPassTranscriptionModelId &&
-        newTwoPassModel == _twoPassRefinementModelId &&
+        newStepOneModel == _twoPassTranscriptionModelId &&
+        newModel == _selectedModelId &&
         newHasGeminiKey == _geminiApiKeyPresent &&
-        newVertexProjectId == _vertexProjectId &&
-        newGeminiApiSurface == _geminiApiSurface) {
+        newVertexProjectId == _vertexProjectId) {
       return;
     }
     setState(() {
       _transcriptionBackend = newBackend;
       _twoPassEnabled = newTwoPass;
-      _twoPassTranscriptionModelId = newTwoPassTranscriptionModel;
-      _twoPassRefinementModelId = newTwoPassModel;
+      _twoPassTranscriptionModelId = newStepOneModel;
+      _selectedModelId = newModel;
       _geminiApiKeyPresent = newHasGeminiKey;
       _vertexProjectId = newVertexProjectId;
-      _geminiApiSurface = newGeminiApiSurface;
     });
   }
 
@@ -162,15 +129,9 @@ class _AiModelsPageState extends State<AiModelsPage> {
       _selectedModelId = s.selectedModelId;
       _transcriptionBackend = s.transcriptionBackend;
       _cloudProvider = s.cloudProvider;
-      _geminiApiSurface = s.geminiApiSurface;
       _twoPassEnabled = s.twoPassTranscriptionEnabled;
       _twoPassTranscriptionModelId = s.twoPassTranscriptionModelId;
-      _twoPassRefinementModelId = s.twoPassRefinementModelId;
-      // Load persisted thinking level for the currently selected model
       _selectedThinkingLevel = s.getThinkingLevelForModel(_selectedModelId);
-      _selectedRefinementThinkingLevel = s.getThinkingLevelForModel(
-        _twoPassRefinementModelId,
-      );
       _cacheDownloadedWhisperModels(downloadedWhisperModels);
       _geminiApiKeyPresent = s.hasGeminiApiKey;
       _vertexProjectId = s.vertexProjectId;
@@ -193,23 +154,6 @@ class _AiModelsPageState extends State<AiModelsPage> {
   Future<void> _onBackendSelected(TranscriptionBackend backend) async {
     final settings = SettingsProviderScope.of(context).settingsService;
     await settings.setTranscriptionBackend(backend);
-    // The SettingsService.notifyListeners() call from
-    // setTranscriptionBackend now propagates to _BeeamvoHomeState's
-    // listener, which calls _onBackendChanged (Whisper init/teardown).
-    // No need to fire widget.onBackendChanged manually here — it
-    // would just double-trigger the handler.
-    //
-    // When the user switches BACK to Whisper, reset the rephraser to
-    // Off. The rephraser is a cloud-only feature; leaving it on
-    // Medium/High while on Whisper is silently ineffective (the
-    // transcription pipeline has no LLM to apply it). The prompts
-    // page would route the next pick through the local→cloud
-    // confirmation popover anyway, but the persisted level should
-    // not lie about intent between sessions either.
-    if (backend == TranscriptionBackend.whisper &&
-        settings.rephraseLevel != RephraseLevel.off) {
-      await settings.setRephraseLevel(RephraseLevel.off);
-    }
     setState(() => _transcriptionBackend = backend);
   }
 
@@ -224,15 +168,14 @@ class _AiModelsPageState extends State<AiModelsPage> {
     });
   }
 
-  Future<void> _onGeminiApiSurfaceSelected(GeminiApiSurface surface) async {
+  Future<void> _onModelSelected(String modelId) async {
     final settings = SettingsProviderScope.of(context).settingsService;
-    await settings.setGeminiApiSurface(surface);
+    await settings.setSelectedModelId(modelId);
     setState(() {
-      _geminiApiSurface = surface;
-      _cloudStatusMessage = null;
-      _cloudStatusIsError = false;
-      _cloudStatusIsVerified = false;
+      _selectedModelId = modelId;
+      _selectedThinkingLevel = settings.getThinkingLevelForModel(modelId);
     });
+    widget.onModelChanged?.call(modelId);
   }
 
   Future<String?> _showTextInputDialog({
@@ -533,9 +476,7 @@ class _AiModelsPageState extends State<AiModelsPage> {
       await widget.onVerifyCloudProvider!.call(_cloudProvider);
       setState(() {
         _cloudStatusMessage = _cloudProvider == CloudProvider.geminiApiKey
-            ? _geminiApiSurface == GeminiApiSurface.interactions
-                  ? 'Gemini API key verified successfully (Interactions API).'
-                  : 'Gemini API key verified successfully (legacy generateContent API).'
+            ? 'Gemini API key verified successfully.'
             : 'Vertex AI configuration verified successfully.';
         _cloudStatusIsError = false;
         _cloudStatusIsVerified = true;
@@ -623,168 +564,202 @@ class _AiModelsPageState extends State<AiModelsPage> {
   Widget build(BuildContext context) {
     if (!_settingsLoaded) return _buildLoadingState();
 
+    return Container(
+      color: beeSurface(context),
+      child: SingleChildScrollView(
+        padding: BeePageHeader.contentPadding,
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const BeePageHeader(title: 'Transcription'),
+            _buildEngineSection(),
+            const SizedBox(height: BeePageHeader.groupGap),
+            if (_isOffline) ...[
+              _buildLocalWhisperModelsHeader(),
+              _buildOfflineModelManagerFlat(),
+            ] else ...[
+              _buildCloudProviderSection(),
+              const SizedBox(height: BeePageHeader.groupGap),
+              _buildAiModelSection(),
+            ],
+            const SizedBox(height: BeePageHeader.groupGap),
+            _buildTwoStepSection(),
+            const SizedBox(height: BeePageHeader.groupGap),
+            _buildSettingsLocalFootnote(),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildEngineSection() {
+    final settings = SettingsProviderScope.of(context).settingsService;
     return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Expanded(
-          child: Container(
-            color: beeSurface(context),
-            child: SingleChildScrollView(
-              padding: BeePageHeader.contentPadding,
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  const BeePageHeader(title: 'AI Models'),
-                  // ── PROCESSING ENGINE ──────────────────────────────
-                  const BeeGroupLabel(label: 'Processing Engine'),
-                  BeeSettingsRow(
-                    icon: Icons.settings_suggest_rounded,
-                    label: 'Transcription Backend',
-                    description:
-                        _transcriptionBackend == TranscriptionBackend.cloud
-                        ? 'Using cloud AI for fast transcription and formatting.'
-                        : 'Using local Whisper for offline, on-device transcription.',
-                    trailing: ConstrainedBox(
-                      constraints: const BoxConstraints(maxWidth: 360),
-                      child: BeeSegmented<TranscriptionBackend>(
-                        value: _transcriptionBackend,
-                        options: const [
-                          (
-                            val: TranscriptionBackend.cloud,
-                            label: 'Cloud AI',
-                            icon: Icons.cloud_done_rounded,
-                          ),
-                          (
-                            val: TranscriptionBackend.whisper,
-                            label: 'Local Whisper',
-                            icon: Icons.memory_rounded,
-                          ),
-                        ],
-                        onChanged: _onBackendSelected,
-                      ),
-                    ),
-                  ),
-
-                  const SizedBox(height: BeePageHeader.groupGap),
-
-                  if (_transcriptionBackend == TranscriptionBackend.cloud) ...[
-                    // ── CLOUD SETTINGS ────────────────────────────────
-                    _buildCloudProviderSection(),
-
-                    const SizedBox(height: BeePageHeader.groupGap),
-
-                    // ── MODEL SETTINGS ────────────────────────────────
-                    const BeeGroupLabel(label: 'Model Settings'),
-                    BeeSettingsRow(
-                      icon: Icons.cloud_outlined,
-                      label: 'Primary Cloud Model',
-                      description: _primaryModelDescription(),
-                      showDivider: !AppConfig.getModelById(
-                        _selectedModelId,
-                      ).hasSelectableThinkingLevel,
-                      trailing: BeeDropdown<String>(
-                        value: _safeModelId(_selectedModelId),
-                        options: _primaryModelOptions(),
-                        onChanged: (v) async {
-                          final settings = SettingsProviderScope.of(
-                            context,
-                          ).settingsService;
-                          await settings.setSelectedModelId(v);
-                          setState(() {
-                            _selectedModelId = v;
-                            // Load any saved level for the newly selected model
-                            _selectedThinkingLevel = settings
-                                .getThinkingLevelForModel(v);
-                          });
-                          widget.onModelChanged?.call(v);
-                        },
-                      ),
-                    ),
-
-                    AnimatedCrossFade(
-                      duration: const Duration(milliseconds: 280),
-                      crossFadeState:
-                          AppConfig.getModelById(
-                            _selectedModelId,
-                          ).hasSelectableThinkingLevel
-                          ? CrossFadeState.showFirst
-                          : CrossFadeState.showSecond,
-                      firstChild: _buildThinkingLevelRow(),
-                      secondChild: const SizedBox(width: double.infinity),
-                    ),
-
-                    const SizedBox(height: BeePageHeader.groupGap),
-                  ] else ...[
-                    // ── LOCAL SETTINGS ─────────────────────────────────
-                    const BeeGroupLabel(label: 'Local Settings'),
-                    BeeSettingsRow(
-                      icon: Icons.memory_rounded,
-                      label: 'Whisper Engine',
-                      description:
-                          'Offline speech recognition running entirely on your device.',
-                      trailing: beeBadge(
-                        context,
-                        '${_downloadedWhisperModelIds.length} ${_downloadedWhisperModelIds.length == 1 ? 'model' : 'models'}',
-                        _hasWhisper
-                            ? BeeBadgeTone.success
-                            : BeeBadgeTone.neutral,
-                      ),
-                    ),
-                    Builder(
-                      builder: (context) {
-                        final settings = SettingsProviderScope.of(
-                          context,
-                        ).settingsService;
-                        return BeeSettingsRow(
-                          icon: Icons.language_rounded,
-                          label: 'Spoken Language',
-                          description:
-                              'The language Whisper should expect in the audio.',
-                          trailing: BeeDropdown<String>(
-                            value: _safeLanguageId(settings.whisperLanguage),
-                            options: _languageOptions,
-                            onChanged: (v) async {
-                              await settings.setWhisperLanguage(v);
-                              setState(() {});
-                            },
-                          ),
-                        );
-                      },
-                    ),
-                    const SizedBox(height: BeePageHeader.groupGap),
-                    _buildLocalWhisperModelsHeader(),
-                    _buildOfflineModelManagerFlat(),
-                    const SizedBox(height: BeePageHeader.groupGap),
-                  ],
-
-                  // ── TRANSCRIPTION PIPELINE ────────────────────────
-                  _buildPipelineSection(),
-
-                  const SizedBox(height: BeePageHeader.groupGap),
-
-                  // ── TRANSCRIPTION SETTINGS ────────────────────────
-                  if (_transcriptionSettingsVisible)
-                    _buildTranscriptionSettingsSection(),
-
-                  if (_transcriptionSettingsVisible)
-                    const SizedBox(height: BeePageHeader.groupGap),
-
-                  // ── FOOTNOTE ──────────────────────────────────────
-                  _buildSettingsLocalFootnote(),
-                ],
-              ),
+        const BeeGroupLabel(label: 'Engine'),
+        BeeSettingsRow(
+          icon: Icons.settings_suggest_rounded,
+          label: 'Where audio is transcribed',
+          description: _isOffline
+              ? 'On this device with Whisper. Works offline; nothing leaves your computer.'
+              : 'Cloud AI transcribes and applies your writing style in one step.',
+          trailing: ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 360),
+            child: BeeSegmented<TranscriptionBackend>(
+              value: _transcriptionBackend,
+              options: const [
+                (
+                  val: TranscriptionBackend.cloud,
+                  label: 'Cloud AI',
+                  icon: Icons.cloud_done_rounded,
+                ),
+                (
+                  val: TranscriptionBackend.whisper,
+                  label: 'Offline',
+                  icon: Icons.memory_rounded,
+                ),
+              ],
+              onChanged: _onBackendSelected,
             ),
+          ),
+        ),
+        BeeSettingsRow(
+          icon: Icons.language_rounded,
+          label: 'Spoken Language',
+          description:
+              'Auto-detect works well; pick a language to improve accuracy.',
+          showDivider: false,
+          trailing: BeeDropdown<String>(
+            value: _safeLanguageId(settings.spokenLanguage),
+            options: _languageOptions,
+            onChanged: (v) async {
+              await settings.setSpokenLanguage(v);
+              setState(() {});
+            },
           ),
         ),
       ],
     );
   }
 
-  /// Plain text footnote — no bordered container.
+  Widget _buildAiModelSection({bool showDivider = false}) {
+    final model = AppConfig.getModelById(_selectedModelId);
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const BeeGroupLabel(label: 'AI Model'),
+        BeeSettingsRow(
+          icon: Icons.auto_awesome_rounded,
+          label: 'Model',
+          description: 'Writes the final text and applies your writing style.',
+          showDivider: model.hasSelectableThinkingLevel || showDivider,
+          trailing: BeeDropdown<String>(
+            value: _safeModelId(_selectedModelId),
+            options: _mainModelOptions(),
+            onChanged: _onModelSelected,
+          ),
+        ),
+        if (model.hasSelectableThinkingLevel)
+          _buildThinkingLevelRow(showDivider: showDivider),
+      ],
+    );
+  }
+
+  /// Two-step refinement, with both steps visible together so the pipeline
+  /// reads top-to-bottom: raw transcript first, polished text second.
+  Widget _buildTwoStepSection() {
+    final settings = SettingsProviderScope.of(context).settingsService;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const BeeGroupLabel(label: 'Two-Step Refinement'),
+        BeeSettingsRow(
+          icon: Icons.linear_scale_rounded,
+          label: 'Refine in two steps',
+          description: _isOffline
+              ? 'Transcribe offline, then let a cloud AI model polish the text with your writing style.'
+              : 'Use a dedicated speech model for the transcript, then polish it with your AI model.',
+          showDivider: _twoPassEnabled,
+          trailing: BeeToggle(
+            value: _twoPassEnabled,
+            semanticLabel: 'Two-step refinement',
+            onChanged: (v) async {
+              await settings.setTwoPassTranscriptionEnabled(v);
+              setState(() => _twoPassEnabled = v);
+            },
+          ),
+        ),
+        AnimatedSize(
+          duration: kBeeTransitionDuration,
+          curve: kBeeTransitionCurve,
+          alignment: Alignment.topCenter,
+          child: _twoPassEnabled
+              ? _buildTwoStepDetails(settings)
+              : const SizedBox(width: double.infinity),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildTwoStepDetails(SettingsService settings) {
+    final whisperInfo = WhisperModelDownloadService.getModelInfo(
+      settings.whisperModelId,
+    );
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        if (_isOffline)
+          BeeSettingsRow(
+            icon: Icons.looks_one_rounded,
+            label: 'Step 1 · Transcribe',
+            description: whisperInfo?.name ?? settings.whisperModelId,
+            trailing: beeBadge(context, 'Offline', BeeBadgeTone.neutral),
+          )
+        else if (_isGemini)
+          BeeSettingsRow(
+            icon: Icons.looks_one_rounded,
+            label: 'Step 1 · Transcribe',
+            description: 'Speech-to-text model for the raw transcript.',
+            trailing: BeeDropdown<String>(
+              value: _safeStepOneModelId(_twoPassTranscriptionModelId),
+              options: _stepOneModelOptions(),
+              onChanged: (v) async {
+                await settings.setTwoPassTranscriptionModelId(v);
+                setState(() => _twoPassTranscriptionModelId = v);
+              },
+            ),
+          )
+        else
+          BeeSettingsRow(
+            icon: Icons.looks_one_rounded,
+            label: 'Step 1 · Transcribe',
+            description: 'Your AI model writes the raw transcript.',
+            trailing: beeBadge(context, 'Vertex AI', BeeBadgeTone.neutral),
+          ),
+        BeeSettingsRow(
+          icon: Icons.looks_two_rounded,
+          label: 'Step 2 · Polish',
+          description: _isOffline
+              ? 'A cloud AI model applies your writing style. Set it up below.'
+              : '${AppConfig.getModelById(_selectedModelId).displayName} applies your writing style.',
+          showDivider: _isOffline,
+        ),
+        if (_isOffline) ...[
+          const SizedBox(height: BeePageHeader.groupGap),
+          _buildCloudProviderSection(),
+          const SizedBox(height: BeePageHeader.groupGap),
+          _buildAiModelSection(),
+        ],
+      ],
+    );
+  }
+
   Widget _buildSettingsLocalFootnote() {
     return Padding(
       padding: const EdgeInsets.only(top: 4),
       child: Text(
-        'Preferences are saved in your OS application data folder. Cloud credentials are not written into the settings JSON.',
+        'Preferences are saved in your OS application data folder. Cloud credentials are kept in secure storage, never in the settings file.',
         style: GoogleFonts.inter(
           fontSize: 11,
           color: beeTextMuted(context),
@@ -795,212 +770,8 @@ class _AiModelsPageState extends State<AiModelsPage> {
     );
   }
 
-  /// Settings for dedicated speech-to-text models such as
-  /// `gemini-3.5-transcribe`. Shown only when a transcription-only model is
-  /// selected for Pass 1.
-  Widget _buildTranscriptionSettingsSection() {
-    final settings = SettingsProviderScope.of(context).settingsService;
-
-    return Builder(
-      builder: (context) {
-        final customVocab = settings.transcriptionCustomVocabulary;
-        return Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            const BeeGroupLabel(label: 'Transcription Settings'),
-            BeeSettingsRow(
-              icon: Icons.format_align_left,
-              label: 'Output Mode',
-              description:
-                  'Verbatim preserves filler words; Smart cleans and structures.',
-              trailing: ConstrainedBox(
-                constraints: const BoxConstraints(maxWidth: 240),
-                child: BeeDropdown<TranscriptionMode>(
-                  value: settings.transcriptionMode,
-                  options: [
-                    for (final m in TranscriptionMode.values)
-                      BeeDropdownOption(value: m, label: m.displayName),
-                  ],
-                  onChanged: (v) async {
-                    await settings.setTranscriptionMode(v);
-                    setState(() {});
-                  },
-                ),
-              ),
-            ),
-            BeeSettingsRow(
-              icon: Icons.language_rounded,
-              label: 'Spoken Language',
-              description:
-                  'Auto-detect or bias recognition toward a specific language.',
-              trailing: BeeDropdown<String>(
-                value: _safeLanguageId(settings.transcriptionLanguage),
-                options: _languageOptions,
-                onChanged: (v) async {
-                  await settings.setTranscriptionLanguage(v);
-                  setState(() {});
-                },
-              ),
-            ),
-            BeeSettingsRow(
-              icon: Icons.school_rounded,
-              label: 'Custom Vocabulary',
-              description: customVocab.isEmpty
-                  ? 'No custom terms configured.'
-                  : '${customVocab.length} term${customVocab.length == 1 ? '' : 's'} configured',
-              showDivider: false,
-              trailing: BeeActionChip(
-                label: customVocab.isEmpty ? 'Add' : 'Edit',
-                onTap: () async {
-                  final result = await _showTextInputDialog(
-                    title: 'Custom Vocabulary',
-                    hintText: 'term1, term2, project-codename',
-                    initialValue: customVocab.join(', '),
-                    helperText:
-                        'Comma-separated terms to bias the transcription model.',
-                  );
-                  if (result != null && mounted) {
-                    await settings.setTranscriptionCustomVocabulary(
-                      result.split(','),
-                    );
-                    setState(() {});
-                  }
-                },
-              ),
-            ),
-          ],
-        );
-      },
-    );
-  }
-
-  /// Eyebrow section header used by the always-visible Pipeline area.
-  /// Always-visible Two-Pass Refinement section. Promoted out of the
-  /// collapsed Advanced block because it is one of the most consequential
-  /// workflow choices on this page and should be reachable without a tap.
-  Widget _buildPipelineSection() {
-    final settings = SettingsProviderScope.of(context).settingsService;
-
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        const BeeGroupLabel(label: 'Transcription Pipeline'),
-        BeeSettingsRow(
-          icon: Icons.linear_scale_rounded,
-          label: 'Two-Pass Refinement',
-          warningBadge: beeBadge(context, 'BETA', BeeBadgeTone.neutral),
-          description:
-              'Pipeline your audio through a raw transcription pass, followed by an AI refinement pass.',
-          trailing: BeeToggle(
-            value: _twoPassEnabled,
-            semanticLabel: 'Two-pass refinement',
-            onChanged: (v) async {
-              await settings.setTwoPassTranscriptionEnabled(v);
-              if (v) {
-                await settings.setTwoPassRefinementModelId(_selectedModelId);
-                _twoPassRefinementModelId = _selectedModelId;
-                _selectedRefinementThinkingLevel = settings
-                    .getThinkingLevelForModel(_selectedModelId);
-              }
-              setState(() => _twoPassEnabled = v);
-            },
-          ),
-        ),
-        if (_twoPassEnabled) ...[
-          if (_transcriptionBackend == TranscriptionBackend.whisper)
-            BeeSettingsRow(
-              icon: Icons.looks_one_rounded,
-              label: 'Pass 1 · Raw Transcription',
-              description: 'Uses the selected local Whisper model.',
-              trailing: beeBadge(context, 'Local', BeeBadgeTone.neutral),
-            )
-          else
-            BeeSettingsRow(
-              icon: Icons.looks_one_rounded,
-              label: 'Pass 1 · Raw Transcription',
-              description: 'Model for the raw audio-to-text pass.',
-              trailing: BeeDropdown<String>(
-                value: _safeTranscriptionModelId(_twoPassTranscriptionModelId),
-                options: _transcriptionModelOptions(),
-                onChanged: (v) async {
-                  await settings.setTwoPassTranscriptionModelId(v);
-                  setState(() => _twoPassTranscriptionModelId = v);
-                },
-              ),
-            ),
-          BeeSettingsRow(
-            icon: Icons.looks_two_rounded,
-            label: 'Pass 2 · AI Refinement',
-            description:
-                'Cloud model that formats, corrects, and structures the raw transcript.',
-            trailing: BeeDropdown<String>(
-              value: _safeModelId(_twoPassRefinementModelId),
-              options: _cloudModelOptions(),
-              onChanged: (v) async {
-                await settings.setTwoPassRefinementModelId(v);
-                setState(() {
-                  _twoPassRefinementModelId = v;
-                  _selectedRefinementThinkingLevel = settings
-                      .getThinkingLevelForModel(v);
-                });
-              },
-            ),
-          ),
-          AnimatedCrossFade(
-            duration: const Duration(milliseconds: 240),
-            crossFadeState:
-                AppConfig.getModelById(
-                  _twoPassRefinementModelId,
-                ).hasSelectableThinkingLevel
-                ? CrossFadeState.showFirst
-                : CrossFadeState.showSecond,
-            firstChild: _buildThinkingLevelControl(
-              title: 'Refinement Thinking',
-              description: 'Reasoning effort for the refinement pass.',
-              modelId: _twoPassRefinementModelId,
-              selectedLevel: _selectedRefinementThinkingLevel,
-              onChanged: (level) =>
-                  setState(() => _selectedRefinementThinkingLevel = level),
-            ),
-            secondChild: const SizedBox(width: double.infinity),
-          ),
-          if (_transcriptionBackend == TranscriptionBackend.whisper)
-            _buildCloudFallbackRow(),
-        ],
-      ],
-    );
-  }
-
-  /// Shows whether the cloud provider is configured for two-pass when on local backend.
-  Widget _buildCloudFallbackRow() {
-    final isGemini = _cloudProvider == CloudProvider.geminiApiKey;
-    final env = dotenv.isInitialized ? dotenv.env : const <String, String>{};
-    final geminiEnvKey = env['GEMINI_API_KEY']?.trim() ?? '';
-    final vertexEnvProjectId = env['VERTEX_PROJECT_ID']?.trim() ?? '';
-    final cloudConfigured = isGemini
-        ? (geminiEnvKey.isNotEmpty || _geminiApiKeyPresent)
-        : (vertexEnvProjectId.isNotEmpty || _vertexProjectId != null);
-    final providerLabel = isGemini ? 'Gemini API Key' : 'Vertex AI';
-
-    return BeeSettingsRow(
-      icon: cloudConfigured
-          ? Icons.cloud_done_outlined
-          : Icons.cloud_off_outlined,
-      label: 'Cloud Fallback',
-      description:
-          '$providerLabel · ${cloudConfigured ? 'Ready' : 'Not configured'}',
-      showDivider: false,
-      trailing: !cloudConfigured
-          ? BeeActionChip(
-              label: 'Configure',
-              onTap: () => _onBackendSelected(TranscriptionBackend.cloud),
-            )
-          : beeBadge(context, 'Ready', BeeBadgeTone.success),
-    );
-  }
-
   Widget _buildCloudProviderSection() {
-    final isGemini = _cloudProvider == CloudProvider.geminiApiKey;
+    final isGemini = _isGemini;
     final env = dotenv.isInitialized ? dotenv.env : const <String, String>{};
     final geminiEnvKey = env['GEMINI_API_KEY']?.trim() ?? '';
     final vertexEnvProjectId = env['VERTEX_PROJECT_ID']?.trim() ?? '';
@@ -1013,7 +784,6 @@ class _AiModelsPageState extends State<AiModelsPage> {
         (isGemini && geminiManagedByEnv) ||
         (!isGemini && vertexProjectManagedByEnv);
 
-    // Credential status label for the row description
     String credentialDesc;
     if (isManagedByEnv) {
       credentialDesc = isGemini
@@ -1021,24 +791,24 @@ class _AiModelsPageState extends State<AiModelsPage> {
           : 'Project ID managed by .env file (read-only).';
     } else if (!isConfigured) {
       credentialDesc = isGemini
-          ? 'No API key configured. Add one to enable cloud transcription.'
-          : 'No project ID set. Configure one for Vertex AI access. Vertex authenticates with local Application Default Credentials, a plaintext JSON file with broad cloud-platform scope.';
+          ? 'Add your Gemini API key to enable cloud AI.'
+          : 'Set your Google Cloud project ID. Vertex AI signs in with your local Application Default Credentials.';
     } else {
       credentialDesc = isGemini
-          ? 'API key stored locally in secure storage.'
-          : 'Project ID: ${_vertexProjectId ?? ''}. Vertex authenticates with local Application Default Credentials, a plaintext JSON file with broad cloud-platform scope.';
+          ? 'Stored in your OS secure storage.'
+          : 'Project ID: ${_vertexProjectId ?? ''}. Signs in with your local Application Default Credentials.';
     }
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        const BeeGroupLabel(label: 'Cloud Provider'),
+        const BeeGroupLabel(label: 'Cloud Account'),
         BeeSettingsRow(
           icon: Icons.cloud_outlined,
           label: 'Provider',
           description: isGemini
-              ? 'Direct API key setup for individual use.'
-              : 'Google Cloud project with Application Default Credentials.',
+              ? 'Gemini with a personal API key.'
+              : 'Google Cloud project via Vertex AI.',
           trailing: BeeSegmented<CloudProvider>(
             value: _cloudProvider,
             onChanged: _onCloudProviderSelected,
@@ -1056,32 +826,11 @@ class _AiModelsPageState extends State<AiModelsPage> {
             ],
           ),
         ),
-        if (isGemini)
-          BeeSettingsRow(
-            icon: Icons.api_rounded,
-            label: 'API Surface',
-            description: _geminiApiSurface.description,
-            trailing: BeeSegmented<GeminiApiSurface>(
-              value: _geminiApiSurface,
-              onChanged: _onGeminiApiSurfaceSelected,
-              options: const [
-                (
-                  val: GeminiApiSurface.interactions,
-                  label: 'Interactions',
-                  icon: Icons.auto_awesome_rounded,
-                ),
-                (
-                  val: GeminiApiSurface.generateContent,
-                  label: 'Legacy',
-                  icon: Icons.history_rounded,
-                ),
-              ],
-            ),
-          ),
         BeeSettingsRow(
           icon: isGemini ? Icons.key_rounded : Icons.hub_rounded,
           label: isGemini ? 'API Key' : 'Project ID',
           description: credentialDesc,
+          showDivider: isConfigured && !isManagedByEnv,
           trailing: _buildCredentialTrailing(
             isGemini: isGemini,
             isManagedByEnv: isManagedByEnv,
@@ -1097,8 +846,7 @@ class _AiModelsPageState extends State<AiModelsPage> {
                 : Icons.verified_outlined,
             label: 'Connection',
             description:
-                _cloudStatusMessage ??
-                'Verify that your credentials work correctly.',
+                _cloudStatusMessage ?? 'Check that your credentials work.',
             showDivider: false,
             trailing: BeeActionChip(
               label: _isVerifyingCloudProvider ? 'Verifying…' : 'Verify',
@@ -1329,61 +1077,39 @@ class _AiModelsPageState extends State<AiModelsPage> {
     );
   }
 
-  Widget _buildThinkingLevelRow() {
-    return _buildThinkingLevelControl(
-      title: 'Thinking Level',
-      description:
-          'Control how much internal reasoning the model performs. '
-          'Higher levels improve accuracy for complex tasks; lower levels '
-          'reduce latency and token cost.',
-      modelId: _selectedModelId,
-      selectedLevel: _selectedThinkingLevel,
-      onChanged: (level) => setState(() => _selectedThinkingLevel = level),
-    );
-  }
-
-  Widget _buildThinkingLevelControl({
-    required String title,
-    required String description,
-    required String modelId,
-    required GeminiThinkingLevel? selectedLevel,
-    required ValueChanged<GeminiThinkingLevel> onChanged,
-  }) {
-    final modelConfig = AppConfig.getModelById(modelId);
+  Widget _buildThinkingLevelRow({bool showDivider = false}) {
+    final modelConfig = AppConfig.getModelById(_selectedModelId);
     final levels = modelConfig.supportedThinkingLevels;
-    if (levels.isEmpty) {
-      return const SizedBox.shrink();
-    }
+    if (levels.isEmpty) return const SizedBox.shrink();
 
     final effective =
-        modelConfig.resolveThinkingLevel(levelOverride: selectedLevel) ??
+        modelConfig.resolveThinkingLevel(
+          levelOverride: _selectedThinkingLevel,
+        ) ??
         levels.first;
-
     final options = levels
         .map(
           (level) =>
               (val: level, label: level.displayLabel, icon: null as IconData?),
         )
         .toList();
-
-    String rowDesc = effective.description;
-    if (selectedLevel == null) {
-      rowDesc = '$rowDesc (Using model default)';
-    }
+    final rowDesc = _selectedThinkingLevel == null
+        ? '${effective.description} (model default)'
+        : effective.description;
 
     return BeeSettingsRow(
       icon: Icons.psychology_rounded,
-      label: title,
+      label: 'Thinking',
       description: rowDesc,
-      showDivider: false,
+      showDivider: showDivider,
       trailing: ConstrainedBox(
         constraints: const BoxConstraints(maxWidth: 360),
         child: BeeSegmented<GeminiThinkingLevel>(
           value: effective,
           onChanged: (level) async {
             final settings = SettingsProviderScope.of(context).settingsService;
-            await settings.setThinkingLevelForModel(modelId, level);
-            onChanged(level);
+            await settings.setThinkingLevelForModel(_selectedModelId, level);
+            setState(() => _selectedThinkingLevel = level);
           },
           options: options,
         ),
@@ -1391,64 +1117,32 @@ class _AiModelsPageState extends State<AiModelsPage> {
     );
   }
 
-  /// Dropdown options for Pass 2 refinement models.
-  /// Dedicated transcription-only models are excluded.
-  List<BeeDropdownOption<String>> _cloudModelOptions() {
+  /// Prompt-capable models: the only valid choices for the AI model.
+  List<BeeDropdownOption<String>> _mainModelOptions() {
     return [
       for (final m in AppConfig.mainModels)
         BeeDropdownOption(value: m.id, label: m.displayName),
     ];
   }
 
-  /// Dropdown options for the primary single-pass cloud model.
-  /// Includes general-purpose models and dedicated transcription-only models.
-  List<BeeDropdownOption<String>> _primaryModelOptions() {
+  /// Step 1 choices on Gemini: dedicated speech models plus any main model.
+  List<BeeDropdownOption<String>> _stepOneModelOptions() {
     return [
-      for (final m in AppConfig.availableModels)
+      for (final m in AppConfig.transcriptionModels)
+        BeeDropdownOption(value: m.id, label: m.displayName),
+      for (final m in AppConfig.mainModels)
         BeeDropdownOption(value: m.id, label: m.displayName),
     ];
   }
 
-  /// Dropdown options for the Pass 1 raw transcription model. Includes
-  /// general-purpose cloud models and dedicated transcription-only models.
-  List<BeeDropdownOption<String>> _transcriptionModelOptions() {
-    return [
-      for (final m in AppConfig.availableModels)
-        BeeDropdownOption(value: m.id, label: m.displayName),
-    ];
-  }
+  String _safeModelId(String id) => AppConfig.resolveRefinementModelId(id);
 
-  /// Description for the primary cloud model row. Warns when a
-  /// transcription-only model is selected because it cannot follow prompts.
-  String _primaryModelDescription() {
-    final model = AppConfig.getModelById(_selectedModelId);
-    if (model.isTranscriptionOnly) {
-      final isSupported =
-          _cloudProvider == CloudProvider.geminiApiKey &&
-          _geminiApiSurface == GeminiApiSurface.interactions;
-      if (isSupported) {
-        return 'Raw audio-to-text only. Mission prompts and rephrasing are ignored.';
-      }
-      return 'Requires Gemini + Interactions API surface. Raw audio-to-text only; prompts ignored.';
-    }
-    return 'The AI model used for high-speed cloud transcription and formatting.';
-  }
-
-  /// Resolves a (possibly stale) persisted model id to one that still
-  /// exists in [AppConfig.availableModels], falling back to the default so
-  /// the [BeeDropdown] trigger always renders a label rather than blanking.
-  String _safeModelId(String id) {
-    return AppConfig.availableModels.any((m) => m.id == id)
+  String _safeStepOneModelId(String id) {
+    return AppConfig.isOfferedModelId(id)
         ? id
-        : AppConfig.availableModels.first.id;
+        : AppConfig.defaultTranscriptionModelId;
   }
 
-  /// Resolves a Pass 1 model id to a valid, still-offered id.
-  String _safeTranscriptionModelId(String id) {
-    return AppConfig.isOfferedModelId(id) ? id : AppConfig.defaultModelId;
-  }
-
-  /// Spoken-language choices for the Whisper engine dropdown.
   static const List<BeeDropdownOption<String>> _languageOptions = [
     BeeDropdownOption(value: 'auto', label: 'Auto-Detect'),
     BeeDropdownOption(value: 'en', label: 'English'),
@@ -1457,8 +1151,6 @@ class _AiModelsPageState extends State<AiModelsPage> {
     BeeDropdownOption(value: 'es', label: 'Spanish'),
   ];
 
-  /// Resolves a (possibly stale) persisted language code to one present in
-  /// [_languageOptions], falling back to auto-detect.
   String _safeLanguageId(String id) {
     return _languageOptions.any((o) => o.value == id) ? id : 'auto';
   }
