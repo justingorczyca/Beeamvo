@@ -33,9 +33,14 @@ const List<int> _modifierVks = <int>[
 ///
 /// The existing calloc/free discipline is preserved in the surrounding
 /// try/finally.
-Future<void> simulateCtrlVWindows() async {
+Future<void> simulateCtrlVWindows({
+  bool waitForModifiers = true,
+  int Function(int, Pointer<INPUT>, int)? sendInput,
+}) async {
   // (a) Give the user time to physically release the hotkey modifiers.
-  await Future.delayed(const Duration(milliseconds: 300));
+  if (waitForModifiers) {
+    await Future.delayed(const Duration(milliseconds: 300));
+  }
 
   final modifierCount = _modifierVks.length; // modifier key-up events
   const pasteCount = 4; // Ctrl down, V down, V up, Ctrl up
@@ -78,7 +83,7 @@ Future<void> simulateCtrlVWindows() async {
     pInputs[i].Anonymous.ki.wVk = VK_CONTROL;
     pInputs[i].Anonymous.ki.dwFlags = KEYEVENTF_KEYUP;
 
-    final result = SendInput(total, pInputs, sizeOf<INPUT>());
+    final result = (sendInput ?? SendInput)(total, pInputs, sizeOf<INPUT>());
 
     if (result != total) {
       throw Exception('SendInput failed: expected $total, got $result');

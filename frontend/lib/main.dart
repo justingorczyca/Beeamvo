@@ -1304,6 +1304,7 @@ class _BeeamvoHomeState extends State<BeeamvoHome>
       _state = RecordingState.processing;
     });
 
+    final processingWatch = Stopwatch()..start();
     var keepSessionForRetry = false;
     var currentAttemptIsRetryable = false;
 
@@ -1377,6 +1378,12 @@ class _BeeamvoHomeState extends State<BeeamvoHome>
         }
       }
 
+      if (kDebugMode) {
+        debugPrint(
+          '[TranscriptionTiming] audio-ready=${processingWatch.elapsedMilliseconds}ms '
+          'backend=${backend.name} twoPass=$twoPassEnabled',
+        );
+      }
       final instruction = selectedPrompt.instruction;
 
       String improvedText;
@@ -1471,7 +1478,17 @@ class _BeeamvoHomeState extends State<BeeamvoHome>
       // If state changed (e.g. cancelled), don't paste
       if (_state != RecordingState.processing) return;
 
+      if (kDebugMode) {
+        debugPrint(
+          '[TranscriptionTiming] text-ready=${processingWatch.elapsedMilliseconds}ms',
+        );
+      }
       await _copyToClipboardAndPaste(improvedText);
+      if (kDebugMode) {
+        debugPrint(
+          '[TranscriptionTiming] delivered=${processingWatch.elapsedMilliseconds}ms',
+        );
+      }
       await _settingsService.addClipboardEntry(improvedText);
       _retryRecordingDuration = null;
       _useCurrentSettingsForRetry = false;
@@ -1640,11 +1657,9 @@ class _BeeamvoHomeState extends State<BeeamvoHome>
       return;
     }
 
-    await Future.delayed(const Duration(milliseconds: 150));
-
     try {
       final keyboardService = KeyboardService();
-      await keyboardService.simulateCtrlV();
+      await keyboardService.simulateCtrlV(waitForModifiers: false);
     } catch (e) {
       debugPrint('Auto-paste failed: $e');
     }

@@ -136,14 +136,14 @@ void main() {
       });
     });
 
-    test('Gemini 3 Flash preview defaults to high thinking', () {
+    test('Gemini 3 Flash preview defaults to minimal thinking', () {
       final previewModel = AppConfig.availableModels.firstWhere(
         (model) => model.id == 'gemini-3-flash',
       );
 
       expect(previewModel.isPreview, isTrue);
       expect(previewModel.supportedThinkingLevels, isNotEmpty);
-      expect(previewModel.thinkingLevel, equals(GeminiThinkingLevel.high));
+      expect(previewModel.thinkingLevel, equals(GeminiThinkingLevel.minimal));
     });
 
     test('Gemini 3.5 Flash is available as a stable Flash model', () {
@@ -152,7 +152,7 @@ void main() {
       expect(model.modelName, equals('gemini-3.5-flash'));
       expect(model.isPreview, isFalse);
       expect(model.displayName, equals('Gemini 3.5 Flash'));
-      expect(model.thinkingLevel, equals(GeminiThinkingLevel.medium));
+      expect(model.thinkingLevel, equals(GeminiThinkingLevel.minimal));
       expect(model.supportedThinkingLevels, contains(GeminiThinkingLevel.high));
     });
 
@@ -163,7 +163,7 @@ void main() {
       expect(model.modelName, equals('gemini-3.6-flash'));
       expect(model.isPreview, isFalse);
       expect(model.displayName, equals('Gemini 3.6 Flash'));
-      expect(model.thinkingLevel, equals(GeminiThinkingLevel.medium));
+      expect(model.thinkingLevel, equals(GeminiThinkingLevel.minimal));
       expect(
         model.supportedThinkingLevels,
         contains(GeminiThinkingLevel.minimal),
@@ -171,14 +171,14 @@ void main() {
     });
 
     test(
-      'Gemini 3.7 Flash defaults to medium thinking and does not support minimal',
+      'Gemini 3.7 Flash defaults to low thinking and does not support minimal',
       () {
         final model = AppConfig.getModelById('gemini-3.7-flash');
 
         expect(model.modelName, equals('gemini-3.7-flash'));
         expect(model.isPreview, isFalse);
         expect(model.vertexLocation, equals('global'));
-        expect(model.thinkingLevel, equals(GeminiThinkingLevel.medium));
+        expect(model.thinkingLevel, equals(GeminiThinkingLevel.low));
         expect(
           model.supportedThinkingLevels,
           equals([

@@ -151,7 +151,7 @@ class AppConfig {
       name: 'Gemini 3.7 Flash',
       modelName: 'gemini-3.7-flash',
       vertexLocation: 'global',
-      thinkingLevel: GeminiThinkingLevel.medium,
+      thinkingLevel: GeminiThinkingLevel.low,
       supportedThinkingLevels: [
         GeminiThinkingLevel.low,
         GeminiThinkingLevel.medium,
@@ -163,7 +163,7 @@ class AppConfig {
       name: 'Gemini 3.6 Flash',
       modelName: 'gemini-3.6-flash',
       vertexLocation: 'global',
-      thinkingLevel: GeminiThinkingLevel.medium,
+      thinkingLevel: GeminiThinkingLevel.minimal,
       supportedThinkingLevels: [
         GeminiThinkingLevel.minimal,
         GeminiThinkingLevel.low,
@@ -176,7 +176,7 @@ class AppConfig {
       name: 'Gemini 3.5 Flash',
       modelName: 'gemini-3.5-flash',
       vertexLocation: 'global',
-      thinkingLevel: GeminiThinkingLevel.medium,
+      thinkingLevel: GeminiThinkingLevel.minimal,
       supportedThinkingLevels: [
         GeminiThinkingLevel.minimal,
         GeminiThinkingLevel.low,
@@ -203,7 +203,7 @@ class AppConfig {
       modelName: 'gemini-3-flash-preview',
       vertexLocation: 'global',
       isPreview: true,
-      thinkingLevel: GeminiThinkingLevel.high,
+      thinkingLevel: GeminiThinkingLevel.minimal,
       supportedThinkingLevels: [
         GeminiThinkingLevel.minimal,
         GeminiThinkingLevel.low,

@@ -1,6 +1,4 @@
-import 'dart:async';
 import 'dart:convert';
-import 'dart:math';
 
 import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
@@ -9,9 +7,9 @@ import '../config.dart';
 import '../models/system_prompt.dart';
 import 'cloud_transcription_client.dart';
 import 'pinned_http_client.dart';
-import 'retry_after.dart';
 import 'serialization_utils.dart';
 import 'settings_service.dart';
+import 'transcription_request.dart';
 
 class GeminiInteractionsService implements CloudTranscriptionClient {
   GeminiInteractionsService({http.Client? httpClient})
@@ -324,31 +322,10 @@ class GeminiInteractionsService implements CloudTranscriptionClient {
     Uri uri,
     Map<String, String> headers,
     Uint8List body,
-  ) async {
-    const maxAttempts = 3;
-    final random = Random();
-    for (var attempt = 0; ; attempt++) {
-      try {
-        final response = await _httpClient
-            .post(uri, headers: headers, body: body)
-            .timeout(const Duration(seconds: 60));
-        if ((response.statusCode == 429 || response.statusCode >= 500) &&
-            attempt < maxAttempts - 1) {
-          final retryAfterHeader = response.headers['retry-after'];
-          final retryAfterMs = retryAfterDelayMilliseconds(retryAfterHeader);
-          final delayMs =
-              retryAfterMs ?? (500 * (1 << attempt) + random.nextInt(500));
-          await Future<void>.delayed(Duration(milliseconds: delayMs));
-          continue;
-        }
-        return response;
-      } on TimeoutException {
-        if (attempt >= maxAttempts - 1) rethrow;
-        await Future<void>.delayed(
-          Duration(milliseconds: 500 * (1 << attempt) + random.nextInt(500)),
-        );
-      }
-    }
+  ) {
+    return TranscriptionRequest().send(
+      () => _httpClient.post(uri, headers: headers, body: body),
+    );
   }
 
   Uri _buildUri() {

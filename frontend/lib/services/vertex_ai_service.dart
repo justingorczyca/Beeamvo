@@ -1,6 +1,5 @@
 import 'dart:async';
 import 'dart:convert';
-import 'dart:math';
 
 import 'package:flutter/foundation.dart';
 import 'package:googleapis_auth/auth_io.dart';
@@ -10,9 +9,9 @@ import '../config.dart';
 import '../models/system_prompt.dart';
 import 'cloud_transcription_client.dart';
 import 'pinned_http_client.dart';
-import 'retry_after.dart';
 import 'serialization_utils.dart';
 import 'settings_service.dart';
+import 'transcription_request.dart';
 
 typedef VertexAdcClientFactory =
     Future<http.Client> Function(http.Client baseClient);
@@ -496,32 +495,12 @@ class VertexAiService implements CloudTranscriptionClient {
     Uri uri,
     Map<String, String> headers,
     Uint8List body,
-  ) async {
-    const maxAttempts = 3;
-    final random = Random();
-    for (var attempt = 0; ; attempt++) {
-      try {
-        final response = await (await _resolveHttpClient())
-            .post(uri, headers: headers, body: body)
-            .timeout(const Duration(seconds: 60));
-
-        if ((response.statusCode == 429 || response.statusCode >= 500) &&
-            attempt < maxAttempts - 1) {
-          final retryAfterHeader = response.headers['retry-after'];
-          final retryAfterMs = retryAfterDelayMilliseconds(retryAfterHeader);
-          final delayMs =
-              retryAfterMs ?? (500 * (1 << attempt) + random.nextInt(500));
-          await Future<void>.delayed(Duration(milliseconds: delayMs));
-          continue;
-        }
-        return response;
-      } on TimeoutException {
-        if (attempt >= maxAttempts - 1) rethrow;
-        await Future<void>.delayed(
-          Duration(milliseconds: 500 * (1 << attempt) + random.nextInt(500)),
-        );
-      }
-    }
+    TranscriptionRequest request,
+  ) {
+    return request.send(
+      () async =>
+          (await _resolveHttpClient()).post(uri, headers: headers, body: body),
+    );
   }
 
   /// Performs a single request attempt and — on a 401/403 — recycles the cached
@@ -536,11 +515,14 @@ class VertexAiService implements CloudTranscriptionClient {
     GeminiModelConfig model,
     Map<String, dynamic> payload, {
     required bool isRetry,
+    TranscriptionRequest? request,
   }) async {
+    final requestBudget = request ?? TranscriptionRequest();
     final response = await _postWithTransientRetry(
       buildUri(projectId: projectId, model: model),
       await _buildHeaders(),
       await encodeJsonAsync(payload),
+      requestBudget,
     );
 
     // Auth failure: the cached ADC token may be stale. Drop the cached client
@@ -555,7 +537,13 @@ class VertexAiService implements CloudTranscriptionClient {
         );
       }
       _recycleAdcClient();
-      return _postWithAdcRetry(projectId, model, payload, isRetry: true);
+      return _postWithAdcRetry(
+        projectId,
+        model,
+        payload,
+        isRetry: true,
+        request: requestBudget,
+      );
     }
 
     if (response.statusCode >= 400) {

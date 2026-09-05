@@ -1,4 +1,4 @@
-import 'dart:typed_data';
+import 'package:flutter/foundation.dart';
 
 import '../config.dart';
 import 'cloud_transcription_client.dart';
@@ -115,14 +115,18 @@ class CloudTranscriptionService {
     _ensureNotDisposed();
     _assertPromptCapable(modelOverrideId);
     final client = _currentClient;
-    await _initializeIfNeeded(client);
-    final result = await client.improveTranscription(
-      rawText,
-      missionInstruction: missionInstruction,
+    return _runTranscription(
+      'refine',
+      client,
+      () => client.improveTranscription(
+        rawText,
+        missionInstruction: missionInstruction,
+        modelOverrideId: modelOverrideId,
+        thinkingLevelOverride: thinkingLevelOverride,
+      ),
       modelOverrideId: modelOverrideId,
       thinkingLevelOverride: thinkingLevelOverride,
     );
-    return TranscriptionResultGuard.requireTranscript(result);
   }
 
   Future<String> transcribeAndImprove(
@@ -135,15 +139,20 @@ class CloudTranscriptionService {
     _ensureNotDisposed();
     _assertPromptCapable(modelOverrideId);
     final client = _currentClient;
-    await _initializeIfNeeded(client);
-    final result = await client.transcribeAndImprove(
-      audioData,
-      mimeType,
-      missionInstruction: missionInstruction,
+    return _runTranscription(
+      'transcribe-and-refine',
+      client,
+      () => client.transcribeAndImprove(
+        audioData,
+        mimeType,
+        missionInstruction: missionInstruction,
+        modelOverrideId: modelOverrideId,
+        thinkingLevelOverride: thinkingLevelOverride,
+      ),
       modelOverrideId: modelOverrideId,
       thinkingLevelOverride: thinkingLevelOverride,
+      audioBytes: audioData.length,
     );
-    return TranscriptionResultGuard.requireTranscript(result);
   }
 
   Future<String> transcribeAudio(
@@ -162,12 +171,60 @@ class CloudTranscriptionService {
         '${model.displayName} is only available with a Gemini API key.',
       );
     }
-    await _initializeIfNeeded(client);
-    final result = await client.transcribeAudio(
-      audioData,
-      mimeType,
+    return _runTranscription(
+      'transcribe',
+      client,
+      () => client.transcribeAudio(
+        audioData,
+        mimeType,
+        modelOverrideId: modelOverrideId,
+      ),
       modelOverrideId: modelOverrideId,
+      audioBytes: audioData.length,
     );
-    return TranscriptionResultGuard.requireTranscript(result);
+  }
+
+  Future<String> _runTranscription(
+    String stage,
+    CloudTranscriptionClient client,
+    Future<String> Function() generate, {
+    String? modelOverrideId,
+    GeminiThinkingLevel? thinkingLevelOverride,
+    int? audioBytes,
+  }) async {
+    final watch = Stopwatch()..start();
+    final provider = currentProvider.name;
+    final model = modelOverrideId == null
+        ? client.currentModel
+        : AppConfig.getModelById(modelOverrideId);
+    if (kDebugMode) {
+      final level = model.resolveThinkingLevel(
+        levelOverride:
+            thinkingLevelOverride ??
+            _settingsService?.getThinkingLevelForModel(model.id),
+        forceMinimal: stage == 'transcribe',
+      );
+      debugPrint(
+        '[CloudTranscription] stage=$stage provider=$provider '
+        'model=${model.id} thinking=${level?.name ?? 'none'} '
+        'audioBytes=${audioBytes ?? 0}',
+      );
+    }
+    var completed = false;
+    try {
+      await _initializeIfNeeded(client);
+      final result = TranscriptionResultGuard.requireTranscript(
+        await generate(),
+      );
+      completed = true;
+      return result;
+    } finally {
+      if (kDebugMode) {
+        debugPrint(
+          '[CloudTranscription] stage=$stage provider=$provider '
+          'completed=$completed elapsed=${watch.elapsedMilliseconds}ms',
+        );
+      }
+    }
   }
 }

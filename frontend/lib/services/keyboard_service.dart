@@ -20,7 +20,7 @@ class KeyboardService {
   }
 
   /// Simulate Ctrl+V (Windows) or Cmd+V (macOS) to paste clipboard content
-  Future<void> simulateCtrlV() async {
+  Future<void> simulateCtrlV({bool waitForModifiers = true}) async {
     // Guard against duplicate paste calls
     if (_isPasting) {
       _debugLog('KeyboardService: Already pasting, ignoring duplicate call');
@@ -30,11 +30,13 @@ class KeyboardService {
 
     try {
       if (Platform.isWindows) {
-        await platform_impl.simulateCtrlVWindows();
+        await platform_impl.simulateCtrlVWindows(
+          waitForModifiers: waitForModifiers,
+        );
       } else if (Platform.isMacOS) {
-        await _simulateCtrlVMacOS();
+        await _simulateCtrlVMacOS(waitForModifiers: waitForModifiers);
       } else if (Platform.isLinux) {
-        await _simulateCtrlVLinux();
+        await _simulateCtrlVLinux(waitForModifiers: waitForModifiers);
       } else {
         throw UnsupportedError(
           'Keyboard simulation not supported on this platform',
@@ -54,9 +56,11 @@ class KeyboardService {
   /// Accessibility permission — no separate Automation permission. If the
   /// permission is missing, the text remains on the clipboard for a manual
   /// Cmd+V, and the paste-failure path can open the onboarding dialog.
-  Future<void> _simulateCtrlVMacOS() async {
+  Future<void> _simulateCtrlVMacOS({required bool waitForModifiers}) async {
     // Wait for modifier keys to be released (user may still be holding Cmd/Ctrl+Shift from hotkey)
-    await Future.delayed(const Duration(milliseconds: 300));
+    if (waitForModifiers) {
+      await Future.delayed(const Duration(milliseconds: 300));
+    }
 
     // Fast synchronous pre-check before the channel round-trip.
     if (!KeyboardServiceMacOS.checkAccessibility()) {
@@ -93,8 +97,10 @@ class KeyboardService {
   }
 
   /// Linux implementation using xdotool (X11) or wtype (Wayland)
-  Future<void> _simulateCtrlVLinux() async {
-    await Future.delayed(const Duration(milliseconds: 300));
+  Future<void> _simulateCtrlVLinux({required bool waitForModifiers}) async {
+    if (waitForModifiers) {
+      await Future.delayed(const Duration(milliseconds: 300));
+    }
 
     try {
       final sessionType = Platform.environment['XDG_SESSION_TYPE'] ?? '';
