@@ -19,7 +19,8 @@ import 'onboarding_shared.dart';
 
 class WelcomeStep extends StatefulWidget {
   final VoidCallback onNext;
-  const WelcomeStep({super.key, required this.onNext});
+  final VoidCallback onSkip;
+  const WelcomeStep({super.key, required this.onNext, required this.onSkip});
 
   @override
   State<WelcomeStep> createState() => _WelcomeStepState();
@@ -134,7 +135,7 @@ class _WelcomeStepState extends State<WelcomeStep>
           onTap: widget.onNext,
         ),
         const SizedBox(height: 12),
-        OnboardingSecondaryButton(label: 'Skip Setup', onTap: widget.onNext),
+        OnboardingSecondaryButton(label: 'Skip Setup', onTap: widget.onSkip),
       ],
     );
   }
@@ -157,9 +158,13 @@ class ProviderStep extends StatefulWidget {
   State<ProviderStep> createState() => _ProviderStepState();
 }
 
-class _ProviderStepState extends State<ProviderStep> {
+class _ProviderStepState extends State<ProviderStep>
+    with AutomaticKeepAliveClientMixin {
   TranscriptionBackend _backend = TranscriptionBackend.cloud;
   CloudProvider _cloudProvider = CloudProvider.geminiApiKey;
+
+  @override
+  bool get wantKeepAlive => true;
 
   @override
   void initState() {
@@ -170,11 +175,12 @@ class _ProviderStepState extends State<ProviderStep> {
 
   @override
   Widget build(BuildContext context) {
+    super.build(context);
     return OnboardingStepShell(
       icon: Icons.dns_rounded,
-      title: 'Processing Engine',
+      title: 'Engine',
       subtitle:
-          'Choose where your voice is transcribed. Cloud is faster; Local ensures complete privacy.',
+          'Choose where your voice is transcribed. Cloud AI is fastest; Offline keeps everything on this device.',
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
@@ -198,7 +204,7 @@ class _ProviderStepState extends State<ProviderStep> {
                       ),
                       const SizedBox(height: 6),
                       Text(
-                        'Cloud',
+                        'Cloud AI',
                         style: GoogleFonts.inter(
                           fontSize: 13,
                           fontWeight: FontWeight.w700,
@@ -209,7 +215,7 @@ class _ProviderStepState extends State<ProviderStep> {
                       ),
                       const SizedBox(height: 2),
                       Text(
-                        'Fast, accurate, AI-powered',
+                        'Fast, accurate, applies your style',
                         textAlign: TextAlign.center,
                         style: GoogleFonts.inter(
                           fontSize: 10,
@@ -239,7 +245,7 @@ class _ProviderStepState extends State<ProviderStep> {
                       ),
                       const SizedBox(height: 6),
                       Text(
-                        'Offline (Whisper)',
+                        'Offline',
                         style: GoogleFonts.inter(
                           fontSize: 13,
                           fontWeight: FontWeight.w700,
@@ -250,7 +256,7 @@ class _ProviderStepState extends State<ProviderStep> {
                       ),
                       const SizedBox(height: 2),
                       Text(
-                        '100% private, runs locally',
+                        'Runs locally with Whisper — fully private',
                         textAlign: TextAlign.center,
                         style: GoogleFonts.inter(
                           fontSize: 10,
@@ -404,13 +410,18 @@ class ApiKeyStep extends StatefulWidget {
   State<ApiKeyStep> createState() => _ApiKeyStepState();
 }
 
-class _ApiKeyStepState extends State<ApiKeyStep> {
+class _ApiKeyStepState extends State<ApiKeyStep>
+    with AutomaticKeepAliveClientMixin {
   final _apiKeyController = TextEditingController();
   final _projectIdController = TextEditingController();
   bool _obscureText = true;
   bool _isVerifying = false;
   String? _statusMessage;
   bool _statusIsError = false;
+  CloudProvider? _hydratedProvider;
+
+  @override
+  bool get wantKeepAlive => true;
 
   CloudProvider get _provider => widget.settingsService.cloudProvider;
 
@@ -421,6 +432,10 @@ class _ApiKeyStepState extends State<ApiKeyStep> {
     return _projectIdController.text.trim().isEmpty;
   }
 
+  bool get _hasSavedCredential => _provider == CloudProvider.geminiApiKey
+      ? widget.settingsService.hasGeminiApiKey
+      : widget.settingsService.vertexProjectId != null;
+
   /// Gemini API keys always start with "AIza".
   bool get _hasValidPrefix {
     final text = _apiKeyController.text.trim();
@@ -428,9 +443,13 @@ class _ApiKeyStepState extends State<ApiKeyStep> {
     return text.startsWith('AIza');
   }
 
-  @override
-  void initState() {
-    super.initState();
+  /// Re-hydrates the fields when the user went back and switched providers;
+  /// the keep-alive page would otherwise show the previous provider's input.
+  void _syncProviderFields() {
+    if (_provider == _hydratedProvider) return;
+    _hydratedProvider = _provider;
+    _statusMessage = null;
+    _statusIsError = false;
     if (_provider == CloudProvider.vertexAi) {
       _projectIdController.text = widget.settingsService.vertexProjectId ?? '';
     }
@@ -486,6 +505,8 @@ class _ApiKeyStepState extends State<ApiKeyStep> {
 
   @override
   Widget build(BuildContext context) {
+    super.build(context);
+    _syncProviderFields();
     final isGemini = _provider == CloudProvider.geminiApiKey;
     final showPrefixWarning =
         isGemini &&
@@ -510,16 +531,19 @@ class _ApiKeyStepState extends State<ApiKeyStep> {
               onChanged: (_) => setState(() {
                 _statusMessage = null;
               }),
-              suffixIcon: GestureDetector(
+              suffixIcon: BeeInteractive(
                 onTap: () => setState(() => _obscureText = !_obscureText),
-                child: Padding(
+                semanticLabel: _obscureText ? 'Show API key' : 'Hide API key',
+                builder: (context, focused) => Padding(
                   padding: const EdgeInsets.only(right: 12),
                   child: Icon(
                     _obscureText
                         ? Icons.visibility_off_rounded
                         : Icons.visibility_rounded,
                     size: 18,
-                    color: beeTextMuted(context),
+                    color: focused
+                        ? beeTextSub(context)
+                        : beeTextMuted(context),
                   ),
                 ),
               ),
@@ -546,6 +570,17 @@ class _ApiKeyStepState extends State<ApiKeyStep> {
             ),
           ],
 
+          // Re-running the wizard with a saved credential
+          if (_hasSavedCredential && _isFieldEmpty) ...[
+            const SizedBox(height: 8),
+            OnboardingStatusBadge(
+              label: isGemini
+                  ? 'An API key is already saved — leave blank to keep it.'
+                  : 'Your project ID is already saved — leave blank to keep it.',
+              isSuccess: true,
+            ),
+          ],
+
           // Status
           if (_statusMessage != null) ...[
             const SizedBox(height: 8),
@@ -565,7 +600,9 @@ class _ApiKeyStepState extends State<ApiKeyStep> {
               OnboardingPrimaryButton(
                 label: 'Continue',
                 icon: Icons.arrow_forward_rounded,
-                onTap: _isFieldEmpty ? null : _saveAndContinue,
+                onTap: (_isFieldEmpty && !_hasSavedCredential)
+                    ? null
+                    : _saveAndContinue,
               ),
               // Only show Verify button when a handler is available
               if (widget.onVerifyCloudProvider != null) ...[
@@ -608,9 +645,11 @@ class ModelStep extends StatefulWidget {
   State<ModelStep> createState() => _ModelStepState();
 }
 
-class _ModelStepState extends State<ModelStep> {
+class _ModelStepState extends State<ModelStep>
+    with AutomaticKeepAliveClientMixin {
   late String _selectedModelId;
   late String _selectedWhisperModelId;
+  late String _selectedPromptId;
 
   // Whisper download state
   final WhisperModelDownloadService _downloadService =
@@ -621,6 +660,9 @@ class _ModelStepState extends State<ModelStep> {
   bool _downloadError = false;
   String? _downloadErrorMessage;
 
+  @override
+  bool get wantKeepAlive => true;
+
   bool get _isWhisper =>
       widget.settingsService.transcriptionBackend ==
       TranscriptionBackend.whisper;
@@ -630,6 +672,7 @@ class _ModelStepState extends State<ModelStep> {
     super.initState();
     _selectedModelId = widget.settingsService.selectedModelId;
     _selectedWhisperModelId = widget.settingsService.whisperModelId;
+    _selectedPromptId = widget.settingsService.selectedPromptId;
     if (_isWhisper) {
       _refreshDownloadedModels();
     }
@@ -643,10 +686,9 @@ class _ModelStepState extends State<ModelStep> {
 
   void _refreshDownloadedModels() {
     _downloadedModels = WhisperService.listDownloadedModels();
-    // Auto-select if the configured model is downloaded
-    if (_downloadedModels.contains(_selectedWhisperModelId)) {
-      // Already selected
-    } else if (_downloadedModels.isNotEmpty) {
+    // Auto-select the first downloaded model when the configured one is absent
+    if (!_downloadedModels.contains(_selectedWhisperModelId) &&
+        _downloadedModels.isNotEmpty) {
       _selectedWhisperModelId = _downloadedModels.first;
     }
   }
@@ -694,21 +736,42 @@ class _ModelStepState extends State<ModelStep> {
   // ── Cloud model helpers ──────────────────────────────────────────────
 
   String _modelDescription(GeminiModelConfig model) {
+    if (model.isTranscriptionOnly) {
+      return 'Speech-to-text only. Writing styles are not applied.';
+    }
     switch (model.id) {
       case 'gemini-2.5-flash':
-        return 'Best balance of speed and quality. Recommended default.';
+        return 'Stable Flash model for transcription and writing styles.';
       case 'gemini-2.5-flash-lite':
         return 'Ultra-fast responses, lighter reasoning.';
       case 'gemini-3.7-flash':
-        return 'Advanced agentic reasoning at Flash speed and cost.';
-      case 'gemini-3-flash':
-        return 'Newest generation. Advanced reasoning (Preview).';
+        return 'Most capable. Advanced reasoning at Flash speed.';
+      case 'gemini-3.6-flash':
+        return 'Strong reasoning, fast — a great all-rounder.';
       case 'gemini-3.5-flash':
         return 'Latest stable Flash. Strong reasoning with high speed.';
+      case 'gemini-3.5-flash-lite':
+        return 'Fastest and lightest — the recommended default.';
+      case 'gemini-3-flash':
+        return 'Newest generation. Advanced reasoning (Preview).';
       case 'gemini-3.1-flash-lite':
         return 'Next-gen lightweight. Fast with upgraded reasoning.';
       default:
         return 'High-quality AI model.';
+    }
+  }
+
+  /// One-line summary for each built-in writing style.
+  String _styleDescription(String promptId) {
+    switch (promptId) {
+      case 'concise':
+        return 'The shortest clear version';
+      case 'smart':
+        return 'Detects emails, lists and notes';
+      case 'professional':
+        return 'Polished business wording';
+      default:
+        return 'Clean text, close to your words';
     }
   }
 
@@ -721,6 +784,7 @@ class _ModelStepState extends State<ModelStep> {
 
   @override
   Widget build(BuildContext context) {
+    super.build(context);
     if (_isWhisper) return _buildWhisperModelStep();
     return _buildCloudModelStep();
   }
@@ -728,18 +792,24 @@ class _ModelStepState extends State<ModelStep> {
   // ── Cloud Model Step ─────────────────────────────────────────────────
 
   Widget _buildCloudModelStep() {
+    final selectedModel = AppConfig.getModelById(_selectedModelId);
+    // Dedicated speech models cannot follow a writing style — offering one
+    // would be meaningless, so the picker stays hidden for that selection.
+    final showStylePicker = !selectedModel.isTranscriptionOnly;
+
     return OnboardingStepShell(
       icon: Icons.auto_awesome_rounded,
-      title: 'Choose Your Model',
-      subtitle: 'Select the AI model that powers your voice transcription.',
+      title: 'Model & Writing Style',
+      subtitle:
+          'Pick the AI model that transcribes your voice, then choose how the text reads.',
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
           ConstrainedBox(
-            constraints: const BoxConstraints(maxHeight: 220),
+            constraints: const BoxConstraints(maxHeight: 160),
             child: SingleChildScrollView(
               child: Column(
-                children: AppConfig.availableModels.map((model) {
+                children: widget.settingsService.primaryModels.map((model) {
                   final isSelected = _selectedModelId == model.id;
                   return Padding(
                     padding: const EdgeInsets.only(bottom: 6),
@@ -812,12 +882,82 @@ class _ModelStepState extends State<ModelStep> {
               ),
             ),
           ),
+
+          if (showStylePicker) ...[
+            const SizedBox(height: 12),
+            Align(
+              alignment: Alignment.centerLeft,
+              child: Text(
+                'Writing Style',
+                style: GoogleFonts.inter(
+                  fontSize: 11,
+                  fontWeight: FontWeight.w600,
+                  color: beeTextMuted(context),
+                ),
+              ),
+            ),
+            const SizedBox(height: 6),
+            Wrap(
+              spacing: 8,
+              runSpacing: 8,
+              children: SystemPrompt.availablePrompts.map((prompt) {
+                final isSelected = _selectedPromptId == prompt.id;
+                return SizedBox(
+                  width: 300,
+                  child: OnboardingGlowCard(
+                    isSelected: isSelected,
+                    onTap: () => setState(() => _selectedPromptId = prompt.id),
+                    child: Row(
+                      children: [
+                        _buildRadioIndicator(isSelected),
+                        const SizedBox(width: 10),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                prompt.name,
+                                style: GoogleFonts.inter(
+                                  fontSize: 11.5,
+                                  fontWeight: isSelected
+                                      ? FontWeight.w700
+                                      : FontWeight.w500,
+                                  color: isSelected
+                                      ? beeText(context)
+                                      : beeTextSub(context),
+                                ),
+                              ),
+                              Text(
+                                _styleDescription(prompt.id),
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: GoogleFonts.inter(
+                                  fontSize: 9,
+                                  color: beeTextMuted(context),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                );
+              }).toList(),
+            ),
+          ],
+
           const SizedBox(height: 14),
           OnboardingPrimaryButton(
             label: 'Continue',
             icon: Icons.arrow_forward_rounded,
             onTap: () async {
               await widget.settingsService.setSelectedModelId(_selectedModelId);
+              if (showStylePicker) {
+                await widget.settingsService.setSelectedPromptId(
+                  _selectedPromptId,
+                );
+              }
               widget.onNext();
             },
           ),
@@ -971,20 +1111,21 @@ class _ModelStepState extends State<ModelStep> {
                           ),
                           // Download button for non-downloaded models
                           if (!isDownloaded && !isDownloading)
-                            GestureDetector(
+                            BeeInteractive(
                               onTap: _downloadingModelId == null
                                   ? () => _startDownload(model)
                                   : null,
-                              child: Container(
+                              semanticLabel: 'Download ${model.name}',
+                              builder: (context, focused) => Container(
                                 padding: const EdgeInsets.symmetric(
                                   horizontal: 10,
                                   vertical: 5,
                                 ),
                                 decoration: BoxDecoration(
                                   color: _downloadingModelId == null
-                                      ? beeYellow(
-                                          context,
-                                        ).withValues(alpha: 0.12)
+                                      ? beeYellow(context).withValues(
+                                          alpha: focused ? 0.20 : 0.12,
+                                        )
                                       : beeSurfaceHighest(
                                           context,
                                         ).withValues(alpha: 0.3),
@@ -993,9 +1134,9 @@ class _ModelStepState extends State<ModelStep> {
                                   ),
                                   border: Border.all(
                                     color: _downloadingModelId == null
-                                        ? beeYellow(
-                                            context,
-                                          ).withValues(alpha: 0.65)
+                                        ? beeYellow(context).withValues(
+                                            alpha: focused ? 0.85 : 0.65,
+                                          )
                                         : beeBorder(context),
                                   ),
                                 ),
@@ -1029,9 +1170,7 @@ class _ModelStepState extends State<ModelStep> {
           const SizedBox(height: 14),
           OnboardingPrimaryButton(
             label: hasDownloadedModel ? 'Continue' : 'Skip for Now',
-            icon: hasDownloadedModel
-                ? Icons.arrow_forward_rounded
-                : Icons.arrow_forward_rounded,
+            icon: Icons.arrow_forward_rounded,
             onTap: () async {
               if (hasDownloadedModel) {
                 await widget.settingsService.setWhisperModelId(
@@ -1095,8 +1234,12 @@ class RecordingModeStep extends StatefulWidget {
   State<RecordingModeStep> createState() => _RecordingModeStepState();
 }
 
-class _RecordingModeStepState extends State<RecordingModeStep> {
+class _RecordingModeStepState extends State<RecordingModeStep>
+    with AutomaticKeepAliveClientMixin {
   late RecordingMode _mode;
+
+  @override
+  bool get wantKeepAlive => true;
 
   @override
   void initState() {
@@ -1106,6 +1249,7 @@ class _RecordingModeStepState extends State<RecordingModeStep> {
 
   @override
   Widget build(BuildContext context) {
+    super.build(context);
     return OnboardingStepShell(
       icon: Icons.fiber_manual_record_rounded,
       title: 'Recording Mode',
@@ -1285,7 +1429,10 @@ class HotkeyStep extends StatefulWidget {
 }
 
 class _HotkeyStepState extends State<HotkeyStep>
-    with SingleTickerProviderStateMixin {
+    with SingleTickerProviderStateMixin, AutomaticKeepAliveClientMixin {
+  @override
+  bool get wantKeepAlive => true;
+
   late HotkeyConfig _currentHotkey;
   bool _isRecording = false;
   String? _errorMessage;
@@ -1383,8 +1530,18 @@ class _HotkeyStepState extends State<HotkeyStep>
         key == LogicalKeyboardKey.metaRight;
   }
 
+  /// A captured hotkey is saved the moment the keys land, so restoring the
+  /// default must write it back — a "keep default" label would lie.
+  Future<void> _resetToDefault() async {
+    _stopRecording();
+    setState(() => _currentHotkey = HotkeyConfig.defaultHotkey);
+    await widget.settingsService.resetHotkey();
+    widget.onHotkeyChanged?.call(HotkeyConfig.defaultHotkey);
+  }
+
   @override
   Widget build(BuildContext context) {
+    super.build(context);
     return OnboardingStepShell(
       icon: Icons.keyboard_command_key_rounded,
       title: 'Set Your Hotkey',
@@ -1397,9 +1554,12 @@ class _HotkeyStepState extends State<HotkeyStep>
           KeyboardListener(
             focusNode: _focusNode,
             onKeyEvent: _handleKeyEvent,
-            child: GestureDetector(
+            child: BeeInteractive(
               onTap: _isRecording ? _stopRecording : _startRecording,
-              child: AnimatedBuilder(
+              semanticLabel: _isRecording
+                  ? 'Stop capturing hotkey'
+                  : 'Capture a new hotkey. Current: ${_currentHotkey.displayString}',
+              builder: (context, focused) => AnimatedBuilder(
                 animation: _pulseAnimation,
                 builder: (context, child) {
                   return Container(
@@ -1415,6 +1575,8 @@ class _HotkeyStepState extends State<HotkeyStep>
                       border: Border.all(
                         color: _isRecording
                             ? beeYellow(context)
+                            : focused
+                            ? beeYellow(context).withValues(alpha: 0.45)
                             : beeBorder(context),
                         width: 1.5,
                       ),
@@ -1491,11 +1653,13 @@ class _HotkeyStepState extends State<HotkeyStep>
                 icon: Icons.arrow_forward_rounded,
                 onTap: widget.onNext,
               ),
-              const SizedBox(width: 10),
-              OnboardingSecondaryButton(
-                label: 'Keep Default',
-                onTap: widget.onNext,
-              ),
+              if (_currentHotkey != HotkeyConfig.defaultHotkey) ...[
+                const SizedBox(width: 10),
+                OnboardingSecondaryButton(
+                  label: 'Reset to Default',
+                  onTap: _resetToDefault,
+                ),
+              ],
             ],
           ),
         ],
@@ -1513,6 +1677,7 @@ class ReadyStep extends StatefulWidget {
   final SettingsService settingsService;
   final VoidCallback? onGoToApiKeyStep;
   final VoidCallback? onGoToModelStep;
+  final VoidCallback? onGoToProviderStep;
 
   const ReadyStep({
     super.key,
@@ -1520,6 +1685,7 @@ class ReadyStep extends StatefulWidget {
     required this.settingsService,
     this.onGoToApiKeyStep,
     this.onGoToModelStep,
+    this.onGoToProviderStep,
   });
 
   @override
@@ -1550,17 +1716,12 @@ class _ReadyStepState extends State<ReadyStep>
     final s = widget.settingsService;
     final isWhisper = s.transcriptionBackend == TranscriptionBackend.whisper;
 
-    // Determine readiness based on the ACTIVE backend only — not OR logic.
-    // A leftover Gemini key shouldn't make a Whisper user look "ready".
-    bool isReady;
-    if (isWhisper) {
-      isReady = WhisperService.listDownloadedModels().isNotEmpty;
-    } else {
-      isReady =
-          s.hasGeminiApiKey ||
-          (s.cloudProvider == CloudProvider.vertexAi &&
-              s.vertexProjectId != null);
-    }
+    // Readiness tracks the ACTIVE backend and the SELECTED provider — the
+    // same check SettingsService exposes, so a leftover Gemini key can never
+    // make a Vertex (or Whisper) setup look "ready".
+    final bool isReady = isWhisper
+        ? WhisperService.listDownloadedModels().isNotEmpty
+        : s.hasCloudCredentials;
 
     final cloudModel = AppConfig.getModelById(s.selectedModelId);
     final whisperModelInfo = WhisperModelDownloadService.getModelInfo(
@@ -1675,8 +1836,10 @@ class _ReadyStepState extends State<ReadyStep>
                           const SizedBox(height: 2),
                           Text(
                             isWhisper
-                                ? 'Download a Whisper model to enable offline transcription, or switch to Cloud mode.'
-                                : 'Enter a valid API key to enable cloud transcription, or switch to Offline mode.',
+                                ? 'Download a Whisper model to enable offline transcription, or switch to Cloud AI.'
+                                : s.cloudProvider == CloudProvider.vertexAi
+                                ? 'Enter your Google Cloud project ID to enable Vertex AI, or switch to Offline.'
+                                : 'Enter a valid Gemini API key to enable cloud transcription, or switch to Offline.',
                             style: GoogleFonts.inter(
                               fontSize: 10,
                               color: beeTextSub(context),
@@ -1692,9 +1855,16 @@ class _ReadyStepState extends State<ReadyStep>
                 Row(
                   mainAxisAlignment: MainAxisAlignment.end,
                   children: [
+                    if (widget.onGoToProviderStep != null)
+                      OnboardingSecondaryButton(
+                        label: 'Change Engine',
+                        onTap: widget.onGoToProviderStep,
+                      ),
                     if (!isWhisper && widget.onGoToApiKeyStep != null)
                       OnboardingSecondaryButton(
-                        label: 'Set Up API Key',
+                        label: s.cloudProvider == CloudProvider.vertexAi
+                            ? 'Set Up Vertex AI'
+                            : 'Set Up API Key',
                         onTap: widget.onGoToApiKeyStep,
                       ),
                     if (isWhisper && widget.onGoToModelStep != null) ...[
@@ -1740,7 +1910,11 @@ class _ReadyStepState extends State<ReadyStep>
                       : cloudModel.displayName,
                 ),
                 Divider(color: beeDivider(context), height: 16),
-                _summaryRow(Icons.tune_rounded, 'Style', prompt.name),
+                _summaryRow(
+                  Icons.tune_rounded,
+                  'Style',
+                  s.promptIsApplied ? prompt.name : 'Not applied',
+                ),
                 Divider(color: beeDivider(context), height: 16),
                 _summaryRow(
                   Icons.fiber_manual_record_rounded,

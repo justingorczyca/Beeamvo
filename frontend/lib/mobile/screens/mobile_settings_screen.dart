@@ -170,8 +170,9 @@ class _MobileSettingsScreenState extends State<MobileSettingsScreen> {
             const SizedBox(height: 20),
             const _SectionTitle('Model'),
             DropdownButtonFormField<String>(
+              key: ValueKey('model-${settings.selectedModelId}'),
               initialValue: settings.selectedModelId,
-              items: AppConfig.mainModels
+              items: settings.primaryModels
                   .map(
                     (model) => DropdownMenuItem(
                       value: model.id,
@@ -184,6 +185,15 @@ class _MobileSettingsScreenState extends State<MobileSettingsScreen> {
               },
               decoration: const InputDecoration(labelText: 'Model'),
             ),
+            if (AppConfig.getModelById(
+              settings.selectedModelId,
+            ).isTranscriptionOnly)
+              const Padding(
+                padding: EdgeInsets.only(top: 8),
+                child: Text(
+                  'Speech-to-text only. Writing styles are not applied.',
+                ),
+              ),
             const SizedBox(height: 20),
             const _SectionTitle('Mode'),
             DropdownButtonFormField<String>(
@@ -196,9 +206,11 @@ class _MobileSettingsScreenState extends State<MobileSettingsScreen> {
                     ),
                   )
                   .toList(),
-              onChanged: (value) {
-                if (value != null) settings.setSelectedPromptId(value);
-              },
+              onChanged: settings.promptIsApplied
+                  ? (value) {
+                      if (value != null) settings.setSelectedPromptId(value);
+                    }
+                  : null,
               decoration: const InputDecoration(labelText: 'Prompt'),
             ),
             const SizedBox(height: 20),

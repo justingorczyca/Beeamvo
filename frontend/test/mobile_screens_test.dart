@@ -20,6 +20,7 @@ class _Settings extends SettingsService {
   bool credentials;
   final history = <ClipboardHistoryEntry>[];
   String promptId = 'standard';
+  String modelId = 'gemini-3.5-flash-lite';
   bool? clearKeepPinned;
   bool historyEnabled = true;
 
@@ -28,7 +29,13 @@ class _Settings extends SettingsService {
   @override
   List<ClipboardHistoryEntry> get clipboardHistory => history;
   @override
-  String get selectedModelId => 'gemini-3.5-flash-lite';
+  String get selectedModelId => modelId;
+  @override
+  Future<void> setSelectedModelId(String value) async {
+    modelId = value;
+    notifyListeners();
+  }
+
   @override
   String get selectedPromptId => promptId;
   @override
@@ -119,6 +126,29 @@ void main() {
     expect(find.byIcon(Icons.mic_none), findsOneWidget);
   });
 
+  testWidgets('standalone speech model shows an inactive Raw mode chip', (
+    tester,
+  ) async {
+    final settings = _Settings(credentials: true)
+      ..modelId = 'gemini-3.5-transcribe';
+    final transcription = controller(settings);
+    addTearDown(transcription.dispose);
+    await tester.pumpWidget(
+      MaterialApp(
+        home: MobileHomeScreen(
+          controller: transcription,
+          settingsService: settings,
+          cloudService: transcription.cloudService,
+        ),
+      ),
+    );
+    expect(find.text('Raw'), findsOneWidget);
+    expect(
+      tester.widget<ActionChip>(find.byType(ActionChip)).onPressed,
+      isNull,
+    );
+  });
+
   testWidgets('mode chip opens picker and updates after selection', (
     tester,
   ) async {
@@ -141,6 +171,65 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.text(nextPrompt.name), findsOneWidget);
   });
+
+  testWidgets(
+    'mobile can select standalone Transcribe without offering writing styles',
+    (tester) async {
+      await tester.binding.setSurfaceSize(const Size(900, 1200));
+      addTearDown(() => tester.binding.setSurfaceSize(null));
+      final settings = _Settings(credentials: true);
+      final cloud = CloudTranscriptionService();
+      addTearDown(cloud.dispose);
+      await tester.pumpWidget(
+        MaterialApp(
+          home: MobileSettingsScreen(
+            settingsService: settings,
+            cloudService: cloud,
+            packageInfoLoader: () async => PackageInfo(
+              appName: 'Beeamvo',
+              packageName: 'com.beeamvo.app',
+              version: '1',
+              buildNumber: '1',
+            ),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+      final fields = tester
+          .widgetList<DropdownButtonFormField<String>>(
+            find.byType(DropdownButtonFormField<String>),
+          )
+          .toList();
+      final modelDropdown = tester
+          .widgetList<DropdownButton<String>>(
+            find.byType(DropdownButton<String>),
+          )
+          .first;
+      expect(
+        modelDropdown.items!.map((item) => item.value),
+        containsAll([
+          'gemini-3.5-transcribe',
+          'gemini-3.1-flash-lite',
+          'gemini-2.5-flash',
+          'gemini-2.5-flash-lite',
+        ]),
+      );
+      fields.first.onChanged!('gemini-3.5-transcribe');
+      await tester.pumpAndSettle();
+      expect(settings.selectedModelId, 'gemini-3.5-transcribe');
+      expect(settings.twoPassTranscriptionEnabled, isFalse);
+      expect(
+        find.text('Speech-to-text only. Writing styles are not applied.'),
+        findsOneWidget,
+      );
+      final updated = tester
+          .widgetList<DropdownButtonFormField<String>>(
+            find.byType(DropdownButtonFormField<String>),
+          )
+          .toList();
+      expect(updated[1].onChanged, isNull);
+    },
+  );
 
   testWidgets('home and settings use dark theme surfaces', (tester) async {
     final settings = _Settings(credentials: true);

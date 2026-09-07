@@ -4,6 +4,7 @@ import 'package:beeamvo/services/secure_credential_store.dart';
 import 'package:beeamvo/services/settings_service.dart';
 import 'package:beeamvo/theme/app_theme.dart';
 import 'package:beeamvo/widgets/settings/pages/ai_models_page.dart';
+import 'package:beeamvo/widgets/settings/bee_dropdown.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:google_fonts/google_fonts.dart';
@@ -24,8 +25,8 @@ class FakeAiModelsSettingsService extends SettingsService {
   CloudProvider provider;
   bool geminiKeyPresent;
   String? vertexProjectIdValue;
-  final String selectedModel;
-  final bool twoPassEnabled;
+  String selectedModel;
+  bool twoPassEnabled;
   final String twoPassModel;
   final String spokenLanguageValue;
   String whisperModelValue = 'ggml-tiny.bin';
@@ -39,6 +40,7 @@ class FakeAiModelsSettingsService extends SettingsService {
   @override
   Future<void> setCloudProvider(CloudProvider provider) async {
     this.provider = provider;
+    notifyListeners();
   }
 
   @override
@@ -55,10 +57,22 @@ class FakeAiModelsSettingsService extends SettingsService {
   }
 
   @override
-  String get selectedModelId => selectedModel;
+  String get selectedModelId => resolvePrimaryModelId(selectedModel);
+
+  @override
+  Future<void> setSelectedModelId(String value) async {
+    selectedModel = value;
+    notifyListeners();
+  }
 
   @override
   bool get twoPassTranscriptionEnabled => twoPassEnabled;
+
+  @override
+  Future<void> setTwoPassTranscriptionEnabled(bool value) async {
+    twoPassEnabled = value;
+    notifyListeners();
+  }
 
   @override
   String get twoPassTranscriptionModelId => twoPassModel;
@@ -147,6 +161,100 @@ void main() {
       findsOneWidget,
     );
   });
+
+  testWidgets(
+    'single-pass Gemini selector offers standalone Transcribe and restored models',
+    (tester) async {
+      await _pumpAiModelsPage(
+        tester,
+        FakeAiModelsSettingsService(
+          twoPassEnabled: false,
+          selectedModel: 'gemini-3.5-transcribe',
+        ),
+      );
+      final picker = tester
+          .widgetList<BeeDropdown<String>>(find.byType(BeeDropdown<String>))
+          .singleWhere(
+            (dropdown) => dropdown.options.any(
+              (option) => option.value == 'gemini-3.7-flash',
+            ),
+          );
+      expect(picker.value, 'gemini-3.5-transcribe');
+      expect(
+        picker.options.map((option) => option.value),
+        containsAll([
+          'gemini-3.5-transcribe',
+          'gemini-3.1-flash-lite',
+          'gemini-2.5-flash',
+          'gemini-2.5-flash-lite',
+        ]),
+      );
+      expect(
+        find.text('Speech-to-text only. Writing styles are not applied.'),
+        findsOneWidget,
+      );
+      expect(find.text('Step 2 · Polish'), findsNothing);
+    },
+  );
+
+  testWidgets(
+    'model selector stays valid across provider and two-step changes',
+    (tester) async {
+      final settings = FakeAiModelsSettingsService(
+        selectedModel: 'gemini-3.5-transcribe',
+        twoPassEnabled: false,
+      );
+      await _pumpAiModelsPage(tester, settings);
+      BeeDropdown<String> primary() => tester
+          .widgetList<BeeDropdown<String>>(find.byType(BeeDropdown<String>))
+          .firstWhere(
+            (dropdown) => dropdown.options.any(
+              (option) => option.value == 'gemini-3.7-flash',
+            ),
+          );
+      expect(primary().value, 'gemini-3.5-transcribe');
+      await settings.setTwoPassTranscriptionEnabled(true);
+      await tester.pumpAndSettle();
+      expect(primary().value, AppConfig.defaultModelId);
+      await settings.setTwoPassTranscriptionEnabled(false);
+      await tester.pumpAndSettle();
+      expect(primary().value, 'gemini-3.5-transcribe');
+      await settings.setCloudProvider(CloudProvider.vertexAi);
+      await tester.pumpAndSettle();
+      expect(primary().value, AppConfig.defaultModelId);
+      expect(
+        primary().options.map((option) => option.value),
+        isNot(contains('gemini-3.5-transcribe')),
+      );
+      await settings.setCloudProvider(CloudProvider.geminiApiKey);
+      await tester.pumpAndSettle();
+      expect(primary().value, 'gemini-3.5-transcribe');
+      expect(tester.takeException(), isNull);
+    },
+  );
+
+  for (final provider in CloudProvider.values) {
+    testWidgets(
+      'refinement selector excludes speech-only models on ${provider.name}',
+      (tester) async {
+        await _pumpAiModelsPage(
+          tester,
+          FakeAiModelsSettingsService(provider: provider),
+        );
+        final picker = tester
+            .widgetList<BeeDropdown<String>>(find.byType(BeeDropdown<String>))
+            .firstWhere(
+              (dropdown) => dropdown.options.any(
+                (option) => option.value == 'gemini-3.7-flash',
+              ),
+            );
+        expect(
+          picker.options.map((option) => option.value),
+          isNot(contains('gemini-3.5-transcribe')),
+        );
+      },
+    );
+  }
 
   testWidgets('renders whisper controls when stored language is stale', (
     WidgetTester tester,

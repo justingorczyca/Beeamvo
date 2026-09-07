@@ -347,6 +347,80 @@ void main() {
       },
     );
 
+    test(
+      'single-pass dispatches Transcribe directly without a style request',
+      () async {
+        final client = FakeCloudClient(response: 'raw transcript');
+        final service = CloudTranscriptionService(
+          geminiInteractionsService: client,
+        );
+        addTearDown(service.dispose);
+        service.attachSettings(
+          FakeCloudSettingsService(modelId: 'gemini-3.5-transcribe'),
+        );
+        expect(
+          await service.transcribeSinglePass(
+            Uint8List.fromList([1, 2, 3]),
+            'audio/wav',
+            missionInstruction: 'Write a professional email.',
+          ),
+          'raw transcript',
+        );
+        expect(client.transcribeCalls, 1);
+        expect(client.transcribeAndImproveCalls, 0);
+        expect(client.improveCalls, 0);
+        expect(client.lastTranscribeModelOverrideId, 'gemini-3.5-transcribe');
+      },
+    );
+
+    for (final model in AppConfig.mainModels) {
+      test(
+        'single-pass keeps style processing in one request for ${model.id}',
+        () async {
+          final client = FakeCloudClient();
+          final service = CloudTranscriptionService(
+            geminiInteractionsService: client,
+          );
+          addTearDown(service.dispose);
+          await service.transcribeSinglePass(
+            Uint8List.fromList([1, 2, 3]),
+            'audio/wav',
+            modelOverrideId: model.id,
+            thinkingLevelOverride: GeminiThinkingLevel.high,
+          );
+          expect(client.transcribeAndImproveCalls, 1);
+          expect(client.transcribeCalls, 0);
+          expect(client.improveCalls, 0);
+          expect(client.lastTranscribeAndImproveModelOverrideId, model.id);
+          expect(
+            client.lastTranscribeAndImproveThinkingLevelOverride,
+            GeminiThinkingLevel.high,
+          );
+        },
+      );
+    }
+
+    test(
+      'standalone routing preserves the Vertex speech-model restriction',
+      () async {
+        final vertex = FakeCloudClient();
+        final service = CloudTranscriptionService(vertexAiService: vertex);
+        addTearDown(service.dispose);
+        service.attachSettings(
+          FakeCloudSettingsService(provider: CloudProvider.vertexAi),
+        );
+        await expectLater(
+          service.transcribeSinglePass(
+            Uint8List.fromList([1, 2, 3]),
+            'audio/wav',
+            modelOverrideId: 'gemini-3.5-transcribe',
+          ),
+          throwsA(isA<CloudTranscriptionException>()),
+        );
+        expect(vertex.transcribeCalls, 0);
+      },
+    );
+
     test('allows transcription-only models for raw transcribeAudio', () async {
       final service = CloudTranscriptionService(
         geminiInteractionsService: FakeCloudClient(response: 'raw transcript'),

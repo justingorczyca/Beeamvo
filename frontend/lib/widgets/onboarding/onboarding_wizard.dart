@@ -146,10 +146,11 @@ class _OnboardingWizardState extends State<OnboardingWizard>
                 ),
               ),
 
-              // Navigation footer
-              if (_currentStep > 0 && _currentStep < _kTotalSteps - 1)
+              // Navigation footer — Back is offered on every step including
+              // the summary, so the flow is never a dead end.
+              if (_currentStep > 0)
                 Padding(
-                  padding: const EdgeInsets.fromLTRB(48, 0, 48, 16),
+                  padding: const EdgeInsets.fromLTRB(48, 0, 48, 12),
                   child: Row(
                     children: [
                       OnboardingSecondaryButton(
@@ -228,7 +229,9 @@ class _OnboardingWizardState extends State<OnboardingWizard>
   Widget _buildStep(int index, bool isCloud) {
     switch (index) {
       case 0:
-        return Center(child: WelcomeStep(onNext: _nextStep));
+        return Center(
+          child: WelcomeStep(onNext: _nextStep, onSkip: _finish),
+        );
 
       case 1:
         return Center(
@@ -290,6 +293,7 @@ class _OnboardingWizardState extends State<OnboardingWizard>
             settingsService: widget.settingsService,
             onGoToApiKeyStep: () => _goToStep(2),
             onGoToModelStep: () => _goToStep(3),
+            onGoToProviderStep: () => _goToStep(1),
           ),
         );
 

@@ -214,6 +214,25 @@ void main() {
       },
     );
 
+    test(
+      'verifying a speech-only selection still validates the API key',
+      () async {
+        http.Request? captured;
+        final service = _service(
+          MockClient((request) async {
+            captured = request;
+            return _completedResponse('OK');
+          }),
+        );
+        addTearDown(service.dispose);
+        service.setModelById('gemini-3.5-transcribe');
+        await service.verifySetup();
+        expect(captured, isNotNull);
+        expect(jsonDecode(captured!.body)['model'], AppConfig.defaultModelId);
+        expect(service.currentModel.id, 'gemini-3.5-transcribe');
+      },
+    );
+
     test('verifySetup uses the key header and robust verify payload', () async {
       http.Request? capturedRequest;
       final service = _service(

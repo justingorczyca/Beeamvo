@@ -117,8 +117,14 @@ class _MobileHomeScreenState extends State<MobileHomeScreen> {
                       ),
                       const Spacer(),
                       ActionChip(
-                        label: Text(prompt.name),
-                        onPressed: _openModePicker,
+                        label: Text(
+                          widget.settingsService.promptIsApplied
+                              ? prompt.name
+                              : 'Raw',
+                        ),
+                        onPressed: widget.settingsService.promptIsApplied
+                            ? _openModePicker
+                            : null,
                         avatar: Icon(
                           Icons.tune,
                           size: 16,

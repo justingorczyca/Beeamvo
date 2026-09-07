@@ -191,20 +191,25 @@ void main() {
     );
 
     test(
-      'model list excludes deprecated Gemini 2.x and 3.1 Flash-Lite variants',
+      'model list retains live stable models but excludes shut-down variants',
       () {
+        final ids = AppConfig.availableModels.map((model) => model.id);
         expect(
-          AppConfig.availableModels.map((model) => model.id),
-          isNot(
-            containsAll([
-              'gemini-2.0-flash',
-              'gemini-2.0-flash-lite',
-              'gemini-2.5-flash',
-              'gemini-2.5-flash-lite',
-              'gemini-3.1-flash-lite',
-            ]),
-          ),
+          ids,
+          containsAll([
+            'gemini-2.5-flash',
+            'gemini-2.5-flash-lite',
+            'gemini-3.1-flash-lite',
+            'gemini-3.5-transcribe',
+          ]),
         );
+        for (final retired in [
+          'gemini-2.0-flash',
+          'gemini-2.0-flash-lite',
+          'gemini-3.1-flash-lite-preview',
+        ]) {
+          expect(ids, isNot(contains(retired)));
+        }
       },
     );
 

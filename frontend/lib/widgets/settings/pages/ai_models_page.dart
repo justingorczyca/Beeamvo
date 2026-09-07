@@ -97,12 +97,16 @@ class _AiModelsPageState extends State<AiModelsPage> {
   void _syncFromSettings() {
     final s = SettingsProviderScope.of(context).settingsService;
     final newBackend = s.transcriptionBackend;
+    final newProvider = s.cloudProvider;
+    final newThinking = s.getThinkingLevelForModel(s.selectedModelId);
     final newTwoPass = s.twoPassTranscriptionEnabled;
     final newStepOneModel = s.twoPassTranscriptionModelId;
     final newModel = s.selectedModelId;
     final newHasGeminiKey = s.hasGeminiApiKey;
     final newVertexProjectId = s.vertexProjectId;
     if (newBackend == _transcriptionBackend &&
+        newProvider == _cloudProvider &&
+        newThinking == _selectedThinkingLevel &&
         newTwoPass == _twoPassEnabled &&
         newStepOneModel == _twoPassTranscriptionModelId &&
         newModel == _selectedModelId &&
@@ -112,6 +116,8 @@ class _AiModelsPageState extends State<AiModelsPage> {
     }
     setState(() {
       _transcriptionBackend = newBackend;
+      _cloudProvider = newProvider;
+      _selectedThinkingLevel = newThinking;
       _twoPassEnabled = newTwoPass;
       _twoPassTranscriptionModelId = newStepOneModel;
       _selectedModelId = newModel;
@@ -170,8 +176,10 @@ class _AiModelsPageState extends State<AiModelsPage> {
     final settings = SettingsProviderScope.of(context).settingsService;
     await settings.setSelectedModelId(modelId);
     setState(() {
-      _selectedModelId = modelId;
-      _selectedThinkingLevel = settings.getThinkingLevelForModel(modelId);
+      _selectedModelId = settings.selectedModelId;
+      _selectedThinkingLevel = settings.getThinkingLevelForModel(
+        _selectedModelId,
+      );
     });
   }
 
@@ -641,7 +649,7 @@ class _AiModelsPageState extends State<AiModelsPage> {
   }
 
   Widget _buildAiModelSection({bool showDivider = false}) {
-    final model = AppConfig.getModelById(_selectedModelId);
+    final model = AppConfig.getModelById(_safeModelId(_selectedModelId));
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -649,7 +657,9 @@ class _AiModelsPageState extends State<AiModelsPage> {
         BeeSettingsRow(
           icon: Icons.auto_awesome_rounded,
           label: 'Model',
-          description: 'Writes the final text and applies your writing style.',
+          description: model.isTranscriptionOnly
+              ? 'Speech-to-text only. Writing styles are not applied.'
+              : 'Writes the final text and applies your writing style.',
           showDivider: model.hasSelectableThinkingLevel || showDivider,
           trailing: BeeDropdown<String>(
             value: _safeModelId(_selectedModelId),
@@ -739,7 +749,7 @@ class _AiModelsPageState extends State<AiModelsPage> {
           label: 'Step 2 · Polish',
           description: _isOffline
               ? 'A cloud AI model applies your writing style. Set it up below.'
-              : '${AppConfig.getModelById(_selectedModelId).displayName} applies your writing style.',
+              : '${AppConfig.getModelById(_safeModelId(_selectedModelId)).displayName} applies your writing style.',
           showDivider: _isOffline,
         ),
         if (_isOffline) ...[
@@ -1075,7 +1085,7 @@ class _AiModelsPageState extends State<AiModelsPage> {
   }
 
   Widget _buildThinkingLevelRow({bool showDivider = false}) {
-    final modelConfig = AppConfig.getModelById(_selectedModelId);
+    final modelConfig = AppConfig.getModelById(_safeModelId(_selectedModelId));
     final levels = modelConfig.supportedThinkingLevels;
     if (levels.isEmpty) return const SizedBox.shrink();
 
@@ -1114,10 +1124,11 @@ class _AiModelsPageState extends State<AiModelsPage> {
     );
   }
 
-  /// Prompt-capable models: the only valid choices for the AI model.
+  /// Primary choices allowed by the current provider and transcription pipeline.
   List<BeeDropdownOption<String>> _mainModelOptions() {
+    final settings = SettingsProviderScope.of(context).settingsService;
     return [
-      for (final m in AppConfig.mainModels)
+      for (final m in settings.primaryModels)
         BeeDropdownOption(value: m.id, label: m.displayName),
     ];
   }
@@ -1132,7 +1143,9 @@ class _AiModelsPageState extends State<AiModelsPage> {
     ];
   }
 
-  String _safeModelId(String id) => AppConfig.resolveRefinementModelId(id);
+  String _safeModelId(String id) => SettingsProviderScope.of(
+    context,
+  ).settingsService.resolvePrimaryModelId(id);
 
   String _safeStepOneModelId(String id) {
     return AppConfig.isOfferedModelId(id)

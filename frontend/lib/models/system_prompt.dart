@@ -166,10 +166,17 @@ Work out what the speaker is producing, then deliver a clean, ready-to-use writt
 STEP 1 — IDENTIFY THE FORM
 Decide whether the input is ordinary prose (a note, thought, chat message), a sendable email/letter, a list of items or steps, or notes with several topics. If there is no clear written form, keep it as clean prose.
 
-STEP 2 — CLEAN UP
-- Remove hesitations and empty fillers (um, uh, "you know", "I mean", "basically", "like", "right", "so", "actually", "literally") only where they carry no meaning; keep them when they do ("I like it", "turn right", "the actual file").
-- On self-corrections ("I went to the — I drove to the store") keep only the corrected version. Drop stutters and false starts.
-- Fix grammar, punctuation, capitalization, and sentence boundaries; repair speech-to-text garbling and obvious wrong words when the intended word is clear from context.
+STEP 2 — STRIP SPEECH NOISE
+Spoken delivery carries noise that must never reach the written text. Removing it is the default, not an option:
+- Hesitation sounds and pause fillers: um, uh, er, erm, ah, eh, hmm, mhm, uh-huh — and their equivalents in the spoken language (e.g., German „äh“, „ähm“, „halt“, „eben“, „na ja“, „tja“).
+- Empty discourse markers and verbal tics: "you know", "you know what I mean", "you see", "I mean", "like", "right?", "so", "well", "okay", "yeah"/"yes" as bare interjections, "basically", "actually", "literally", "sort of", "kind of", "anyway", "look", "listen".
+- Trailing-off and padding tags: "or something", "or whatever", "and stuff", "and things like that", "if you will", "as it were".
+- Pause artifacts and broken delivery: ellipses or dashes that only mark a pause, doubled or stuttered words ("the the", "I I I"), false starts, and abandoned fragments. On self-corrections ("I went to the — I drove to the store") keep only the corrected version.
+
+A word survives only if removing it changes the meaning or the grammar ("I like it", "turn right", "the actual file", "so far", "well done"). Stance is meaning, not noise: genuine hedges ("I think", "I guess", "maybe", "probably") and real answers ("yeah" confirming a question) stay. Everything a writer would never type comes out.
+Spoken: "so um yeah, I I think we should like meet on Tuesday or whatever" → Written: "I think we should meet on Tuesday."
+
+Then fix grammar, punctuation, capitalization, and sentence boundaries; merge fragments that clearly belong together; repair speech-to-text garbling and obvious wrong words when the intended word is clear from context.
 
 STEP 3 — LIGHT POLISH ONLY
 - Tighten mildly wordy phrasing and swap an awkward word for a clearer one when the meaning stays identical.

@@ -73,6 +73,7 @@ class GeminiModelConfig {
 
   /// For Gemini 2.x models.
   final int? thinkingBudget;
+  final GeminiThinkingLevel? interactionsThinkingLevel;
 
   /// For Gemini 3+ models.
   final GeminiThinkingLevel? thinkingLevel;
@@ -92,6 +93,7 @@ class GeminiModelConfig {
     this.vertexLocation = 'global',
     this.isPreview = false,
     this.thinkingBudget,
+    this.interactionsThinkingLevel,
     this.thinkingLevel,
     this.supportedThinkingLevels = const [],
     this.isTranscriptionOnly = false,
@@ -212,6 +214,31 @@ class AppConfig {
       ],
     ),
     GeminiModelConfig(
+      id: 'gemini-3.1-flash-lite',
+      name: 'Gemini 3.1 Flash Lite',
+      modelName: 'gemini-3.1-flash-lite',
+      thinkingLevel: GeminiThinkingLevel.minimal,
+      supportedThinkingLevels: [
+        GeminiThinkingLevel.minimal,
+        GeminiThinkingLevel.low,
+        GeminiThinkingLevel.medium,
+        GeminiThinkingLevel.high,
+      ],
+    ),
+    GeminiModelConfig(
+      id: 'gemini-2.5-flash',
+      name: 'Gemini 2.5 Flash',
+      modelName: 'gemini-2.5-flash',
+      thinkingBudget: 0,
+      interactionsThinkingLevel: GeminiThinkingLevel.low,
+    ),
+    GeminiModelConfig(
+      id: 'gemini-2.5-flash-lite',
+      name: 'Gemini 2.5 Flash Lite',
+      modelName: 'gemini-2.5-flash-lite',
+      thinkingBudget: 0,
+    ),
+    GeminiModelConfig(
       id: 'gemini-3.5-transcribe',
       name: 'Gemini 3.5 Transcribe',
       modelName: 'gemini-3.5-transcribe',
@@ -237,13 +264,18 @@ class AppConfig {
     return availableModels.any((model) => model.id == id);
   }
 
-  /// Models that can follow prompts: the only choices for the primary model.
+  /// Models that can follow writing-style prompts and perform refinement.
   static List<GeminiModelConfig> get mainModels =>
       availableModels.where((m) => !m.isTranscriptionOnly).toList();
 
   /// Dedicated speech-to-text models such as `gemini-3.5-transcribe`.
   static List<GeminiModelConfig> get transcriptionModels =>
       availableModels.where((m) => m.isTranscriptionOnly).toList();
+
+  static String resolveModelId(String? savedId) {
+    if (savedId != null && isOfferedModelId(savedId)) return savedId;
+    return defaultModelId;
+  }
 
   /// Returns a model id that can follow prompts. Transcription-only or
   /// retired ids fall back to [defaultModelId].

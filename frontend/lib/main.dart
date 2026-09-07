@@ -13,6 +13,7 @@ import 'services/cloud_transcription_service.dart';
 import 'services/cloud_transcription_client.dart';
 import 'services/hotkey_service.dart';
 import 'services/recording_service.dart';
+import 'services/recording_start_gate.dart';
 import 'services/keyboard_service.dart';
 import 'services/macos_permission_service.dart';
 import 'services/transcription_result_guard.dart';
@@ -183,7 +184,8 @@ class _BeeamvoHomeState extends State<BeeamvoHome>
 
   late AnimationController _pulseController;
   late AnimationController _rotationController;
-  Timer? _holdTimer;
+  final RecordingStartGate _recordingStart = RecordingStartGate();
+  Timer? _linuxReleaseTimer;
   Timer? _durationLimitTimer;
   Timer? _clipboardMonitorTimer;
   bool _isClipboardPollInProgress = false;
@@ -270,8 +272,8 @@ class _BeeamvoHomeState extends State<BeeamvoHome>
       onboardingCompletion.complete();
     }
     _onboardingCompletion = null;
-    _holdTimer?.cancel();
-    _holdTimer = null;
+    _linuxReleaseTimer?.cancel();
+    _linuxReleaseTimer = null;
     _durationLimitTimer?.cancel();
     _durationLimitTimer = null;
     _clipboardMonitorTimer?.cancel();
@@ -518,23 +520,24 @@ class _BeeamvoHomeState extends State<BeeamvoHome>
     final mode = _settingsService.recordingMode;
 
     // Always track that key is being held physically
+    if (_isHotkeyHeld && !Platform.isLinux) return;
     _isHotkeyHeld = true;
 
-    if (mode == RecordingMode.hold) {
-      // For Hold Mode: Reset the watchdog timer on EVERY key event (including repeats).
-      // Two-tier duration: 600ms before recording starts (survives the initial OS repeat delay,
-      // typically ~500ms on Windows), then 300ms once repeats are flowing (repeat interval is
-      // much shorter at ~30-500ms). This keeps the fallback snappy after the first repeat.
-      final isRepeat = _state == RecordingState.recording;
-      final watchdogMs = isRepeat ? 300 : 600;
-      _holdTimer?.cancel();
-      _holdTimer = Timer(Duration(milliseconds: watchdogMs), () {
-        _isHotkeyHeld =
-            false; // Timer expired = key released (fallback for Windows)
-        if (_state == RecordingState.recording && !_isLockActive) {
-          _stopRecordingAndProcess();
-        }
-      });
+    // For Hold Mode: real key-up events trigger processing immediately.
+    // The Windows backend supplies release events and suppresses OS repeats,
+    // so recording does not depend on the user's keyboard repeat settings.
+    // Linux still needs its fallback; macOS supplies native key-up callbacks.
+    if (Platform.isLinux && mode == RecordingMode.hold) {
+      _linuxReleaseTimer?.cancel();
+      _linuxReleaseTimer = Timer(
+        Duration(milliseconds: _state == RecordingState.recording ? 300 : 600),
+        _onHotkeyReleased,
+      );
+    }
+    if (_recordingStart.isStarting && mode == RecordingMode.toggle) {
+      _recordingStart
+          .requestProcessing(); // Preserve the second press during startup.
+      return;
     }
 
     // Safety check: if lock is active (e.g. initializing), ignore STARTING recording
@@ -564,14 +567,14 @@ class _BeeamvoHomeState extends State<BeeamvoHome>
 
     // Track release
     _isHotkeyHeld = false;
-    _holdTimer?.cancel();
+    _linuxReleaseTimer?.cancel();
+    _linuxReleaseTimer = null;
 
     // Hold mode:
-    // - Only stop if we are currently recording and not locked
+    // - Stop immediately when recording, or queue the request during startup
     // - If locked, the post-start check in _startRecording will handle it
     if (mode == RecordingMode.hold &&
-        _state == RecordingState.recording &&
-        !_isLockActive) {
+        (_state == RecordingState.recording || _recordingStart.isStarting)) {
       _stopRecordingAndProcess();
     }
   }
@@ -613,6 +616,9 @@ class _BeeamvoHomeState extends State<BeeamvoHome>
 
   /// Register the main global hotkey with the given configuration.
   Future<void> _registerMainHotkey(HotkeyConfig config) {
+    _isHotkeyHeld = false;
+    _linuxReleaseTimer?.cancel();
+    _linuxReleaseTimer = null;
     return _registerShortcut(
       'main',
       config,
@@ -981,6 +987,37 @@ class _BeeamvoHomeState extends State<BeeamvoHome>
     }
   }
 
+  Future<void> _registerRecordingControls() async {
+    // Register the bare Enter and Escape keys for the active session:
+    // Enter commits the recording (stop + process), Escape cancels it.
+    //
+    // These MUST be system/global scope, NOT inapp. The recording orb is
+    // intentionally shown WITHOUT stealing OS keyboard focus
+    // (positionAtActiveMonitorBottomCenter uses SW_SHOWNOACTIVATE) so the
+    // user's foreground app keeps the caret for later paste. inapp-scope
+    // hotkeys are delivered through HardwareKeyboard, which only receives
+    // events while the Beeamvo window itself is focused — so an inapp
+    // binding here would be inert for the entire recording. System scope
+    // routes the keys through the OS keyboard hook regardless of which
+    // window is focused, so Escape/Enter reliably drive the session while
+    // the user is typing in another app. They are unregistered again in
+    // _stopRecordingAndProcess / _cancelRecording / _abortStartedRecorder,
+    // so the bindings only exist for the lifetime of an active recording.
+    await _hotkeyService.registerHotkey(
+      id: 'cancel',
+      key: LogicalKeyboardKey.escape,
+      scope: HotKeyScope.system,
+      onPressed: _cancelRecording,
+    );
+    // Register Enter key to commit/finish recording
+    await _hotkeyService.registerHotkey(
+      id: 'commit',
+      key: LogicalKeyboardKey.enter,
+      scope: HotKeyScope.system,
+      onPressed: _stopRecordingAndProcess,
+    );
+  }
+
   Future<void> _startRecording() async {
     if (_isLockActive ||
         _state == RecordingState.recording ||
@@ -988,6 +1025,7 @@ class _BeeamvoHomeState extends State<BeeamvoHome>
       return;
     }
     _isLockActive = true;
+    _recordingStart.begin();
     // Snapshot the transition generation. If Settings (or another superseding
     // transition) opens while we await async platform calls below, the token
     // will differ and we bail before committing a half-started recording.
@@ -995,31 +1033,34 @@ class _BeeamvoHomeState extends State<BeeamvoHome>
     _activeRecordingBackend = null;
     _durationLimitTimer?.cancel();
     _durationLimitTimer = null;
-    await _clearRetryRecording();
-    _useCurrentSettingsForRetry = false;
-    _returnToRetryAfterSettings = false;
-
-    if (_state == RecordingState.settings ||
-        _state == RecordingState.modeSelection) {
-      setState(() => _state = RecordingState.idle);
-      // Wait a frame for the UI to switch to the orb before resizing the window down to 150x150
-      await Future.delayed(const Duration(milliseconds: 50));
-      // Reset minimum size that was set by _showSettings()/_openModeSelection()
-      await windowManager.setMinimumSize(const Size(150, 150));
-      await windowManager.setSize(const Size(150, 150));
-    }
-
-    // Yield to the event loop before calling Win32 FFI window positioning.
-    // This prevents synchronous WM_WINDOWPOSCHANGED messages from crashing the
-    // Flutter engine when triggered directly from a platform channel hotkey callback.
-    await Future.delayed(Duration.zero);
-
-    await WindowHelper.positionAtActiveMonitorBottomCenter(150, 150);
-
     try {
+      await _registerRecordingControls();
+      if (!mounted || _isShuttingDown || sessionToken != _sessionToken) return;
+      await _clearRetryRecording();
+      _useCurrentSettingsForRetry = false;
+      _returnToRetryAfterSettings = false;
+
+      if (_state == RecordingState.settings ||
+          _state == RecordingState.modeSelection) {
+        setState(() => _state = RecordingState.idle);
+        // Wait a frame for the UI to switch to the orb before resizing the window down to 150x150
+        await WidgetsBinding.instance.endOfFrame;
+        // Reset minimum size that was set by _showSettings()/_openModeSelection()
+        await windowManager.setMinimumSize(const Size(150, 150));
+        await windowManager.setSize(const Size(150, 150));
+      }
+
+      // Yield to the event loop before calling Win32 FFI window positioning.
+      // This prevents synchronous WM_WINDOWPOSCHANGED messages from crashing the
+      // Flutter engine when triggered directly from a platform channel hotkey callback.
+      await Future.delayed(Duration.zero);
+
+      await WindowHelper.positionAtActiveMonitorBottomCenter(150, 150);
+
       // Preflight: permission + stale-device cleanup. An empty device list is
       // only a warning (OS default may still work); denied permission is fatal.
       final readiness = await _recordingService.assessMicReadiness();
+      if (!mounted || _isShuttingDown || sessionToken != _sessionToken) return;
       if (readiness.fellBackToDefault) {
         await _settingsService.setSelectedAudioDeviceId(null);
       }
@@ -1065,7 +1106,7 @@ class _BeeamvoHomeState extends State<BeeamvoHome>
         started = await _recordingService.startRecording();
       }
 
-      if (sessionToken != _sessionToken) {
+      if (!mounted || _isShuttingDown || sessionToken != _sessionToken) {
         // A superseding transition (e.g. Settings opened) won the race while
         // we were starting the recorder. Do not commit to RecordingState —
         // stop the recorder we just started so it cannot leave a hot mic, then
@@ -1099,35 +1140,6 @@ class _BeeamvoHomeState extends State<BeeamvoHome>
           });
           debugPrint('Duration limit timer set to $limitSeconds seconds');
         }
-
-        // Register the bare Enter and Escape keys for the active session:
-        // Enter commits the recording (stop + process), Escape cancels it.
-        //
-        // These MUST be system/global scope, NOT inapp. The recording orb is
-        // intentionally shown WITHOUT stealing OS keyboard focus
-        // (positionAtActiveMonitorBottomCenter uses SW_SHOWNOACTIVATE) so the
-        // user's foreground app keeps the caret for later paste. inapp-scope
-        // hotkeys are delivered through HardwareKeyboard, which only receives
-        // events while the Beeamvo window itself is focused — so an inapp
-        // binding here would be inert for the entire recording. System scope
-        // routes the keys through the OS keyboard hook regardless of which
-        // window is focused, so Escape/Enter reliably drive the session while
-        // the user is typing in another app. They are unregistered again in
-        // _stopRecordingAndProcess / _cancelRecording / _abortStartedRecorder,
-        // so the bindings only exist for the lifetime of an active recording.
-        await _hotkeyService.registerHotkey(
-          id: 'cancel',
-          key: LogicalKeyboardKey.escape,
-          scope: HotKeyScope.system,
-          onPressed: _cancelRecording,
-        );
-        // Register Enter key to commit/finish recording
-        await _hotkeyService.registerHotkey(
-          id: 'commit',
-          key: LogicalKeyboardKey.enter,
-          scope: HotKeyScope.system,
-          onPressed: _stopRecordingAndProcess,
-        );
       } else {
         _activeRecordingBackend = null;
         _recordingStopwatch
@@ -1150,9 +1162,9 @@ class _BeeamvoHomeState extends State<BeeamvoHome>
       _recordingStopwatch
         ..stop()
         ..reset();
-      _holdTimer?.cancel();
-      _holdTimer = null;
       _isHotkeyHeld = false;
+      _linuxReleaseTimer?.cancel();
+      _linuxReleaseTimer = null;
 
       if (sessionToken == _sessionToken) {
         // We still own this session: surface a recoverable error state.
@@ -1165,22 +1177,31 @@ class _BeeamvoHomeState extends State<BeeamvoHome>
       // we were starting, leave the winning transition's UI state intact — it
       // already set the correct state and we must not overwrite it with error.
     } finally {
+      final canProcess =
+          mounted &&
+          !_isShuttingDown &&
+          sessionToken == _sessionToken &&
+          _state == RecordingState.recording;
+      if (!canProcess) {
+        await _hotkeyService.unregisterHotkey('cancel');
+        await _hotkeyService.unregisterHotkey('commit');
+      }
+      final processRequested = _recordingStart.finish(canProcess: canProcess);
       _isLockActive = false;
 
       // Post-start integrity check for Hold Mode.
       // If the user released the key while we were initializing (locked), we
-      // missed the KeyUp action. Processing immediately would almost always
-      // produce an empty capture (especially on macOS where the file is still
-      // finalizing). Cancel cleanly instead of surfacing a bogus mic error.
-      // Skip this check for mode-selection sessions — they use toggle semantics.
-      if (_state == RecordingState.recording &&
-          _settingsService.recordingMode == RecordingMode.hold &&
-          !_isHotkeyHeld &&
-          _temporaryPromptId == null) {
-        debugPrint(
-          'Hold mode: Key released during start-up; canceling empty session.',
-        );
-        unawaited(_cancelRecording());
+      // retain the stop request and process as soon as capture is ready.
+      // The recorder still finalizes its audio before sending it to the model.
+      // Empty or very short captures are rejected without an extra timer.
+      // Skip the physical-key check for mode-selection sessions — they use toggle semantics.
+      if (canProcess &&
+          (processRequested ||
+              (_settingsService.recordingMode == RecordingMode.hold &&
+                  !_isHotkeyHeld &&
+                  _temporaryPromptId == null))) {
+        debugPrint('Processing the stop request received during startup.');
+        unawaited(_stopRecordingAndProcess());
       }
     }
   }
@@ -1188,6 +1209,7 @@ class _BeeamvoHomeState extends State<BeeamvoHome>
   void _hideAfterDelay([int seconds = 2]) {
     Future.delayed(Duration(seconds: seconds), () async {
       if (mounted &&
+          !_recordingStart.isStarting &&
           _state != RecordingState.recording &&
           _state != RecordingState.processing) {
         _pulseController.stop();
@@ -1273,6 +1295,7 @@ class _BeeamvoHomeState extends State<BeeamvoHome>
   }
 
   Future<void> _stopRecordingAndProcess({bool retryExisting = false}) async {
+    if (_recordingStart.requestProcessing()) return;
     if (_isLockActive) return;
     if (retryExisting) {
       final recordingPath = _recordingService.currentRecordingPath;
@@ -1469,10 +1492,11 @@ class _BeeamvoHomeState extends State<BeeamvoHome>
           missionInstruction: instruction,
         );
       } else {
-        improvedText = await _cloudService.transcribeAndImprove(
+        improvedText = await _cloudService.transcribeSinglePass(
           audioBytes!,
           'audio/wav',
           missionInstruction: instruction,
+          modelOverrideId: _settingsService.selectedModelId,
         );
       }
       // If state changed (e.g. cancelled), don't paste
@@ -1604,6 +1628,10 @@ class _BeeamvoHomeState extends State<BeeamvoHome>
   }
 
   Future<void> _cancelRecording() async {
+    if (_recordingStart.isStarting) {
+      _sessionToken++;
+      return;
+    }
     if (_state != RecordingState.recording &&
         _state != RecordingState.processing) {
       return;
@@ -1614,9 +1642,9 @@ class _BeeamvoHomeState extends State<BeeamvoHome>
       ..reset();
     _durationLimitTimer?.cancel();
     _durationLimitTimer = null;
-    _holdTimer?.cancel();
-    _holdTimer = null;
     _isHotkeyHeld = false;
+    _linuxReleaseTimer?.cancel();
+    _linuxReleaseTimer = null;
 
     // Use the backend resolved for this session, not the current global
     // setting. Prompts may temporarily override the backend.

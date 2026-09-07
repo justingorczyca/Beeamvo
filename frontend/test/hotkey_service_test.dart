@@ -18,9 +18,12 @@ import 'package:hotkey_manager/hotkey_manager.dart';
 /// a native plugin (the real method/event channels would otherwise raise
 /// MissingPluginException on register/listen).
 class _NoopHotKeyManagerPlatform extends HotKeyManagerPlatform {
+  static final events = StreamController<Map<Object?, Object?>>.broadcast(
+    sync: true,
+  );
+
   @override
-  Stream<Map<Object?, Object?>> get onKeyEventReceiver =>
-      const Stream<Map<Object?, Object?>>.empty();
+  Stream<Map<Object?, Object?>> get onKeyEventReceiver => events.stream;
 
   @override
   Future<void> register(HotKey hotKey) async {}
@@ -45,6 +48,35 @@ void main() {
     await HotKeyManager.instance.unregisterAll();
     service = HotkeyService();
   });
+
+  tearDown(() async => service.dispose());
+  tearDownAll(() async => _NoopHotKeyManagerPlatform.events.close());
+
+  test(
+    'native release reaches the hold callback without advancing time',
+    () async {
+      final received = <String>[];
+      await service.registerHotkey(
+        id: 'main',
+        key: LogicalKeyboardKey.keyV,
+        modifiers: [HotKeyModifier.control, HotKeyModifier.shift],
+        onPressed: () => received.add('record'),
+        onReleased: () => received.add('process'),
+      );
+      final key = HotKeyManager.instance.registeredHotKeyList.single;
+      void emit(String type) => _NoopHotKeyManagerPlatform.events.add({
+        'type': type,
+        'data': {'identifier': key.identifier},
+      });
+      emit('onKeyDown');
+      expect(received, ['record']);
+      emit('onKeyUp');
+      expect(received, ['record', 'process']);
+      await service.unregisterHotkey('main');
+      emit('onKeyUp');
+      expect(received, ['record', 'process']);
+    },
+  );
 
   group('recording-session Escape/Enter bindings', () {
     test(

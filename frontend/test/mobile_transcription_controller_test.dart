@@ -240,6 +240,26 @@ void main() {
     controller.dispose();
   });
 
+  test(
+    'standalone Transcribe uses one raw pass without applying a style',
+    () async {
+      final cloud = FakeCloud();
+      final controller = MobileTranscriptionController(
+        settingsService: FakeSettings(modelId: 'gemini-3.5-transcribe')
+          ..promptId = 'professional',
+        cloudService: cloud,
+        usageStatsService: FakeUsageStats(),
+        recorder: FakeRecorder(),
+      );
+      addTearDown(controller.dispose);
+      await controller.toggleRecording();
+      await controller.toggleRecording();
+      expect(controller.resultText, 'raw result');
+      expect(cloud.transcribeCalls, 1);
+      expect(cloud.improveCalls, 0);
+    },
+  );
+
   test('two-pass transcription calls both cloud stages', () async {
     final cloud = FakeCloud();
     final controller = makeController(twoPass: true, cloud: cloud);

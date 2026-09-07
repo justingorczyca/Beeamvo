@@ -148,7 +148,7 @@ class _OnboardingBackgroundState extends State<OnboardingBackground>
 
 // ─── Primary Button ─────────────────────────────────────────────────────
 
-class OnboardingPrimaryButton extends StatefulWidget {
+class OnboardingPrimaryButton extends StatelessWidget {
   final String label;
   final IconData? icon;
   final VoidCallback? onTap;
@@ -163,55 +163,61 @@ class OnboardingPrimaryButton extends StatefulWidget {
   });
 
   @override
-  State<OnboardingPrimaryButton> createState() =>
-      _OnboardingPrimaryButtonState();
-}
-
-class _OnboardingPrimaryButtonState extends State<OnboardingPrimaryButton> {
-  @override
   Widget build(BuildContext context) {
     final accent = beeYellow(context);
-    return GestureDetector(
-      onTap: widget.isLoading ? null : widget.onTap,
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 28, vertical: 12),
-        decoration: BoxDecoration(
-          gradient: LinearGradient(colors: [accent, beeYellowDim(context)]),
-          borderRadius: BorderRadius.circular(_kRadiusMd),
-          boxShadow: [
-            BoxShadow(
-              color: accent.withValues(alpha: 0.15),
-              blurRadius: 12,
-              spreadRadius: 1,
+    final enabled = onTap != null && !isLoading;
+    return BeeInteractive(
+      onTap: enabled ? onTap : null,
+      semanticLabel: isLoading ? '$label (loading)' : label,
+      builder: (context, focused) => Opacity(
+        opacity: enabled ? 1.0 : 0.5,
+        child: AnimatedContainer(
+          duration: const Duration(milliseconds: 150),
+          padding: const EdgeInsets.symmetric(horizontal: 28, vertical: 12),
+          decoration: BoxDecoration(
+            gradient: LinearGradient(colors: [accent, beeYellowDim(context)]),
+            borderRadius: BorderRadius.circular(_kRadiusMd),
+            border: Border.all(
+              color: focused
+                  ? Colors.white.withValues(alpha: 0.55)
+                  : Colors.transparent,
+              width: 1.5,
             ),
-          ],
-        ),
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            if (widget.icon != null) ...[
-              Icon(widget.icon, size: 18, color: Colors.white),
-              const SizedBox(width: 8),
-            ],
-            if (widget.isLoading)
-              SizedBox(
-                width: 18,
-                height: 18,
-                child: CircularProgressIndicator(
-                  strokeWidth: 2,
-                  valueColor: const AlwaysStoppedAnimation(Colors.white),
-                ),
-              )
-            else
-              Text(
-                widget.label,
-                style: GoogleFonts.inter(
-                  fontSize: 14,
-                  fontWeight: FontWeight.w700,
-                  color: Colors.white,
-                ),
+            boxShadow: [
+              BoxShadow(
+                color: accent.withValues(alpha: focused ? 0.28 : 0.15),
+                blurRadius: focused ? 16 : 12,
+                spreadRadius: 1,
               ),
-          ],
+            ],
+          ),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              if (icon != null) ...[
+                Icon(icon, size: 18, color: Colors.white),
+                const SizedBox(width: 8),
+              ],
+              if (isLoading)
+                SizedBox(
+                  width: 18,
+                  height: 18,
+                  child: CircularProgressIndicator(
+                    strokeWidth: 2,
+                    valueColor: const AlwaysStoppedAnimation(Colors.white),
+                  ),
+                )
+              else
+                Text(
+                  label,
+                  style: GoogleFonts.inter(
+                    fontSize: 14,
+                    fontWeight: FontWeight.w700,
+                    color: Colors.white,
+                  ),
+                ),
+            ],
+          ),
         ),
       ),
     );
@@ -220,34 +226,33 @@ class _OnboardingPrimaryButtonState extends State<OnboardingPrimaryButton> {
 
 // ─── Secondary Button ───────────────────────────────────────────────────
 
-class OnboardingSecondaryButton extends StatefulWidget {
+class OnboardingSecondaryButton extends StatelessWidget {
   final String label;
   final VoidCallback? onTap;
 
   const OnboardingSecondaryButton({super.key, required this.label, this.onTap});
 
   @override
-  State<OnboardingSecondaryButton> createState() =>
-      _OnboardingSecondaryButtonState();
-}
-
-class _OnboardingSecondaryButtonState extends State<OnboardingSecondaryButton> {
-  @override
   Widget build(BuildContext context) {
-    return GestureDetector(
-      onTap: widget.onTap,
-      child: Container(
+    final enabled = onTap != null;
+    return BeeInteractive(
+      onTap: onTap,
+      semanticLabel: label,
+      builder: (context, focused) => AnimatedContainer(
+        duration: const Duration(milliseconds: 150),
         padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
         decoration: BoxDecoration(
-          color: Colors.transparent,
+          color: enabled && focused
+              ? beeText(context).withValues(alpha: 0.06)
+              : Colors.transparent,
           borderRadius: BorderRadius.circular(_kRadiusMd),
         ),
         child: Text(
-          widget.label,
+          label,
           style: GoogleFonts.inter(
             fontSize: 13,
             fontWeight: FontWeight.w500,
-            color: beeTextMuted(context),
+            color: enabled ? beeTextSub(context) : beeTextMuted(context),
           ),
         ),
       ),
@@ -317,37 +322,34 @@ class OnboardingGlowCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final accent = accentColor ?? beeYellow(context);
-    return MouseRegion(
-      cursor: onTap != null
-          ? SystemMouseCursors.click
-          : SystemMouseCursors.basic,
-      child: GestureDetector(
-        onTap: onTap,
-        child: AnimatedContainer(
-          duration: const Duration(milliseconds: 200),
-          padding: const EdgeInsets.all(10),
-          decoration: BoxDecoration(
+    return BeeInteractive(
+      onTap: onTap,
+      builder: (context, focused) => AnimatedContainer(
+        duration: const Duration(milliseconds: 200),
+        padding: const EdgeInsets.all(10),
+        decoration: BoxDecoration(
+          color: isSelected
+              ? accent.withValues(alpha: 0.08)
+              : beeSurfaceRaised(context),
+          borderRadius: BorderRadius.circular(_kRadiusLg),
+          border: Border.all(
             color: isSelected
-                ? accent.withValues(alpha: 0.08)
-                : beeSurfaceRaised(context),
-            borderRadius: BorderRadius.circular(_kRadiusLg),
-            border: Border.all(
-              color: isSelected
-                  ? accent.withValues(alpha: 0.50)
-                  : beeBorder(context).withValues(alpha: 0.6),
-            ),
-            boxShadow: isSelected
-                ? [
-                    BoxShadow(
-                      color: accent.withValues(alpha: 0.08),
-                      blurRadius: 16,
-                      spreadRadius: 1,
-                    ),
-                  ]
-                : [],
+                ? accent.withValues(alpha: 0.50)
+                : focused
+                ? accent.withValues(alpha: 0.30)
+                : beeBorder(context).withValues(alpha: 0.6),
           ),
-          child: child,
+          boxShadow: isSelected
+              ? [
+                  BoxShadow(
+                    color: accent.withValues(alpha: 0.08),
+                    blurRadius: 16,
+                    spreadRadius: 1,
+                  ),
+                ]
+              : [],
         ),
+        child: child,
       ),
     );
   }
@@ -378,34 +380,31 @@ class OnboardingTextField extends StatefulWidget {
 class _OnboardingTextFieldState extends State<OnboardingTextField> {
   @override
   Widget build(BuildContext context) {
-    return Focus(
-      child: AnimatedContainer(
-        duration: const Duration(milliseconds: 200),
-        decoration: BoxDecoration(
-          color: beeSurfaceHighest(context),
-          borderRadius: BorderRadius.circular(_kRadiusMd),
-          border: Border.all(color: beeBorder(context)),
-          boxShadow: null,
+    return AnimatedContainer(
+      duration: const Duration(milliseconds: 200),
+      decoration: BoxDecoration(
+        color: beeSurfaceHighest(context),
+        borderRadius: BorderRadius.circular(_kRadiusMd),
+        border: Border.all(color: beeBorder(context)),
+      ),
+      child: TextField(
+        controller: widget.controller,
+        obscureText: widget.obscureText,
+        onChanged: widget.onChanged,
+        style: GoogleFonts.inter(
+          fontSize: 15,
+          fontWeight: FontWeight.w500,
+          color: beeText(context),
         ),
-        child: TextField(
-          controller: widget.controller,
-          obscureText: widget.obscureText,
-          onChanged: widget.onChanged,
-          style: GoogleFonts.inter(
-            fontSize: 15,
-            fontWeight: FontWeight.w500,
-            color: beeText(context),
+        decoration: InputDecoration(
+          hintText: widget.hintText,
+          hintStyle: GoogleFonts.inter(color: beeTextMuted(context)),
+          border: InputBorder.none,
+          contentPadding: const EdgeInsets.symmetric(
+            horizontal: 16,
+            vertical: 14,
           ),
-          decoration: InputDecoration(
-            hintText: widget.hintText,
-            hintStyle: GoogleFonts.inter(color: beeTextMuted(context)),
-            border: InputBorder.none,
-            contentPadding: const EdgeInsets.symmetric(
-              horizontal: 16,
-              vertical: 14,
-            ),
-            suffixIcon: widget.suffixIcon,
-          ),
+          suffixIcon: widget.suffixIcon,
         ),
       ),
     );

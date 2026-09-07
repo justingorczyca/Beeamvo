@@ -97,9 +97,10 @@ class GeminiInteractionsService implements CloudTranscriptionClient {
     final override =
         levelOverride ?? _settingsService?.getThinkingLevelForModel(model.id);
     return model.resolveThinkingLevel(
-      levelOverride: override,
-      forceMinimal: forceMinimal,
-    );
+          levelOverride: override,
+          forceMinimal: forceMinimal,
+        ) ??
+        model.interactionsThinkingLevel;
   }
 
   /// Builds the Interactions API `generation_config`.
@@ -439,7 +440,11 @@ class GeminiInteractionsService implements CloudTranscriptionClient {
     final apiKey = await _requireApiKey();
     if (_currentModel.isTranscriptionOnly) {
       // Transcription-only models cannot be verified with a text probe.
-      // The Interactions path is already checked by the caller.
+      // Validate the API key using the default text model instead.
+      await _postPayload(
+        apiKey,
+        _buildVerifyPayload(AppConfig.getModelById(AppConfig.defaultModelId)),
+      );
       return;
     }
     await _postPayload(apiKey, _buildVerifyPayload(_currentModel));

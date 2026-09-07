@@ -27,6 +27,7 @@ class RecordingService {
 
   final AudioRecorder _recorder = AudioRecorder();
   String? _currentRecordingPath;
+  String? _preparedRecordingPath;
   bool _isRecording = false;
   String? _selectedDeviceId;
 
@@ -322,14 +323,31 @@ class RecordingService {
   /// iOS is excluded until a dedicated capture path exists there.
   static bool get prefersStreamCapture => !Platform.isIOS;
 
-  /// Poll until the WAV has real PCM payload or [timeout] elapses.
+  /// Prepare the current WAV once for both stop and the subsequent read.
   ///
-  /// A RIFF header alone is ~44 bytes. We wait until the file grows past that
-  /// and its size stays stable for two consecutive polls, which is a practical
-  /// signal that AVCapture finished flushing.
-  Future<void> _waitForRecordingFile(
+  /// A finalized RIFF size returns immediately. Unfinalized files retain the
+  /// bounded stable-size polling fallback for packages that flush asynchronously.
+  /// Cache successful readiness so reading the finalized recording never waits twice.
+  Future<void> _waitForRecordingFile(String path) async {
+    if (_preparedRecordingPath == path) return;
+    if (await waitForRecordingFile(path)) _preparedRecordingPath = path;
+  }
+
+  @visibleForTesting
+  static bool hasFinalizedWavHeader(Uint8List header, int fileLength) {
+    return header.length >= 12 &&
+        fileLength > 44 &&
+        _hasAsciiAt(header, 0, 'RIFF') &&
+        _hasAsciiAt(header, 8, 'WAVE') &&
+        ByteData.sublistView(header).getUint32(4, Endian.little) + 8 ==
+            fileLength;
+  }
+
+  @visibleForTesting
+  static Future<bool> waitForRecordingFile(
     String path, {
     Duration timeout = const Duration(milliseconds: 2000),
+    Future<void> Function(Duration)? delay,
   }) async {
     final file = File(path);
     final deadline = DateTime.now().add(timeout);
@@ -340,6 +358,12 @@ class RecordingService {
       try {
         if (await file.exists()) {
           final size = await file.length();
+          final handle = await file.open();
+          try {
+            if (hasFinalizedWavHeader(await handle.read(12), size)) return true;
+          } finally {
+            await handle.close();
+          }
           // 44-byte header + at least ~20ms of 16 kHz mono PCM-16 (~640 bytes).
           if (size >= 44 + 640) {
             if (size == lastSize) {
@@ -348,7 +372,7 @@ class RecordingService {
                 debugPrint(
                   '[RecordingService] recording file ready: $size bytes',
                 );
-                return;
+                return true;
               }
             } else {
               stableHits = 0;
@@ -359,13 +383,14 @@ class RecordingService {
       } catch (e) {
         debugPrint('[RecordingService] file wait probe failed: $e');
       }
-      await Future<void>.delayed(const Duration(milliseconds: 40));
+      await (delay ?? Future<void>.delayed)(const Duration(milliseconds: 40));
     }
 
     debugPrint(
       '[RecordingService] recording file wait timed out '
       '(lastSize=$lastSize path=$path)',
     );
+    return false;
   }
 
   /// Extracts mono, 16 kHz, 16-bit little-endian PCM data from a RIFF/WAV file.
@@ -558,6 +583,7 @@ class RecordingService {
   /// Delete the current recording file
   Future<void> deleteRecording() async {
     _macNativePcm = null;
+    _preparedRecordingPath = null;
     if (_currentRecordingPath != null) {
       final file = File(_currentRecordingPath!);
       if (await file.exists()) {

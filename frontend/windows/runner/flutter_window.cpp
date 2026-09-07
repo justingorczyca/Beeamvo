@@ -5,6 +5,7 @@
 
 #include "flutter/generated_plugin_registrant.h"
 #include "whisper_plugin.h"
+#include "hotkey_plugin.h"
 
 FlutterWindow::FlutterWindow(const flutter::DartProject& project)
     : project_(project) {}
@@ -31,6 +32,11 @@ bool FlutterWindow::OnCreate() {
       flutter::PluginRegistrarManager::GetInstance()
           ->GetRegistrar<flutter::PluginRegistrarWindows>(
               flutter_controller_->engine()->GetRegistrarForPlugin("WhisperPlugin")));
+  beeamvo::HotkeyPlugin::RegisterWithRegistrar(
+      flutter::PluginRegistrarManager::GetInstance()
+          ->GetRegistrar<flutter::PluginRegistrarWindows>(
+              flutter_controller_->engine()->GetRegistrarForPlugin("BeeamvoHotkeyPlugin")),
+      GetHandle());
   SetChildContent(flutter_controller_->view()->GetNativeWindow());
 
   flutter_controller_->engine()->SetNextFrameCallback([&]() {

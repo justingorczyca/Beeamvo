@@ -111,20 +111,60 @@ void main() {
     }
   });
 
-  test('primary model must be prompt-capable, step-1 model optional', () async {
-    final (settings, file) = await _initWith(root, {
-      'selected_model_id': 'gemini-3.5-transcribe',
-      'two_pass_transcription_model_id': 'retired-model',
+  test(
+    'standalone Transcribe selection survives migration without refinement',
+    () async {
+      final (settings, file) = await _initWith(root, {
+        'selected_model_id': 'gemini-3.5-transcribe',
+        'two_pass_transcription_model_id': 'retired-model',
+      });
+      expect(settings.selectedModelId, 'gemini-3.5-transcribe');
+      expect(settings.twoPassTranscriptionEnabled, isFalse);
+      expect(settings.promptIsApplied, isFalse);
+      expect(
+        settings.twoPassTranscriptionModelId,
+        AppConfig.defaultTranscriptionModelId,
+      );
+      final persisted = jsonDecode(await file.readAsString());
+      expect(persisted['selected_model_id'], 'gemini-3.5-transcribe');
+      expect(persisted.containsKey('two_pass_transcription_model_id'), isFalse);
+    },
+  );
+
+  for (final id in [
+    'gemini-2.5-flash',
+    'gemini-2.5-flash-lite',
+    'gemini-3.1-flash-lite',
+  ]) {
+    test('migration preserves restored model $id', () async {
+      final (settings, file) = await _initWith(root, {'selected_model_id': id});
+      expect(settings.selectedModelId, id);
+      expect(jsonDecode(await file.readAsString())['selected_model_id'], id);
     });
-    expect(settings.selectedModelId, AppConfig.defaultModelId);
-    expect(
-      settings.twoPassTranscriptionModelId,
-      AppConfig.defaultTranscriptionModelId,
-    );
-    final persisted = jsonDecode(await file.readAsString());
-    expect(persisted['selected_model_id'], AppConfig.defaultModelId);
-    expect(persisted.containsKey('two_pass_transcription_model_id'), isFalse);
-  });
+  }
+
+  test(
+    'Transcribe is preserved when temporarily using a refinement-only context',
+    () async {
+      final (settings, file) = await _initWith(root, {
+        'selected_model_id': 'gemini-3.5-transcribe',
+      });
+      await settings.setTwoPassTranscriptionEnabled(true);
+      expect(settings.selectedModelId, AppConfig.defaultModelId);
+      expect(settings.promptIsApplied, isTrue);
+      expect(settings.twoPassTranscriptionModelId, 'gemini-3.5-transcribe');
+      await settings.setTwoPassTranscriptionEnabled(false);
+      expect(settings.selectedModelId, 'gemini-3.5-transcribe');
+      await settings.setCloudProvider(CloudProvider.vertexAi);
+      expect(settings.selectedModelId, AppConfig.defaultModelId);
+      await settings.setCloudProvider(CloudProvider.geminiApiKey);
+      expect(settings.selectedModelId, 'gemini-3.5-transcribe');
+      expect(
+        jsonDecode(await file.readAsString())['selected_model_id'],
+        'gemini-3.5-transcribe',
+      );
+    },
+  );
 
   test('valid primary and step-1 models are preserved', () async {
     final (settings, _) = await _initWith(root, {

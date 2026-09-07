@@ -52,11 +52,27 @@ void main() {
                       missionInstruction: 'Clean up the dictation.',
                       model: model,
                     );
-          final expected = model.resolveThinkingLevel(forceMinimal: true)!;
-          final actual = vertex
-              ? payload['generationConfig']['thinkingConfig']['thinkingLevel']
-              : payload['generation_config']['thinking_level'];
-          expect(actual, vertex ? expected.apiValue : expected.name);
+          if (model.thinkingBudget != null) {
+            if (vertex) {
+              expect(payload['generationConfig']['thinkingConfig'], {
+                'thinkingBudget': 0,
+              });
+            } else {
+              final config =
+                  payload['generation_config'] as Map<String, dynamic>;
+              expect(
+                config['thinking_level'],
+                model.interactionsThinkingLevel?.name,
+              );
+              expect(config.containsKey('thinking_budget'), isFalse);
+            }
+          } else {
+            final expected = model.resolveThinkingLevel(forceMinimal: true)!;
+            final actual = vertex
+                ? payload['generationConfig']['thinkingConfig']['thinkingLevel']
+                : payload['generation_config']['thinking_level'];
+            expect(actual, vertex ? expected.apiValue : expected.name);
+          }
         });
       }
 

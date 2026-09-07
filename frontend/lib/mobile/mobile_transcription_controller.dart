@@ -240,10 +240,11 @@ class MobileTranscriptionController extends ChangeNotifier {
   }
 
   Future<String> _singlePass(Uint8List audio, String instruction) {
-    return cloudService.transcribeAndImprove(
+    return cloudService.transcribeSinglePass(
       audio,
       'audio/wav',
       missionInstruction: instruction,
+      modelOverrideId: settingsService.selectedModelId,
     );
   }
 

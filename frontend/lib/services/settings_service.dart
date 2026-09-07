@@ -259,10 +259,10 @@ class SettingsService extends ChangeNotifier {
       }
     }
 
-    // The primary model must be a valid, prompt-capable model; the step-1
-    // transcription model is optional and cleared when no longer offered.
+    // Preserve any offered primary preference; provider/pipeline restrictions
+    // apply at use time. Clear a retired optional transcription model.
     final savedModel = _getString(_kSelectedModelId);
-    final resolvedModel = AppConfig.resolveRefinementModelId(savedModel);
+    final resolvedModel = AppConfig.resolveModelId(savedModel);
     if (savedModel != resolvedModel) {
       _data[_kSelectedModelId] = resolvedModel;
       dirty = true;
@@ -492,8 +492,20 @@ class SettingsService extends ChangeNotifier {
   }
 
   // ── Model selection ───────────────────────────────────────────────────────
+  List<GeminiModelConfig> get primaryModels =>
+      transcriptionBackend == TranscriptionBackend.cloud &&
+          cloudProvider == CloudProvider.geminiApiKey &&
+          !twoPassTranscriptionEnabled
+      ? AppConfig.availableModels
+      : AppConfig.mainModels;
+
+  String resolvePrimaryModelId(String? id) =>
+      primaryModels.any((model) => model.id == id)
+      ? id!
+      : AppConfig.defaultModelId;
+
   String get selectedModelId =>
-      AppConfig.resolveRefinementModelId(_getString(_kSelectedModelId));
+      resolvePrimaryModelId(_getString(_kSelectedModelId));
 
   Future<void> setSelectedModelId(String value) async {
     await _setString(_kSelectedModelId, value);
@@ -557,12 +569,13 @@ class SettingsService extends ChangeNotifier {
     notifyListeners();
   }
 
-  /// Whether the selected prompt shapes the output. Prompts need a cloud AI
-  /// model: always on the Cloud engine, and offline only with two-step
-  /// refinement enabled.
+  /// Whether the selected prompt shapes the output. Prompts need a capable
+  /// cloud model; standalone speech-to-text and pure offline transcription
+  /// do not apply writing styles.
   bool get promptIsApplied =>
-      transcriptionBackend == TranscriptionBackend.cloud ||
-      twoPassTranscriptionEnabled;
+      twoPassTranscriptionEnabled ||
+      (transcriptionBackend == TranscriptionBackend.cloud &&
+          !AppConfig.getModelById(selectedModelId).isTranscriptionOnly);
 
   // ── Hotkey ────────────────────────────────────────────────────────────────
   HotkeyConfig get hotkey {

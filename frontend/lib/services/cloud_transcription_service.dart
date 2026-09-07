@@ -129,6 +129,29 @@ class CloudTranscriptionService {
     );
   }
 
+  Future<String> transcribeSinglePass(
+    Uint8List audioData,
+    String mimeType, {
+    String? missionInstruction,
+    String? modelOverrideId,
+    GeminiThinkingLevel? thinkingLevelOverride,
+  }) async {
+    _ensureNotDisposed();
+    final model = modelOverrideId == null
+        ? currentModel
+        : AppConfig.getModelById(modelOverrideId);
+    if (model.isTranscriptionOnly) {
+      return transcribeAudio(audioData, mimeType, modelOverrideId: model.id);
+    }
+    return transcribeAndImprove(
+      audioData,
+      mimeType,
+      missionInstruction: missionInstruction,
+      modelOverrideId: model.id,
+      thinkingLevelOverride: thinkingLevelOverride,
+    );
+  }
+
   Future<String> transcribeAndImprove(
     Uint8List audioData,
     String mimeType, {
@@ -198,12 +221,16 @@ class CloudTranscriptionService {
         ? client.currentModel
         : AppConfig.getModelById(modelOverrideId);
     if (kDebugMode) {
-      final level = model.resolveThinkingLevel(
-        levelOverride:
-            thinkingLevelOverride ??
-            _settingsService?.getThinkingLevelForModel(model.id),
-        forceMinimal: stage == 'transcribe',
-      );
+      final level =
+          model.resolveThinkingLevel(
+            levelOverride:
+                thinkingLevelOverride ??
+                _settingsService?.getThinkingLevelForModel(model.id),
+            forceMinimal: stage == 'transcribe',
+          ) ??
+          (currentProvider == CloudProvider.geminiApiKey
+              ? model.interactionsThinkingLevel
+              : null);
       debugPrint(
         '[CloudTranscription] stage=$stage provider=$provider '
         'model=${model.id} thinking=${level?.name ?? 'none'} '

@@ -131,14 +131,14 @@ class _PromptsPageState extends State<PromptsPage> {
     );
   }
 
-  /// Shown when transcription is offline without two-step refinement: the
-  /// selected style is remembered but not applied until a cloud model runs.
+  /// Shown when the pipeline cannot apply writing-style prompts: the
+  /// selected style is remembered until a prompt-capable model runs.
   Widget _buildOfflineNotice() {
     return BeeSettingsRow(
       icon: Icons.cloud_off_outlined,
-      label: 'Styles are paused while offline',
+      label: 'Writing styles are not applied',
       description:
-          'Offline Whisper transcribes word-for-word. Turn on Two-Step Refinement or switch to Cloud AI to apply a writing style.',
+          'Standalone speech-to-text and offline Whisper do not apply writing styles. Choose a prompt-capable cloud model or turn on Two-Step Refinement.',
       showDivider: false,
       trailing: BeeActionChip(
         label: 'Open Transcription',
