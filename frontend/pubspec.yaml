@@ -37,7 +37,7 @@ dependencies:
   package_info_plus: ^9.0.0
   google_fonts: ^8.0.0
   googleapis_auth: ^2.0.0
-  flutter_secure_storage: ^10.3.1
+  flutter_secure_storage: ^10.3.4
   flutter_dotenv: ^6.0.0
   crypto: ^3.0.6
   url_launcher: ^6.3.1
