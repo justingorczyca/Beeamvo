@@ -811,8 +811,8 @@ class _BeeamvoHomeState extends State<BeeamvoHome>
 
   Future<void> _showOnboarding() async {
     _showedOnboardingThisRun = true;
-    await windowManager.setMinimumSize(const Size(740, 560));
-    await windowManager.setSize(const Size(740, 560));
+    await windowManager.setMinimumSize(const Size(860, 580));
+    await windowManager.setSize(const Size(860, 580));
     await windowManager.center();
     await WindowHelper.show();
 
