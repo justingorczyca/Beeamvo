@@ -117,40 +117,61 @@ class OnboardingStepScaffold extends StatelessWidget {
           ),
         ),
         Container(
-          height: 64,
-          padding: const EdgeInsets.symmetric(horizontal: 40),
+          constraints: const BoxConstraints(minHeight: 64),
+          padding: const EdgeInsets.symmetric(horizontal: 40, vertical: 12),
           decoration: BoxDecoration(
             border: Border(top: BorderSide(color: beeDivider(context))),
           ),
-          child: Row(
-            children: [
-              if (nav != null)
-                OnboardingSecondaryButton(label: 'Back', onTap: nav.onBack),
-              if (nav != null) const Spacer(),
-              Flexible(
-                child: FittedBox(
-                  alignment: Alignment.centerRight,
-                  fit: BoxFit.scaleDown,
-                  child: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      for (final (index, action)
-                          in secondaryActions.indexed) ...[
-                        if (index > 0) const SizedBox(width: 8),
-                        action,
-                      ],
-                      if (secondaryActions.isNotEmpty) const SizedBox(width: 8),
-                      OnboardingPrimaryButton(
-                        label: primaryLabel,
-                        icon: primaryIcon,
-                        onTap: onPrimary,
-                        isLoading: primaryLoading,
-                      ),
-                    ],
-                  ),
+          child: LayoutBuilder(
+            builder: (context, constraints) {
+              final actions = [
+                ...secondaryActions,
+                OnboardingPrimaryButton(
+                  label: primaryLabel,
+                  icon: primaryIcon,
+                  onTap: onPrimary,
+                  isLoading: primaryLoading,
                 ),
-              ),
-            ],
+              ];
+              final backButton = nav == null
+                  ? null
+                  : OnboardingSecondaryButton(label: 'Back', onTap: nav.onBack);
+              final actionsWrap = Wrap(
+                alignment: WrapAlignment.end,
+                crossAxisAlignment: WrapCrossAlignment.center,
+                spacing: 8,
+                runSpacing: 8,
+                children: actions,
+              );
+              if (constraints.maxWidth < 360) {
+                return Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    if (backButton != null)
+                      Align(alignment: Alignment.centerLeft, child: backButton),
+                    if (backButton != null) const SizedBox(height: 8),
+                    Row(
+                      crossAxisAlignment: CrossAxisAlignment.center,
+                      children: [Flexible(child: actionsWrap)],
+                    ),
+                  ],
+                );
+              }
+              return Row(
+                crossAxisAlignment: CrossAxisAlignment.center,
+                children: [
+                  if (backButton != null) backButton,
+                  const Spacer(),
+                  if (constraints.maxWidth < 520)
+                    Flexible(flex: 4, child: actionsWrap)
+                  else
+                    for (final (index, action) in actions.indexed) ...[
+                      if (index > 0) const SizedBox(width: 8),
+                      action,
+                    ],
+                ],
+              );
+            },
           ),
         ),
       ],
@@ -186,53 +207,49 @@ class OnboardingPrimaryButton extends StatelessWidget {
         opacity: enabled || isLoading ? 1 : 0.4,
         child: AnimatedContainer(
           duration: const Duration(milliseconds: 150),
-          padding: EdgeInsets.all(focused ? 2 : 0),
+          height: small ? 32 : 40,
+          padding: EdgeInsets.symmetric(horizontal: small ? 12 : 20),
           decoration: BoxDecoration(
-            border: focused
-                ? Border.all(
+            color: focused
+                ? beeYellow(context).withValues(alpha: 0.86)
+                : beeYellow(context),
+            borderRadius: BorderRadius.circular(_kRadiusMd),
+          ),
+          foregroundDecoration: focused
+              ? BoxDecoration(
+                  border: Border.all(
                     color: beeYellow(context).withValues(alpha: 0.35),
                     width: 2,
-                  )
-                : null,
-            borderRadius: BorderRadius.circular(_kRadiusMd + 2),
-          ),
-          child: AnimatedContainer(
-            duration: const Duration(milliseconds: 150),
-            height: small ? 32 : 40,
-            padding: EdgeInsets.symmetric(horizontal: small ? 12 : 20),
-            decoration: BoxDecoration(
-              color: focused
-                  ? beeYellow(context).withValues(alpha: 0.86)
-                  : beeYellow(context),
-              borderRadius: BorderRadius.circular(_kRadiusMd),
-            ),
-            child: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Text(
-                  label,
-                  style: GoogleFonts.inter(
-                    fontSize: small ? 12 : 13,
-                    fontWeight: FontWeight.w600,
-                    color: beeBlack(context),
+                  ),
+                  borderRadius: BorderRadius.circular(_kRadiusMd + 2),
+                )
+              : null,
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text(
+                label,
+                style: GoogleFonts.inter(
+                  fontSize: small ? 12 : 13,
+                  fontWeight: FontWeight.w600,
+                  color: beeBlack(context),
+                ),
+              ),
+              if (isLoading) ...[
+                const SizedBox(width: 8),
+                SizedBox(
+                  width: 16,
+                  height: 16,
+                  child: CircularProgressIndicator(
+                    strokeWidth: 2,
+                    valueColor: AlwaysStoppedAnimation(beeBlack(context)),
                   ),
                 ),
-                if (isLoading) ...[
-                  const SizedBox(width: 8),
-                  SizedBox(
-                    width: 16,
-                    height: 16,
-                    child: CircularProgressIndicator(
-                      strokeWidth: 2,
-                      valueColor: AlwaysStoppedAnimation(beeBlack(context)),
-                    ),
-                  ),
-                ] else if (icon != null) ...[
-                  const SizedBox(width: 8),
-                  Icon(icon, size: 16, color: beeBlack(context)),
-                ],
+              ] else if (icon != null) ...[
+                const SizedBox(width: 8),
+                Icon(icon, size: 16, color: beeBlack(context)),
               ],
-            ),
+            ],
           ),
         ),
       ),
@@ -264,8 +281,9 @@ class OnboardingSecondaryButton extends StatelessWidget {
         duration: const Duration(milliseconds: 150),
         height: small ? 32 : 40,
         padding: EdgeInsets.symmetric(horizontal: small ? 10 : 14),
+        alignment: Alignment.center,
         decoration: BoxDecoration(
-          color: enabled && focused
+          color: focused
               ? beeText(context).withValues(alpha: 0.05)
               : Colors.transparent,
           borderRadius: BorderRadius.circular(_kRadiusMd),
@@ -292,6 +310,7 @@ class OnboardingOptionTile extends StatelessWidget {
   final String? badge;
   final bool selected;
   final bool vertical;
+  final bool compact;
   final VoidCallback? onTap;
   final Widget? trailing;
   final Widget? footer;
@@ -304,6 +323,7 @@ class OnboardingOptionTile extends StatelessWidget {
     this.badge,
     this.selected = false,
     this.vertical = false,
+    this.compact = false,
     this.onTap,
     this.trailing,
     this.footer,
@@ -312,8 +332,8 @@ class OnboardingOptionTile extends StatelessWidget {
   Widget _iconWell(BuildContext context) {
     return AnimatedContainer(
       duration: const Duration(milliseconds: 200),
-      width: 36,
-      height: 36,
+      width: compact ? 32 : 36,
+      height: compact ? 32 : 36,
       decoration: BoxDecoration(
         color: selected ? beeYellow(context) : beeSurfaceHighest(context),
         borderRadius: BorderRadius.circular(9),
@@ -353,7 +373,7 @@ class OnboardingOptionTile extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
       decoration: BoxDecoration(
-        color: beeSurfaceHighest(context),
+        color: beeText(context).withValues(alpha: 0.06),
         borderRadius: BorderRadius.circular(_kRadiusPill),
       ),
       child: Text(
@@ -411,7 +431,10 @@ class OnboardingOptionTile extends StatelessWidget {
               : beeBorder(context).withValues(alpha: 0.6);
           return AnimatedContainer(
             duration: const Duration(milliseconds: 200),
-            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+            padding: EdgeInsets.symmetric(
+              horizontal: 16,
+              vertical: compact ? 11 : 14,
+            ),
             decoration: BoxDecoration(
               color: selected
                   ? beeYellow(context).withValues(alpha: 0.035)

@@ -123,7 +123,7 @@ class _OnboardingWizardState extends State<OnboardingWizard> {
       color: Colors.transparent,
       child: Container(
         width: 860,
-        height: 580,
+        height: 640,
         decoration: BoxDecoration(
           color: beeSurfaceHighest(context),
           borderRadius: BorderRadius.circular(AppTheme.radiusXl),
@@ -251,6 +251,14 @@ class _OnboardingWizardState extends State<OnboardingWizard> {
     );
   }
 
+  bool _isCurrentOrCompletedRailStep(int step) {
+    final isNotNeeded = step == 2 && _accountNotNeeded;
+    return !isNotNeeded &&
+        (step == _currentStep ||
+            step < _currentStep ||
+            step <= _maxStepReached);
+  }
+
   Widget _buildRailStep(BuildContext context, int step) {
     const labels = [
       'Engine',
@@ -273,6 +281,12 @@ class _OnboardingWizardState extends State<OnboardingWizard> {
         : isCompleted
         ? _railSummary(step)
         : null;
+    final currentOrCompleted = _isCurrentOrCompletedRailStep(step);
+
+    Color connectorColor(int adjacentStep) =>
+        currentOrCompleted && _isCurrentOrCompletedRailStep(adjacentStep)
+        ? beeYellow(context).withValues(alpha: 0.5)
+        : beeBorder(context);
 
     return SizedBox(
       height: 48,
@@ -297,18 +311,23 @@ class _OnboardingWizardState extends State<OnboardingWizard> {
                   width: 22,
                   height: 48,
                   child: Stack(
-                    clipBehavior: Clip.none,
                     alignment: Alignment.center,
                     children: [
+                      if (step > 1)
+                        Positioned(
+                          top: 0,
+                          left: 10,
+                          width: 1,
+                          bottom: 35,
+                          child: ColoredBox(color: connectorColor(step - 1)),
+                        ),
                       if (step < _kTotalSteps)
                         Positioned(
-                          top: 35,
                           left: 10,
-                          child: Container(
-                            width: 1,
-                            height: 26,
-                            color: beeDivider(context),
-                          ),
+                          top: 35,
+                          width: 1,
+                          bottom: 0,
+                          child: ColoredBox(color: connectorColor(step + 1)),
                         ),
                       AnimatedContainer(
                         duration: const Duration(milliseconds: 200),

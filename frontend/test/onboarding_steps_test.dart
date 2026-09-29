@@ -1,9 +1,12 @@
+import 'package:beeamvo/models/enums.dart';
 import 'package:beeamvo/models/hotkey_config.dart';
 import 'package:beeamvo/services/settings_service.dart';
 import 'package:beeamvo/theme/app_theme.dart';
 import 'package:beeamvo/widgets/onboarding/onboarding_shared.dart';
 import 'package:beeamvo/widgets/onboarding/onboarding_steps.dart';
+import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:google_fonts/google_fonts.dart';
 
@@ -25,7 +28,7 @@ void main() {
           onNext: () {},
           settingsService: OnboardingTestSettingsService(),
         ),
-        const Size(860, 580),
+        const Size(860, 640),
       );
 
       final cloudTile = find.ancestor(
@@ -64,13 +67,42 @@ void main() {
         onSkip: () {},
         settingsService: OnboardingTestSettingsService(),
       ),
-      const Size(860, 580),
+      const Size(860, 640),
     );
 
     final button = tester.widget<OnboardingPrimaryButton>(
       find.byType(OnboardingPrimaryButton),
     );
     expect(button.onTap, isNull);
+  });
+
+  testWidgets('footer buttons stay full-size and align to the content edge', (
+    tester,
+  ) async {
+    await _pumpStep(
+      tester,
+      ProviderStep(
+        onNext: () {},
+        settingsService: OnboardingTestSettingsService(),
+      ),
+      const Size(860, 640),
+    );
+
+    final primary = find.byType(OnboardingPrimaryButton);
+    final back = find.ancestor(
+      of: find.text('Back'),
+      matching: find.byType(OnboardingSecondaryButton),
+    );
+    expect(tester.getSize(primary).height, 40);
+    expect(tester.getRect(primary).right, closeTo(820, 0.5));
+    expect(tester.getCenter(back).dy, tester.getCenter(primary).dy);
+
+    final mouse = await tester.createGesture(kind: PointerDeviceKind.mouse);
+    await mouse.addPointer();
+    await mouse.moveTo(tester.getCenter(primary));
+    await tester.pump();
+    expect(tester.getSize(primary).height, 40);
+    await mouse.removePointer();
   });
 
   testWidgets('hotkey renders one keycap for each default shortcut key', (
@@ -82,7 +114,7 @@ void main() {
         onNext: () {},
         settingsService: OnboardingTestSettingsService(),
       ),
-      const Size(860, 580),
+      const Size(860, 640),
     );
 
     expect(
@@ -90,6 +122,54 @@ void main() {
       findsNWidgets(
         HotkeyConfig.defaultHotkey.displayString.split(' + ').length,
       ),
+    );
+  });
+
+  testWidgets('recording illustrations show the configured main hotkey', (
+    tester,
+  ) async {
+    final settings = OnboardingTestSettingsService();
+    await settings.setHotkey(
+      HotkeyConfig(key: LogicalKeyboardKey.keyR, modifiers: {}),
+    );
+    await _pumpStep(
+      tester,
+      RecordingModeStep(onNext: () {}, settingsService: settings),
+      const Size(860, 640),
+    );
+
+    expect(find.text('R'), findsNWidgets(3));
+    expect(find.text('⌘'), findsNothing);
+  });
+
+  testWidgets('transcription-only Finish style is Not applied without Edit', (
+    tester,
+  ) async {
+    final settings = OnboardingTestSettingsService(
+      provider: CloudProvider.codexOAuth,
+    );
+    await settings.setSelectedModelId('chatgpt-transcribe');
+    await _pumpStep(
+      tester,
+      ReadyStep(
+        onFinish: () {},
+        onGoToModelStep: () {},
+        settingsService: settings,
+      ),
+      const Size(860, 640),
+    );
+
+    final styleRow = find
+        .ancestor(of: find.text('Style'), matching: find.byType(Row))
+        .first;
+    expect(tester.getSize(styleRow).height, 44);
+    expect(
+      find.descendant(of: styleRow, matching: find.text('Not applied')),
+      findsOneWidget,
+    );
+    expect(
+      find.descendant(of: styleRow, matching: find.text('Edit')),
+      findsNothing,
     );
   });
 

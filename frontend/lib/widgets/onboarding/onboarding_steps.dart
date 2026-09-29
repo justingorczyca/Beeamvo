@@ -268,6 +268,7 @@ class _WelcomeStepState extends State<WelcomeStep>
         Wrap(
           spacing: 12,
           runSpacing: 8,
+          crossAxisAlignment: WrapCrossAlignment.center,
           children: [
             OnboardingPrimaryButton(
               label: 'Get started',
@@ -359,6 +360,7 @@ class _ProviderStepState extends State<ProviderStep>
       title: provider.displayName,
       description: provider.tagline,
       selected: selected,
+      compact: true,
       onTap: () => setState(() => _cloudProvider = provider),
     );
   }
@@ -1245,6 +1247,9 @@ class _RecordingModeStepState extends State<RecordingModeStep>
   @override
   Widget build(BuildContext context) {
     super.build(context);
+    final mainHotkeyLabel = widget.settingsService.hotkey.displayString
+        .split(' + ')
+        .last;
     return OnboardingStepScaffold(
       title: 'How do you want to record?',
       subtitle: 'How do you want to trigger voice recording?',
@@ -1262,7 +1267,7 @@ class _RecordingModeStepState extends State<RecordingModeStep>
                 selected: _mode == RecordingMode.toggle,
                 footer: Row(
                   children: [
-                    const OnboardingKeycap(label: '⌘', small: true),
+                    OnboardingKeycap(label: mainHotkeyLabel, small: true),
                     const SizedBox(width: 8),
                     Flexible(
                       child: Text(
@@ -1273,7 +1278,7 @@ class _RecordingModeStepState extends State<RecordingModeStep>
                       ),
                     ),
                     const SizedBox(width: 8),
-                    const OnboardingKeycap(label: '⌘', small: true),
+                    OnboardingKeycap(label: mainHotkeyLabel, small: true),
                   ],
                 ),
                 onTap: () => setState(() => _mode = RecordingMode.toggle),
@@ -1291,7 +1296,7 @@ class _RecordingModeStepState extends State<RecordingModeStep>
                 selected: _mode == RecordingMode.hold,
                 footer: Row(
                   children: [
-                    const OnboardingKeycap(label: '⌘', small: true),
+                    OnboardingKeycap(label: mainHotkeyLabel, small: true),
                     const SizedBox(width: 8),
                     Expanded(
                       child: Container(
@@ -1620,6 +1625,8 @@ class _ReadyStepState extends State<ReadyStep> {
             WhisperService.listDownloadedModels().contains(s.whisperModelId));
 
     final cloudModel = AppConfig.getModelById(s.selectedModelId);
+    final styleNotApplied =
+        !s.promptIsApplied || cloudModel.isTranscriptionOnly;
     final whisperModelInfo = WhisperModelDownloadService.getModelInfo(
       s.whisperModelId,
     );
@@ -1742,8 +1749,11 @@ class _ReadyStepState extends State<ReadyStep> {
                 Divider(color: beeDivider(context), height: 12),
                 _summaryRow(
                   'Style',
-                  s.promptIsApplied ? prompt.name : 'Not applied',
-                  widget.onGoToModelStep,
+                  styleNotApplied ? 'Not applied' : prompt.name,
+                  cloudModel.isTranscriptionOnly
+                      ? null
+                      : widget.onGoToModelStep,
+                  valueMuted: styleNotApplied,
                 ),
                 Divider(color: beeDivider(context), height: 12),
                 _summaryRow(
@@ -1812,34 +1822,52 @@ class _ReadyStepState extends State<ReadyStep> {
     );
   }
 
-  Widget _summaryRow(String label, String value, VoidCallback? onEdit) {
-    return Row(
-      children: [
-        Expanded(
-          flex: 3,
-          child: Text(
-            label,
-            style: GoogleFonts.inter(
-              fontSize: 12,
-              color: beeTextMuted(context),
+  Widget _summaryRow(
+    String label,
+    String value,
+    VoidCallback? onEdit, {
+    bool valueMuted = false,
+  }) {
+    return SizedBox(
+      height: 44,
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.center,
+        children: [
+          Expanded(
+            flex: 3,
+            child: Text(
+              label,
+              style: GoogleFonts.inter(
+                fontSize: 12,
+                color: beeTextMuted(context),
+              ),
             ),
           ),
-        ),
-        Expanded(
-          flex: 6,
-          child: Text(
-            value,
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-            style: GoogleFonts.inter(
-              fontSize: 13,
-              fontWeight: FontWeight.w600,
-              color: beeText(context),
+          Expanded(
+            flex: 6,
+            child: Text(
+              value,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: GoogleFonts.inter(
+                fontSize: 13,
+                fontWeight: valueMuted ? FontWeight.w500 : FontWeight.w600,
+                color: valueMuted ? beeTextMuted(context) : beeText(context),
+              ),
             ),
           ),
-        ),
-        OnboardingSecondaryButton(label: 'Edit', small: true, onTap: onEdit),
-      ],
+          SizedBox(
+            width: 44,
+            child: onEdit == null
+                ? null
+                : OnboardingSecondaryButton(
+                    label: 'Edit',
+                    small: true,
+                    onTap: onEdit,
+                  ),
+          ),
+        ],
+      ),
     );
   }
 }

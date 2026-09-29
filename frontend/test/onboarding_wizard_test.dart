@@ -1,4 +1,5 @@
 import 'package:beeamvo/theme/app_theme.dart';
+import 'package:beeamvo/widgets/onboarding/onboarding_shared.dart';
 import 'package:beeamvo/widgets/onboarding/onboarding_wizard.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -49,11 +50,20 @@ void main() {
     },
   );
 
-  testWidgets('every wizard step fits the 860 by 580 window', (tester) async {
+  testWidgets('every wizard step fits the 860 by 640 window', (tester) async {
     await _pumpWizard(tester);
 
     await _tapAndAdvance(tester, find.text('Get started'));
     expect(tester.takeException(), isNull, reason: 'Engine');
+    expect(
+      tester.getRect(find.text('ChatGPT')).bottom,
+      lessThan(
+        tester
+            .getRect(find.byType(OnboardingPrimaryButton).hitTestable().first)
+            .top,
+      ),
+      reason: 'Engine provider rows fit above the footer',
+    );
 
     await _tapAndAdvance(tester, find.text('Continue'));
     expect(tester.takeException(), isNull, reason: 'Account');
@@ -79,7 +89,7 @@ void main() {
 }
 
 Future<void> _pumpWizard(WidgetTester tester) async {
-  await tester.binding.setSurfaceSize(const Size(860, 580));
+  await tester.binding.setSurfaceSize(const Size(860, 640));
   addTearDown(() => tester.binding.setSurfaceSize(null));
   await tester.pumpWidget(
     MaterialApp(
