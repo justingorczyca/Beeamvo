@@ -281,19 +281,21 @@ class OnboardingSecondaryButton extends StatelessWidget {
         duration: const Duration(milliseconds: 150),
         height: small ? 32 : 40,
         padding: EdgeInsets.symmetric(horizontal: small ? 10 : 14),
-        alignment: Alignment.center,
         decoration: BoxDecoration(
           color: focused
               ? beeText(context).withValues(alpha: 0.05)
               : Colors.transparent,
           borderRadius: BorderRadius.circular(_kRadiusMd),
         ),
-        child: Text(
-          label,
-          style: GoogleFonts.inter(
-            fontSize: small ? 12 : 13,
-            fontWeight: FontWeight.w500,
-            color: enabled ? beeTextSub(context) : beeTextMuted(context),
+        child: Center(
+          widthFactor: 1,
+          child: Text(
+            label,
+            style: GoogleFonts.inter(
+              fontSize: small ? 12 : 13,
+              fontWeight: FontWeight.w500,
+              color: enabled ? beeTextSub(context) : beeTextMuted(context),
+            ),
           ),
         ),
       ),

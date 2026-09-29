@@ -1252,7 +1252,7 @@ class _RecordingModeStepState extends State<RecordingModeStep>
         .last;
     return OnboardingStepScaffold(
       title: 'How do you want to record?',
-      subtitle: 'How do you want to trigger voice recording?',
+      subtitle: 'Choose how your shortcut starts and stops dictation.',
       body: IntrinsicHeight(
         child: Row(
           crossAxisAlignment: CrossAxisAlignment.stretch,
