@@ -848,6 +848,21 @@ class _AiModelsPageState extends State<AiModelsPage> {
 
   Widget _buildEngineSection() {
     final settings = SettingsProviderScope.of(context).settingsService;
+    final selectedModelIsTranscriptionOnly = AppConfig.getModelById(
+      settings.selectedModelId,
+    ).isTranscriptionOnly;
+    final transcriptionDescription =
+        '${_cloudProvider.displayName} transcribes your audio in the cloud';
+    final cloudDescription = switch ((
+      selectedModelIsTranscriptionOnly,
+      _twoPassEnabled,
+    )) {
+      (true, false) =>
+        '$transcriptionDescription. Turn on two-step refinement to apply your writing style.',
+      (true, true) =>
+        '$transcriptionDescription; the polish step applies your writing style.',
+      _ => '$transcriptionDescription and applies your writing style.',
+    };
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -857,7 +872,7 @@ class _AiModelsPageState extends State<AiModelsPage> {
           label: 'Where audio is transcribed',
           description: _isOffline
               ? 'On this device with Whisper. Works offline; nothing leaves your computer.'
-              : 'Gemini transcribes your audio in the cloud and applies your writing style.',
+              : cloudDescription,
           trailing: ConstrainedBox(
             constraints: const BoxConstraints(maxWidth: 360),
             child: BeeSegmented<TranscriptionBackend>(
@@ -1138,7 +1153,7 @@ class _AiModelsPageState extends State<AiModelsPage> {
       };
 
   /// Step-1 cloud account. Only providers that accept audio are offered;
-  /// text-only providers are chosen for the polish step instead.
+  /// OpenAI API-key and Grok providers are chosen for the polish step instead.
   Widget _buildTranscriptionAccountSection() {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -1309,7 +1324,7 @@ class _AiModelsPageState extends State<AiModelsPage> {
                 ? 'Complete the sign-in in your browser, then return here.'
                 : isConfigured
                 ? 'Signed in. Tokens refresh automatically and stay in OS secure storage.'
-                : 'Sign in with your ChatGPT account to use GPT models for polish.',
+                : 'Sign in with your ChatGPT account to transcribe and polish with your ChatGPT plan.',
             showDivider: lastDivider,
             trailing: _codexSignInInProgress
                 ? BeeActionChip(

@@ -47,26 +47,55 @@ void main() {
   });
 
   group('first-pass provider', () {
-    test('only Gemini-family providers may transcribe audio', () async {
-      final (settings, _) = await _initWith(root, {});
-      expect(settings.cloudProvider, CloudProvider.geminiApiKey);
-      expect(settings.selectedModelId, AppConfig.defaultModelId);
-      await settings.setCloudProvider(CloudProvider.vertexAi);
-      expect(settings.selectedModelId, AppConfig.defaultModelId);
-      for (final provider in const [
-        CloudProvider.openaiApiKey,
-        CloudProvider.codexOAuth,
-        CloudProvider.grokOAuth,
-      ]) {
+    test(
+      'Codex is a first-pass provider with a transcription-only default',
+      () async {
+        final (settings, _) = await _initWith(root, {});
+        expect(settings.cloudProvider, CloudProvider.geminiApiKey);
+        expect(settings.selectedModelId, AppConfig.defaultModelId);
+        await settings.setCloudProvider(CloudProvider.vertexAi);
+        expect(settings.selectedModelId, AppConfig.defaultModelId);
+        await settings.setCloudProvider(CloudProvider.codexOAuth);
+        expect(settings.cloudProvider, CloudProvider.codexOAuth);
+        expect(settings.selectedModelId, 'chatgpt-transcribe');
+        expect(settings.primaryModels.map((model) => model.id), [
+          'chatgpt-transcribe',
+        ]);
+        for (final provider in const [
+          CloudProvider.openaiApiKey,
+          CloudProvider.grokOAuth,
+        ]) {
+          expect(
+            () => settings.setCloudProvider(provider),
+            throwsArgumentError,
+            reason: provider.name,
+          );
+          expect(AppConfig.audioModelsForProvider(provider), isEmpty);
+        }
+        expect(settings.cloudProvider, CloudProvider.codexOAuth);
+      },
+    );
+
+    test(
+      'Codex cannot resolve a transcription-only model for polish',
+      () async {
+        final (settings, _) = await _initWith(root, {
+          'cloud_provider': 'codexOAuth',
+          'legacy_primary_roles_migrated': true,
+        });
+        await settings.setTwoPassTranscriptionEnabled(true);
+        await settings.setRefinementProvider(CloudProvider.codexOAuth);
+        expect(settings.selectedModelId, 'chatgpt-transcribe');
         expect(
-          () => settings.setCloudProvider(provider),
-          throwsArgumentError,
-          reason: provider.name,
+          settings.twoPassRefinementModelId,
+          AppConfig.defaultCodexModelId,
         );
-        expect(AppConfig.audioModelsForProvider(provider), isEmpty);
-      }
-      expect(settings.cloudProvider, CloudProvider.vertexAi);
-    });
+        expect(
+          settings.refinementModels.any((model) => model.isTranscriptionOnly),
+          isFalse,
+        );
+      },
+    );
 
     test('the first-pass selection survives provider switches', () async {
       final (settings, file) = await _initWith(root, {

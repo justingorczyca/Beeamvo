@@ -52,6 +52,7 @@ class SettingsService extends ChangeNotifier {
   static const _kTwoPassTranscription = 'two_pass_transcription';
   static const _kTwoPassRefinementModelId = 'two_pass_refinement_model_id';
   static const _kRefinementProvider = 'refinement_provider';
+  static const _kLegacyPrimaryRolesMigrated = 'legacy_primary_roles_migrated';
 
   /// Set once the pass-2 thinking levels were split from the first-pass
   /// levels, so the one-time copy never re-couples later choices.
@@ -283,30 +284,36 @@ class SettingsService extends ChangeNotifier {
       dirty = true;
     }
 
-    // Text-only providers (OpenAI/Codex/Grok) were once selectable as the
-    // primary account, with a separately stored Gemini-family first pass.
-    // The primary is now always the audio first pass, so move a text-only
-    // primary into the pass-2 role and promote the saved first pass.
-    final savedPrimary = CloudProviderExtension.fromValue(
-      _getString(_kCloudProvider),
-    );
-    if (!AppConfig.canTranscribeAudio(savedPrimary)) {
-      final legacyFirst = CloudProviderExtension.fromValue(
-        _getString(_kLegacyFirstPassProvider),
+    // Earlier releases treated every primary except Gemini and Vertex as a
+    // polish provider. Run this migration once so a newly selected ChatGPT
+    // first pass is not moved on a later launch.
+    if (_data[_kLegacyPrimaryRolesMigrated] != true) {
+      const legacyAudioProviders = {
+        CloudProvider.geminiApiKey,
+        CloudProvider.vertexAi,
+      };
+      final savedPrimary = CloudProviderExtension.fromValue(
+        _getString(_kCloudProvider),
       );
-      final firstPass = AppConfig.canTranscribeAudio(legacyFirst)
-          ? legacyFirst
-          : CloudProvider.geminiApiKey;
-      _data[_kCloudProvider] = firstPass.name;
-      _data[_kRefinementProvider] ??= savedPrimary.name;
-      // A text-only primary only ever worked in two-step mode.
-      _data[_kTwoPassTranscription] = true;
-      final legacyModel = _getString(_kLegacyFirstPassModelId);
-      if (AppConfig.audioModelsForProvider(
-        firstPass,
-      ).any((m) => m.id == legacyModel)) {
-        _data[_kSelectedModelId] = legacyModel;
+      if (!legacyAudioProviders.contains(savedPrimary)) {
+        final legacyFirst = CloudProviderExtension.fromValue(
+          _getString(_kLegacyFirstPassProvider),
+        );
+        final firstPass = legacyAudioProviders.contains(legacyFirst)
+            ? legacyFirst
+            : CloudProvider.geminiApiKey;
+        _data[_kCloudProvider] = firstPass.name;
+        _data[_kRefinementProvider] ??= savedPrimary.name;
+        // A text-only primary only ever worked in two-step mode.
+        _data[_kTwoPassTranscription] = true;
+        final legacyModel = _getString(_kLegacyFirstPassModelId);
+        if (AppConfig.audioModelsForProvider(
+          firstPass,
+        ).any((m) => m.id == legacyModel)) {
+          _data[_kSelectedModelId] = legacyModel;
+        }
       }
+      _data[_kLegacyPrimaryRolesMigrated] = true;
       dirty = true;
     }
 
@@ -604,9 +611,7 @@ class SettingsService extends ChangeNotifier {
   }
 
   /// Models selectable for the audio first pass: single-pass dictation runs
-  /// on it directly, and it stays pass 1 when two-step refinement is on. Only
-  /// the Gemini family transcribes audio in the cloud ([cloudProvider] is
-  /// always one of them), so the list never changes with the two-step toggle.
+  /// on it directly, and it stays pass 1 when two-step refinement is on.
   List<GeminiModelConfig> get primaryModels =>
       AppConfig.audioModelsForProvider(cloudProvider);
 
@@ -674,10 +679,9 @@ class SettingsService extends ChangeNotifier {
 
   // ── Two-step refinement ───────────────────────────────────────────────────
   //
-  // Pass 1 turns audio into raw text — the first-pass model of the Gemini
-  // family in the cloud, or Whisper offline. Pass 2 applies the selected
-  // prompt with a separately chosen provider and model, which may be any
-  // provider because it only ever receives the validated transcript.
+  // Pass 1 turns audio into raw text with Gemini, Vertex, Codex Transcribe, or
+  // Whisper offline. Pass 2 applies the selected prompt with a separately
+  // chosen provider and model, which only receives the validated transcript.
   bool get twoPassTranscriptionEnabled => _getBool(_kTwoPassTranscription);
 
   Future<void> setTwoPassTranscriptionEnabled(bool value) async {
@@ -1017,8 +1021,8 @@ class SettingsService extends ChangeNotifier {
 
   // ── Cloud provider & credentials ──────────────────────────────────────────
   /// First-pass cloud provider: the one that receives audio. Always a member
-  /// of [AppConfig.firstPassAudioProviders]; text-only providers are chosen
-  /// separately as [refinementProvider].
+  /// of [AppConfig.firstPassAudioProviders]; OpenAI API-key and Grok providers
+  /// are chosen separately as [refinementProvider].
   CloudProvider get cloudProvider {
     final saved = CloudProviderExtension.fromValue(_getString(_kCloudProvider));
     return AppConfig.canTranscribeAudio(saved)
@@ -1029,7 +1033,7 @@ class SettingsService extends ChangeNotifier {
   Future<void> setCloudProvider(CloudProvider provider) async {
     if (!AppConfig.canTranscribeAudio(provider)) {
       throw ArgumentError(
-        '${provider.displayName} cannot transcribe audio; choose it as the '
+        '${provider.displayName} cannot transcribe audio; choose it as a '
         'two-step refinement provider instead.',
       );
     }

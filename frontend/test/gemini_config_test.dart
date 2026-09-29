@@ -265,21 +265,51 @@ void main() {
           'gpt-5.5',
           'gpt-5.4',
           'chat-latest',
+          'chatgpt-transcribe',
         ]),
+      );
+      final transcribe = AppConfig.getModelById('chatgpt-transcribe');
+      expect(transcribe.name, 'ChatGPT Transcribe');
+      expect(transcribe.modelName, 'chatgpt-transcribe');
+      expect(transcribe.isTranscriptionOnly, isTrue);
+      expect(transcribe.supportsAudio, isTrue);
+      expect(
+        transcribe.description,
+        "ChatGPT's dictation speech model on your ChatGPT plan. Writing styles are not applied.",
+      );
+      expect(AppConfig.audioModelsForProvider(CloudProvider.codexOAuth), [
+        transcribe,
+      ]);
+      expect(
+        AppConfig.transcriptionModelsForProvider(CloudProvider.codexOAuth),
+        [transcribe],
+      );
+      expect(
+        AppConfig.promptCapableModelsForProvider(
+          CloudProvider.codexOAuth,
+        ).any((model) => model.id == transcribe.id),
+        isFalse,
       );
     });
 
     test('GPT-6 Sol and Luna are polish models for OpenAI and ChatGPT', () {
-      for (final provider in const [
-        CloudProvider.openaiApiKey,
-        CloudProvider.codexOAuth,
-      ]) {
+      for (final provider in const [CloudProvider.openaiApiKey]) {
         final ids = AppConfig.promptCapableModelsForProvider(
           provider,
         ).map((m) => m.id);
         expect(ids, containsAll(['gpt-6-sol', 'gpt-6-luna']));
         expect(AppConfig.audioModelsForProvider(provider), isEmpty);
       }
+      final codexModels = AppConfig.promptCapableModelsForProvider(
+        CloudProvider.codexOAuth,
+      );
+      expect(codexModels.map((model) => model.id), contains('gpt-6-sol'));
+      expect(
+        AppConfig.audioModelsForProvider(
+          CloudProvider.codexOAuth,
+        ).map((model) => model.id),
+        ['chatgpt-transcribe'],
+      );
       final sol = AppConfig.getModelById('gpt-6-sol');
       final luna = AppConfig.getModelById('gpt-6-luna');
       expect(sol.displayName, 'GPT-6 Sol');

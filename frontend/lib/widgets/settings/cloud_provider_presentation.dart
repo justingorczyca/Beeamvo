@@ -17,7 +17,7 @@ extension CloudProviderPresentation on CloudProvider {
     CloudProvider.geminiApiKey => 'Personal API key',
     CloudProvider.vertexAi => 'Google Cloud project',
     CloudProvider.openaiApiKey => 'API key or endpoint',
-    CloudProvider.codexOAuth => 'Browser sign-in · polish only',
+    CloudProvider.codexOAuth => 'Browser sign-in · no API key',
     CloudProvider.grokOAuth => 'Browser sign-in · polish only',
   };
 }

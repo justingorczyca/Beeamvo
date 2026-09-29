@@ -1,3 +1,5 @@
+import 'dart:math' as math;
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:google_fonts/google_fonts.dart';
@@ -30,116 +32,291 @@ class WelcomeStep extends StatefulWidget {
 }
 
 class _WelcomeStepState extends State<WelcomeStep>
-    with SingleTickerProviderStateMixin {
-  late AnimationController _glowController;
+    with TickerProviderStateMixin {
+  static const _sampleSentence = "Let's move the sync to Thursday at 3.";
+
+  late final AnimationController _waveController = AnimationController(
+    duration: const Duration(milliseconds: 1600),
+    vsync: this,
+  );
+  late final AnimationController _typingController = AnimationController(
+    duration: Duration(milliseconds: _sampleSentence.length * 90),
+    vsync: this,
+  );
+  late final AnimationController _caretController = AnimationController(
+    duration: const Duration(milliseconds: 550),
+    vsync: this,
+  );
+  bool? _animationsDisabled;
 
   @override
-  void initState() {
-    super.initState();
-    _glowController = AnimationController(
-      duration: const Duration(milliseconds: 2500),
-      vsync: this,
-    )..repeat(reverse: true);
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    final disabled = MediaQuery.of(context).disableAnimations;
+    if (_animationsDisabled == disabled) return;
+    _animationsDisabled = disabled;
+    if (disabled) {
+      _waveController.stop();
+      _typingController.stop();
+      _caretController.stop();
+    } else {
+      _waveController.repeat();
+      _typingController.repeat();
+      _caretController.repeat(reverse: true);
+    }
   }
 
   @override
   void dispose() {
-    _glowController.dispose();
+    _waveController.dispose();
+    _typingController.dispose();
+    _caretController.dispose();
     super.dispose();
+  }
+
+  Widget _buildWaveform(
+    BuildContext context, {
+    required bool animationsDisabled,
+  }) {
+    return AnimatedBuilder(
+      animation: _waveController,
+      builder: (context, child) {
+        final phase = _waveController.value * math.pi * 2;
+        return SizedBox(
+          height: 100,
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            crossAxisAlignment: CrossAxisAlignment.center,
+            children: List.generate(24, (index) {
+              final wave =
+                  (math.sin(phase + index * 0.46) +
+                          math.sin(phase * 0.72 + index * 0.19) * 0.45)
+                      .abs();
+              final height = animationsDisabled ? 20.0 : 12 + wave * 40;
+              return Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 2.5),
+                child: AnimatedContainer(
+                  duration: animationsDisabled
+                      ? Duration.zero
+                      : const Duration(milliseconds: 100),
+                  width: 4,
+                  height: height,
+                  decoration: BoxDecoration(
+                    color: beeText(context).withValues(alpha: 0.85),
+                    borderRadius: BorderRadius.circular(2),
+                  ),
+                ),
+              );
+            }),
+          ),
+        );
+      },
+    );
+  }
+
+  Widget _buildPreviewPanel(BuildContext context, bool animationsDisabled) {
+    return Container(
+      width: 300,
+      height: 300,
+      padding: const EdgeInsets.all(28),
+      decoration: BoxDecoration(
+        color: beeSurfaceRaised(context),
+        borderRadius: BorderRadius.circular(AppTheme.radiusXl),
+        border: Border.all(color: beeBorder(context).withValues(alpha: 0.6)),
+      ),
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          _buildWaveform(context, animationsDisabled: animationsDisabled),
+          const SizedBox(height: 28),
+          AnimatedBuilder(
+            animation: _caretController,
+            builder: (context, child) => Container(
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
+              decoration: BoxDecoration(
+                color: beeSurface(context),
+                borderRadius: BorderRadius.circular(AppTheme.radiusPill),
+                border: Border.all(color: beeBorder(context)),
+              ),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Opacity(
+                    opacity: animationsDisabled
+                        ? 1
+                        : 0.4 + _caretController.value * 0.6,
+                    child: Container(
+                      width: 7,
+                      height: 7,
+                      decoration: BoxDecoration(
+                        shape: BoxShape.circle,
+                        color: beeText(context),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 7),
+                  Text(
+                    'Listening…',
+                    style: GoogleFonts.inter(
+                      fontSize: 11,
+                      fontWeight: FontWeight.w500,
+                      color: beeTextSub(context),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+          const SizedBox(height: 20),
+          AnimatedBuilder(
+            animation: _typingController,
+            builder: (context, child) {
+              final charCount = animationsDisabled
+                  ? _sampleSentence.length
+                  : (_typingController.value * _sampleSentence.length)
+                        .floor()
+                        .clamp(0, _sampleSentence.length);
+              return Text.rich(
+                TextSpan(
+                  children: [
+                    TextSpan(
+                      text: _sampleSentence.substring(0, charCount),
+                      style: GoogleFonts.inter(
+                        fontSize: 13,
+                        color: beeText(context),
+                        height: 1.4,
+                      ),
+                    ),
+                    if (animationsDisabled || _caretController.value >= 0.5)
+                      TextSpan(
+                        text: '|',
+                        style: GoogleFonts.inter(
+                          fontSize: 13,
+                          color: beeText(context),
+                        ),
+                      ),
+                  ],
+                ),
+                textAlign: TextAlign.center,
+              );
+            },
+          ),
+        ],
+      ),
+    );
   }
 
   @override
   Widget build(BuildContext context) {
-    return Column(
+    final animationsDisabled = MediaQuery.of(context).disableAnimations;
+    final contentWidth = MediaQuery.sizeOf(context).width;
+    final horizontalPadding = contentWidth >= 700 ? 48.0 : 24.0;
+    final leftContent = Column(
       mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        const SizedBox(height: 12),
-        // Animated logo orb
-        AnimatedBuilder(
-          animation: _glowController,
-          builder: (context, child) {
-            final t = _glowController.value;
-            return Container(
-              width: 80,
-              height: 80,
+        Row(
+          children: [
+            Container(
+              width: 24,
+              height: 24,
               decoration: BoxDecoration(
-                shape: BoxShape.circle,
-                gradient: RadialGradient(
-                  colors: [
-                    beeYellow(context).withValues(alpha: 0.25 + 0.10 * t),
-                    beeYellow(context).withValues(alpha: 0.05),
-                  ],
-                ),
-                boxShadow: [
-                  BoxShadow(
-                    color: beeYellow(
-                      context,
-                    ).withValues(alpha: 0.15 + 0.10 * t),
-                    blurRadius: 40,
-                    spreadRadius: 4,
-                  ),
-                ],
+                color: beeYellow(context),
+                borderRadius: BorderRadius.circular(7),
               ),
-              child: Center(
-                child: Container(
-                  width: 44,
-                  height: 44,
-                  decoration: BoxDecoration(
-                    shape: BoxShape.circle,
-                    gradient: LinearGradient(
-                      colors: [beeYellow(context), beeYellowDim(context)],
-                      begin: Alignment.topLeft,
-                      end: Alignment.bottomRight,
-                    ),
-                    boxShadow: [
-                      BoxShadow(
-                        color: beeYellow(
-                          context,
-                        ).withValues(alpha: 0.4 + 0.2 * t),
-                        blurRadius: 16,
-                      ),
-                    ],
-                  ),
-                  child: const Icon(
-                    Icons.mic_rounded,
-                    color: Colors.white,
-                    size: 22,
-                  ),
-                ),
+              child: Icon(
+                Icons.mic_rounded,
+                size: 14,
+                color: beeBlack(context),
               ),
-            );
-          },
+            ),
+            const SizedBox(width: 10),
+            Text(
+              'Beeamvo',
+              style: GoogleFonts.spaceGrotesk(
+                fontSize: 16,
+                fontWeight: FontWeight.w700,
+                color: beeText(context),
+              ),
+            ),
+          ],
         ),
-        const SizedBox(height: 20),
+        const SizedBox(height: 26),
         Text(
-          'Welcome to Beeamvo',
-          textAlign: TextAlign.center,
+          'Your voice,\ntyped anywhere.',
           style: GoogleFonts.spaceGrotesk(
-            fontSize: 26,
+            fontSize: contentWidth >= 700 ? 40 : 34,
             fontWeight: FontWeight.w700,
+            letterSpacing: -1.6,
+            height: 1.05,
             color: beeText(context),
-            letterSpacing: -0.8,
           ),
         ),
-        const SizedBox(height: 8),
-        Text(
-          'Your voice, instantly everywhere.\nTransform speech to text with AI-powered precision.',
-          textAlign: TextAlign.center,
-          style: GoogleFonts.inter(
-            fontSize: 13,
-            color: beeTextSub(context),
-            height: 1.5,
+        const SizedBox(height: 16),
+        ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 340),
+          child: Text(
+            "Press a shortcut, speak, and Beeamvo writes clean text into whatever app you're using. On-device with Whisper or in the cloud.",
+            style: GoogleFonts.inter(
+              fontSize: 14,
+              color: beeTextSub(context),
+              height: 1.5,
+            ),
           ),
         ),
         const SizedBox(height: 28),
-        OnboardingPrimaryButton(
-          label: "Let's Get Started",
-          icon: Icons.arrow_forward_rounded,
-          onTap: widget.onNext,
+        Wrap(
+          spacing: 12,
+          runSpacing: 8,
+          crossAxisAlignment: WrapCrossAlignment.center,
+          children: [
+            OnboardingPrimaryButton(
+              label: 'Get started',
+              icon: Icons.arrow_forward_rounded,
+              onTap: widget.onNext,
+            ),
+            OnboardingSecondaryButton(
+              label: 'Skip setup',
+              onTap: widget.onSkip,
+            ),
+          ],
         ),
-        const SizedBox(height: 12),
-        OnboardingSecondaryButton(label: 'Skip Setup', onTap: widget.onSkip),
+        const SizedBox(height: 14),
+        Text(
+          'Takes about a minute.',
+          style: GoogleFonts.inter(fontSize: 12, color: beeTextMuted(context)),
+        ),
       ],
+    );
+
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final wide = constraints.maxWidth >= 700;
+        return Padding(
+          padding: EdgeInsets.all(horizontalPadding),
+          child: wide
+              ? Row(
+                  children: [
+                    Expanded(child: Center(child: leftContent)),
+                    const SizedBox(width: 32),
+                    _buildPreviewPanel(context, animationsDisabled),
+                  ],
+                )
+              : SingleChildScrollView(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      leftContent,
+                      const SizedBox(height: 32),
+                      Align(
+                        alignment: Alignment.center,
+                        child: _buildPreviewPanel(context, animationsDisabled),
+                      ),
+                    ],
+                  ),
+                ),
+        );
+      },
     );
   }
 }
@@ -176,164 +353,92 @@ class _ProviderStepState extends State<ProviderStep>
     _cloudProvider = widget.settingsService.cloudProvider;
   }
 
-  Widget _providerCard(CloudProvider provider) {
+  Widget _providerRow(CloudProvider provider) {
     final selected = _cloudProvider == provider;
-    return OnboardingGlowCard(
-      isSelected: selected,
+    return OnboardingOptionTile(
+      icon: provider.icon,
+      title: provider.displayName,
+      description: provider.tagline,
+      selected: selected,
+      compact: true,
       onTap: () => setState(() => _cloudProvider = provider),
-      child: Column(
-        children: [
-          Icon(
-            provider.icon,
-            size: 18,
-            color: selected ? beeYellow(context) : beeTextMuted(context),
-          ),
-          const SizedBox(height: 6),
-          Text(
-            provider.displayName,
-            textAlign: TextAlign.center,
-            style: GoogleFonts.inter(
-              fontSize: 11,
-              fontWeight: FontWeight.w600,
-              color: selected ? beeText(context) : beeTextSub(context),
-            ),
-          ),
-          const SizedBox(height: 2),
-          Text(
-            provider.tagline,
-            maxLines: 2,
-            textAlign: TextAlign.center,
-            style: GoogleFonts.inter(fontSize: 9, color: beeTextMuted(context)),
-          ),
-        ],
-      ),
     );
   }
 
   @override
   Widget build(BuildContext context) {
     super.build(context);
-    return OnboardingStepShell(
-      icon: Icons.dns_rounded,
-      title: 'Engine',
+    return OnboardingStepScaffold(
+      title: 'Choose your engine',
       subtitle:
-          'Choose where your voice is transcribed. Cloud AI is fastest; Offline keeps everything on this device.',
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
+          'Where your voice turns into text. You can change this any time in Settings.',
+      body: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // Cloud vs Offline
-          Row(
-            children: [
-              Expanded(
-                child: OnboardingGlowCard(
-                  isSelected: _backend == TranscriptionBackend.cloud,
-                  onTap: () => setState(() {
-                    _backend = TranscriptionBackend.cloud;
-                  }),
-                  child: Column(
-                    children: [
-                      Icon(
-                        Icons.cloud_outlined,
-                        size: 24,
-                        color: _backend == TranscriptionBackend.cloud
-                            ? beeYellow(context)
-                            : beeTextMuted(context),
-                      ),
-                      const SizedBox(height: 6),
-                      Text(
-                        'Cloud AI',
-                        style: GoogleFonts.inter(
-                          fontSize: 13,
-                          fontWeight: FontWeight.w700,
-                          color: _backend == TranscriptionBackend.cloud
-                              ? beeText(context)
-                              : beeTextSub(context),
-                        ),
-                      ),
-                      const SizedBox(height: 2),
-                      Text(
-                        'Fast, accurate, applies your style',
-                        textAlign: TextAlign.center,
-                        style: GoogleFonts.inter(
-                          fontSize: 10,
-                          color: beeTextMuted(context),
-                          height: 1.3,
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              ),
-              const SizedBox(width: 10),
-              Expanded(
-                child: OnboardingGlowCard(
-                  isSelected: _backend == TranscriptionBackend.whisper,
-                  onTap: () => setState(() {
-                    _backend = TranscriptionBackend.whisper;
-                  }),
-                  child: Column(
-                    children: [
-                      Icon(
-                        Icons.memory_rounded,
-                        size: 24,
-                        color: _backend == TranscriptionBackend.whisper
-                            ? beeYellow(context)
-                            : beeTextMuted(context),
-                      ),
-                      const SizedBox(height: 6),
-                      Text(
-                        'Offline',
-                        style: GoogleFonts.inter(
-                          fontSize: 13,
-                          fontWeight: FontWeight.w700,
-                          color: _backend == TranscriptionBackend.whisper
-                              ? beeText(context)
-                              : beeTextSub(context),
-                        ),
-                      ),
-                      const SizedBox(height: 2),
-                      Text(
-                        'Runs locally with Whisper — fully private',
-                        textAlign: TextAlign.center,
-                        style: GoogleFonts.inter(
-                          fontSize: 10,
-                          color: beeTextMuted(context),
-                          height: 1.3,
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              ),
-            ],
-          ),
-
-          // Cloud provider sub-choice
-          if (_backend == TranscriptionBackend.cloud) ...[
-            const SizedBox(height: 10),
-            Row(
+          IntrinsicHeight(
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
-                for (final (i, provider)
+                Expanded(
+                  child: OnboardingOptionTile(
+                    icon: Icons.cloud_outlined,
+                    title: 'Cloud AI',
+                    description:
+                        'Fastest and most accurate. Applies your writing style.',
+                    vertical: true,
+                    selected: _backend == TranscriptionBackend.cloud,
+                    onTap: () => setState(() {
+                      _backend = TranscriptionBackend.cloud;
+                    }),
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: OnboardingOptionTile(
+                    icon: Icons.memory_rounded,
+                    title: 'Offline',
+                    description:
+                        'Runs on this device with Whisper. Nothing leaves your device.',
+                    vertical: true,
+                    selected: _backend == TranscriptionBackend.whisper,
+                    onTap: () => setState(() {
+                      _backend = TranscriptionBackend.whisper;
+                    }),
+                  ),
+                ),
+              ],
+            ),
+          ),
+          if (_backend == TranscriptionBackend.cloud) ...[
+            const SizedBox(height: 24),
+            Text(
+              'PROVIDER',
+              style: GoogleFonts.inter(
+                fontSize: 11,
+                fontWeight: FontWeight.w600,
+                letterSpacing: 0.8,
+                color: beeTextMuted(context),
+              ),
+            ),
+            const SizedBox(height: 10),
+            Column(
+              children: [
+                for (final (index, provider)
                     in AppConfig.firstPassAudioProviders.indexed) ...[
-                  if (i > 0) const SizedBox(width: 8),
-                  Expanded(child: _providerCard(provider)),
+                  if (index > 0) const SizedBox(height: 8),
+                  _providerRow(provider),
                 ],
               ],
             ),
           ],
-
-          const SizedBox(height: 18),
-          OnboardingPrimaryButton(
-            label: 'Continue',
-            icon: Icons.arrow_forward_rounded,
-            onTap: () async {
-              await widget.settingsService.setTranscriptionBackend(_backend);
-              await widget.settingsService.setCloudProvider(_cloudProvider);
-              widget.onNext();
-            },
-          ),
         ],
       ),
+      primaryLabel: 'Continue',
+      onPrimary: () async {
+        await widget.settingsService.setTranscriptionBackend(_backend);
+        await widget.settingsService.setCloudProvider(_cloudProvider);
+        widget.onNext();
+      },
     );
   }
 }
@@ -574,7 +679,7 @@ class _ApiKeyStepState extends State<ApiKeyStep>
       ),
       CloudProvider.codexOAuth => (
         'ChatGPT Sign-In',
-        'Sign in with your ChatGPT account — no API key needed. Codex models polish text; pair them with Offline for speech-to-text.',
+        'Sign in with your ChatGPT account — no API key needed. ChatGPT Transcribe turns speech into text on your ChatGPT plan.',
       ),
       CloudProvider.grokOAuth => (
         'xAI Sign-In',
@@ -582,44 +687,53 @@ class _ApiKeyStepState extends State<ApiKeyStep>
       ),
     };
 
-    return OnboardingStepShell(
-      icon: _provider.icon,
-      title: title,
-      subtitle: subtitle,
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          if (_isCodex || _isGrok) ...[
-            // OAuth providers: browser sign-in instead of a credential field.
-            OnboardingSecondaryButton(
-              label: _oauthSigningIn
-                  ? 'Waiting for browser sign-in…'
-                  : _oauthSignedIn
-                  ? _isCodex
-                        ? 'Signed in with ChatGPT'
-                        : 'Signed in with xAI'
-                  : _isCodex
-                  ? 'Sign in with ChatGPT'
-                  : 'Sign in with xAI',
-              onTap: _oauthSigningIn || _oauthSignedIn
-                  ? null
-                  : _startOAuthSignIn,
+    final Widget oauthTrailing = _oauthSigningIn
+        ? OnboardingSecondaryButton(
+            label: 'Cancel',
+            small: true,
+            onTap: () {
+              if (_isCodex) {
+                _codexFlow?.cancel();
+              } else {
+                _grokFlow?.cancel();
+              }
+            },
+          )
+        : _oauthSignedIn
+        ? Icon(Icons.check_circle_rounded, size: 18, color: beeSuccess(context))
+        : OnboardingPrimaryButton(
+            label: 'Sign in',
+            small: true,
+            icon: null,
+            onTap: _startOAuthSignIn,
+          );
+
+    final body = Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        if (_isCodex || _isGrok)
+          OnboardingOptionTile(
+            icon: _provider.icon,
+            title: _isCodex ? 'ChatGPT account' : 'xAI account',
+            description: _oauthSigningIn
+                ? 'Waiting for browser sign-in…'
+                : _oauthSignedIn
+                ? 'Signed in'
+                : 'Not signed in',
+            trailing: oauthTrailing,
+          )
+        else ...[
+          Text(
+            isGemini || _isOpenAi ? 'API KEY' : 'PROJECT ID',
+            style: GoogleFonts.inter(
+              fontSize: 11,
+              fontWeight: FontWeight.w600,
+              letterSpacing: 0.8,
+              color: beeTextMuted(context),
             ),
-            if (_oauthSigningIn) ...[
-              const SizedBox(height: 8),
-              OnboardingSecondaryButton(
-                label: 'Cancel sign-in',
-                onTap: () {
-                  if (_isCodex) {
-                    _codexFlow?.cancel();
-                  } else {
-                    _grokFlow?.cancel();
-                  }
-                },
-              ),
-            ],
-          ] else if (isGemini || _isOpenAi) ...[
-            // API Key field
+          ),
+          const SizedBox(height: 8),
+          if (isGemini || _isOpenAi)
             OnboardingTextField(
               controller: _apiKeyController,
               hintText: isGemini ? 'AIza...' : 'sk-...',
@@ -643,9 +757,8 @@ class _ApiKeyStepState extends State<ApiKeyStep>
                   ),
                 ),
               ),
-            ),
-          ] else ...[
-            // Vertex Project ID field
+            )
+          else
             OnboardingTextField(
               controller: _projectIdController,
               hintText: 'your-google-cloud-project-id',
@@ -653,74 +766,56 @@ class _ApiKeyStepState extends State<ApiKeyStep>
                 _statusMessage = null;
               }),
             ),
-          ],
-
-          // Prefix validation warning for Gemini keys
-          if (showPrefixWarning) ...[
-            const SizedBox(height: 8),
-            OnboardingStatusBadge(
-              label:
-                  'Gemini API keys start with "AIza" — double-check your key',
-              isError: false,
-              isSuccess: false,
-            ),
-          ],
-
-          // Re-running the wizard with a saved credential
-          if (_hasSavedCredential && _isFieldEmpty) ...[
-            const SizedBox(height: 8),
-            OnboardingStatusBadge(
-              label: _isCodex || _isGrok
-                  ? _isCodex
-                        ? 'You are already signed in with ChatGPT.'
-                        : 'You are already signed in with xAI.'
-                  : isGemini || _isOpenAi
-                  ? 'An API key is already saved — leave blank to keep it.'
-                  : 'Your project ID is already saved — leave blank to keep it.',
-              isSuccess: true,
-            ),
-          ],
-
-          // Status
-          if (_statusMessage != null) ...[
-            const SizedBox(height: 8),
-            OnboardingStatusBadge(
-              label: _statusMessage!,
-              isError: _statusIsError,
-              isSuccess: !_statusIsError,
-            ),
-          ],
-
-          const SizedBox(height: 14),
-
-          // Verify + Continue row
-          Row(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              OnboardingPrimaryButton(
-                label: 'Continue',
-                icon: Icons.arrow_forward_rounded,
-                onTap: (_isFieldEmpty && !_hasSavedCredential)
-                    ? null
-                    : _saveAndContinue,
-              ),
-              // Only show Verify button when a handler is available
-              if (widget.onVerifyCloudProvider != null) ...[
-                const SizedBox(width: 10),
-                OnboardingSecondaryButton(
-                  label: 'Verify',
-                  onTap: _isVerifying ? null : _verifyConnection,
-                ),
-              ],
-            ],
-          ),
-          const SizedBox(height: 4),
-          OnboardingSecondaryButton(
-            label: 'Set up later',
-            onTap: widget.onSkip,
+        ],
+        if (showPrefixWarning) ...[
+          const SizedBox(height: 10),
+          OnboardingStatusBadge(
+            label: 'Gemini API keys start with "AIza" — double-check your key',
+            isError: false,
+            isSuccess: false,
           ),
         ],
-      ),
+        if (_hasSavedCredential && _isFieldEmpty) ...[
+          const SizedBox(height: 10),
+          OnboardingStatusBadge(
+            label: _isCodex || _isGrok
+                ? _isCodex
+                      ? 'You are already signed in with ChatGPT.'
+                      : 'You are already signed in with xAI.'
+                : isGemini || _isOpenAi
+                ? 'An API key is already saved — leave blank to keep it.'
+                : 'Your project ID is already saved — leave blank to keep it.',
+            isSuccess: true,
+          ),
+        ],
+        if (_statusMessage != null) ...[
+          const SizedBox(height: 10),
+          OnboardingStatusBadge(
+            label: _statusMessage!,
+            isError: _statusIsError,
+            isSuccess: !_statusIsError,
+          ),
+        ],
+      ],
+    );
+
+    return OnboardingStepScaffold(
+      title: title,
+      subtitle: subtitle,
+      body: body,
+      primaryLabel: 'Continue',
+      onPrimary: (_isFieldEmpty && !_hasSavedCredential)
+          ? null
+          : _saveAndContinue,
+      primaryLoading: false,
+      secondaryActions: [
+        OnboardingSecondaryButton(label: 'Set up later', onTap: widget.onSkip),
+        if (widget.onVerifyCloudProvider != null)
+          OnboardingSecondaryButton(
+            label: _isVerifying ? 'Verifying…' : 'Verify',
+            onTap: _isVerifying ? null : _verifyConnection,
+          ),
+      ],
     );
   }
 }
@@ -862,9 +957,67 @@ class _ModelStepState extends State<ModelStep>
     if (model.id.contains('lite') ||
         model.id.contains('mini') ||
         model.id.contains('fast')) {
-      return '⚡ Ultra Fast';
+      return 'Ultra fast';
     }
-    return '🚀 Balanced';
+    return 'Balanced';
+  }
+
+  Widget _buildStyleTile(SystemPrompt prompt) {
+    final isSelected = _selectedPromptId == prompt.id;
+    return Semantics(
+      selected: isSelected,
+      button: true,
+      child: BeeInteractive(
+        onTap: () => setState(() => _selectedPromptId = prompt.id),
+        semanticLabel: prompt.name,
+        selected: isSelected,
+        toggled: isSelected,
+        builder: (context, focused) => AnimatedContainer(
+          duration: const Duration(milliseconds: 200),
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+          decoration: BoxDecoration(
+            color: isSelected
+                ? beeYellow(context).withValues(alpha: 0.035)
+                : beeSurfaceRaised(context),
+            borderRadius: BorderRadius.circular(AppTheme.radiusLg),
+            border: Border.all(
+              color: isSelected
+                  ? beeYellow(context)
+                  : focused
+                  ? beeTextMuted(context).withValues(alpha: 0.5)
+                  : beeBorder(context).withValues(alpha: 0.6),
+              width: isSelected ? 1.5 : 1,
+            ),
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Text(
+                prompt.name,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: GoogleFonts.inter(
+                  fontSize: 13,
+                  fontWeight: FontWeight.w600,
+                  color: beeText(context),
+                ),
+              ),
+              const SizedBox(height: 3),
+              Text(
+                _styleDescription(prompt.id),
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: GoogleFonts.inter(
+                  fontSize: 12,
+                  color: beeTextMuted(context),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
   }
 
   // ── Build ────────────────────────────────────────────────────────────
@@ -884,183 +1037,71 @@ class _ModelStepState extends State<ModelStep>
     // would be meaningless, so the picker stays hidden for that selection.
     final showStylePicker = !selectedModel.isTranscriptionOnly;
 
-    return OnboardingStepShell(
-      icon: Icons.auto_awesome_rounded,
-      title: 'Model & Writing Style',
+    return OnboardingStepScaffold(
+      title: 'Choose your model',
       subtitle:
           'Pick the AI model that transcribes your voice, then choose how the text reads.',
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
+      body: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          ConstrainedBox(
-            constraints: const BoxConstraints(maxHeight: 160),
-            child: SingleChildScrollView(
-              child: Column(
-                children: widget.settingsService.primaryModels.map((model) {
-                  final isSelected = _selectedModelId == model.id;
-                  return Padding(
-                    padding: const EdgeInsets.only(bottom: 6),
-                    child: OnboardingGlowCard(
-                      isSelected: isSelected,
-                      onTap: () => setState(() => _selectedModelId = model.id),
-                      child: Row(
-                        children: [
-                          _buildRadioIndicator(isSelected),
-                          const SizedBox(width: 14),
-                          Expanded(
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Row(
-                                  children: [
-                                    Text(
-                                      model.displayName,
-                                      style: GoogleFonts.inter(
-                                        fontSize: 13,
-                                        fontWeight: isSelected
-                                            ? FontWeight.w700
-                                            : FontWeight.w500,
-                                        color: isSelected
-                                            ? beeText(context)
-                                            : beeTextSub(context),
-                                      ),
-                                    ),
-                                    const SizedBox(width: 8),
-                                    Container(
-                                      padding: const EdgeInsets.symmetric(
-                                        horizontal: 6,
-                                        vertical: 2,
-                                      ),
-                                      decoration: BoxDecoration(
-                                        color: beeSurfaceHighest(
-                                          context,
-                                        ).withValues(alpha: 0.6),
-                                        borderRadius: BorderRadius.circular(
-                                          AppTheme.radiusXs,
-                                        ),
-                                      ),
-                                      child: Text(
-                                        _speedLabel(model),
-                                        style: GoogleFonts.inter(
-                                          fontSize: 9,
-                                          color: beeTextMuted(context),
-                                        ),
-                                      ),
-                                    ),
-                                  ],
-                                ),
-                                const SizedBox(height: 2),
-                                Text(
-                                  _modelDescription(model),
-                                  style: GoogleFonts.inter(
-                                    fontSize: 11,
-                                    color: beeTextMuted(context),
-                                    height: 1.3,
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                  );
-                }).toList(),
-              ),
+          for (final model in widget.settingsService.primaryModels) ...[
+            OnboardingOptionTile(
+              icon: Icons.auto_awesome_rounded,
+              title: model.displayName,
+              description: _modelDescription(model),
+              badge: _speedLabel(model),
+              selected: _selectedModelId == model.id,
+              onTap: () => setState(() => _selectedModelId = model.id),
             ),
-          ),
-
+            const SizedBox(height: 8),
+          ],
           if (showStylePicker) ...[
-            const SizedBox(height: 12),
-            Align(
-              alignment: Alignment.centerLeft,
-              child: Text(
-                'Writing Style',
-                style: GoogleFonts.inter(
-                  fontSize: 11,
-                  fontWeight: FontWeight.w600,
-                  color: beeTextMuted(context),
-                ),
+            const SizedBox(height: 16),
+            Text(
+              'WRITING STYLE',
+              style: GoogleFonts.inter(
+                fontSize: 11,
+                fontWeight: FontWeight.w600,
+                letterSpacing: 0.8,
+                color: beeTextMuted(context),
               ),
             ),
-            const SizedBox(height: 6),
-            Wrap(
-              spacing: 8,
-              runSpacing: 8,
-              children: SystemPrompt.availablePrompts.map((prompt) {
-                final isSelected = _selectedPromptId == prompt.id;
-                return SizedBox(
-                  width: 300,
-                  child: OnboardingGlowCard(
-                    isSelected: isSelected,
-                    onTap: () => setState(() => _selectedPromptId = prompt.id),
-                    child: Row(
-                      children: [
-                        _buildRadioIndicator(isSelected),
-                        const SizedBox(width: 10),
-                        Expanded(
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Text(
-                                prompt.name,
-                                style: GoogleFonts.inter(
-                                  fontSize: 11.5,
-                                  fontWeight: isSelected
-                                      ? FontWeight.w700
-                                      : FontWeight.w500,
-                                  color: isSelected
-                                      ? beeText(context)
-                                      : beeTextSub(context),
-                                ),
-                              ),
-                              Text(
-                                _styleDescription(prompt.id),
-                                maxLines: 1,
-                                overflow: TextOverflow.ellipsis,
-                                style: GoogleFonts.inter(
-                                  fontSize: 9,
-                                  color: beeTextMuted(context),
-                                ),
-                              ),
-                            ],
-                          ),
-                        ),
-                      ],
+            const SizedBox(height: 10),
+            LayoutBuilder(
+              builder: (context, constraints) => Wrap(
+                spacing: 8,
+                runSpacing: 8,
+                children: [
+                  for (final prompt in SystemPrompt.availablePrompts)
+                    SizedBox(
+                      width: (constraints.maxWidth - 8) / 2,
+                      height: 68,
+                      child: _buildStyleTile(prompt),
                     ),
-                  ),
-                );
-              }).toList(),
+                ],
+              ),
             ),
           ],
-
-          const SizedBox(height: 10),
+          const SizedBox(height: 16),
           Text(
             'Prefer OpenAI, ChatGPT or Grok for polishing? Turn on two-step '
             'refinement later in Settings › Transcription.',
-            textAlign: TextAlign.center,
             style: GoogleFonts.inter(
-              fontSize: 10,
+              fontSize: 12,
               color: beeTextMuted(context),
               height: 1.4,
             ),
           ),
-          const SizedBox(height: 14),
-          OnboardingPrimaryButton(
-            label: 'Continue',
-            icon: Icons.arrow_forward_rounded,
-            onTap: () async {
-              await widget.settingsService.setSelectedModelId(_selectedModelId);
-              if (showStylePicker) {
-                await widget.settingsService.setSelectedPromptId(
-                  _selectedPromptId,
-                );
-              }
-              widget.onNext();
-            },
-          ),
         ],
       ),
+      primaryLabel: 'Continue',
+      onPrimary: () async {
+        await widget.settingsService.setSelectedModelId(_selectedModelId);
+        if (showStylePicker) {
+          await widget.settingsService.setSelectedPromptId(_selectedPromptId);
+        }
+        widget.onNext();
+      },
     );
   }
 
@@ -1071,247 +1112,105 @@ class _ModelStepState extends State<ModelStep>
       _selectedWhisperModelId,
     );
 
-    return OnboardingStepShell(
-      icon: Icons.memory_rounded,
-      title: 'Download Whisper Model',
+    return OnboardingStepScaffold(
+      title: 'Choose your offline model',
       subtitle:
           'Download a model for offline transcription. Tiny is recommended for most users.',
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
+      body: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          ConstrainedBox(
-            constraints: const BoxConstraints(maxHeight: 200),
-            child: SingleChildScrollView(
-              child: Column(
-                children: WhisperModelDownloadService.availableModels.map((
-                  model,
-                ) {
-                  final isDownloaded = _downloadedModels.contains(model.id);
-                  final isDownloading = _downloadingModelId == model.id;
-                  final isSelected = _selectedWhisperModelId == model.id;
-
-                  return Padding(
-                    padding: const EdgeInsets.only(bottom: 5),
-                    child: OnboardingGlowCard(
-                      isSelected: isDownloaded && isSelected,
-                      onTap: isDownloaded
-                          ? () => setState(() {
-                              _selectedWhisperModelId = model.id;
-                            })
-                          : null,
-                      child: Row(
-                        children: [
-                          // Status icon
-                          if (isDownloading)
-                            SizedBox(
-                              width: 18,
-                              height: 18,
-                              child: CircularProgressIndicator(
-                                strokeWidth: 2,
-                                value: _downloadProgress > 0
-                                    ? _downloadProgress
-                                    : null,
-                                color: beeYellow(context),
-                              ),
-                            )
-                          else if (isDownloaded)
-                            _buildRadioIndicator(isSelected)
-                          else
-                            Container(
-                              width: 18,
-                              height: 18,
-                              decoration: BoxDecoration(
-                                shape: BoxShape.circle,
-                                border: Border.all(
-                                  color: beeBorder(context),
-                                  width: 1.5,
-                                ),
-                              ),
-                            ),
-                          const SizedBox(width: 12),
-                          Expanded(
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Row(
-                                  children: [
-                                    Text(
-                                      model.name,
-                                      style: GoogleFonts.inter(
-                                        fontSize: 13,
-                                        fontWeight: isDownloaded
-                                            ? FontWeight.w700
-                                            : FontWeight.w500,
-                                        color: isDownloaded
-                                            ? beeText(context)
-                                            : beeTextSub(context),
-                                      ),
-                                    ),
-                                    const SizedBox(width: 8),
-                                    Container(
-                                      padding: const EdgeInsets.symmetric(
-                                        horizontal: 6,
-                                        vertical: 2,
-                                      ),
-                                      decoration: BoxDecoration(
-                                        color: beeSurfaceHighest(
-                                          context,
-                                        ).withValues(alpha: 0.6),
-                                        borderRadius: BorderRadius.circular(
-                                          AppTheme.radiusXs,
-                                        ),
-                                      ),
-                                      child: Text(
-                                        model.sizeDisplay,
-                                        style: GoogleFonts.inter(
-                                          fontSize: 9,
-                                          color: beeTextMuted(context),
-                                        ),
-                                      ),
-                                    ),
-                                    if (isDownloaded) ...[
-                                      const SizedBox(width: 6),
-                                      Icon(
-                                        Icons.check_circle_rounded,
-                                        size: 14,
-                                        color: beeSuccess(context),
-                                      ),
-                                    ],
-                                  ],
-                                ),
-                                // Download progress bar
-                                if (isDownloading) ...[
-                                  const SizedBox(height: 4),
-                                  ClipRRect(
-                                    borderRadius: BorderRadius.circular(3),
-                                    child: LinearProgressIndicator(
-                                      value: _downloadProgress,
-                                      backgroundColor: beeSurfaceHighest(
-                                        context,
-                                      ),
-                                      valueColor: AlwaysStoppedAnimation(
-                                        beeYellow(context),
-                                      ),
-                                      minHeight: 4,
-                                    ),
-                                  ),
-                                  const SizedBox(height: 2),
-                                  Text(
-                                    '${WhisperModelDownloadService.formatBytes((_downloadProgress * model.sizeBytes).round())} / ${model.sizeDisplay}',
-                                    style: GoogleFonts.inter(
-                                      fontSize: 9,
-                                      color: beeTextMuted(context),
-                                    ),
-                                  ),
-                                ],
-                              ],
-                            ),
-                          ),
-                          // Download button for non-downloaded models
-                          if (!isDownloaded && !isDownloading)
-                            BeeInteractive(
-                              onTap: _downloadingModelId == null
-                                  ? () => _startDownload(model)
+          for (final model in WhisperModelDownloadService.availableModels)
+            Builder(
+              builder: (context) {
+                final isDownloaded = _downloadedModels.contains(model.id);
+                final isDownloading = _downloadingModelId == model.id;
+                final isSelected = _selectedWhisperModelId == model.id;
+                return Padding(
+                  padding: const EdgeInsets.only(bottom: 8),
+                  child: OnboardingOptionTile(
+                    icon: Icons.memory_rounded,
+                    title: model.name,
+                    description: model.id == 'tiny'
+                        ? 'Recommended for most users'
+                        : 'Offline speech recognition',
+                    badge: isDownloaded
+                        ? 'Downloaded · ${model.sizeDisplay}'
+                        : model.sizeDisplay,
+                    selected: isDownloaded && isSelected,
+                    onTap: isDownloaded
+                        ? () =>
+                              setState(() => _selectedWhisperModelId = model.id)
+                        : null,
+                    trailing: isDownloading
+                        ? SizedBox(
+                            width: 18,
+                            height: 18,
+                            child: CircularProgressIndicator(
+                              strokeWidth: 2,
+                              value: _downloadProgress > 0
+                                  ? _downloadProgress
                                   : null,
-                              semanticLabel: 'Download ${model.name}',
-                              builder: (context, focused) => Container(
-                                padding: const EdgeInsets.symmetric(
-                                  horizontal: 10,
-                                  vertical: 5,
-                                ),
-                                decoration: BoxDecoration(
-                                  color: _downloadingModelId == null
-                                      ? beeYellow(context).withValues(
-                                          alpha: focused ? 0.20 : 0.12,
-                                        )
-                                      : beeSurfaceHighest(
-                                          context,
-                                        ).withValues(alpha: 0.3),
-                                  borderRadius: BorderRadius.circular(
-                                    AppTheme.radiusSm,
+                              color: beeYellow(context),
+                            ),
+                          )
+                        : isDownloaded
+                        ? null
+                        : OnboardingSecondaryButton(
+                            label: 'Download',
+                            small: true,
+                            onTap: _downloadingModelId == null
+                                ? () => _startDownload(model)
+                                : null,
+                          ),
+                    footer: isDownloading
+                        ? Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              ClipRRect(
+                                borderRadius: BorderRadius.circular(3),
+                                child: LinearProgressIndicator(
+                                  value: _downloadProgress,
+                                  backgroundColor: beeSurfaceHighest(context),
+                                  valueColor: AlwaysStoppedAnimation(
+                                    beeYellow(context),
                                   ),
-                                  border: Border.all(
-                                    color: _downloadingModelId == null
-                                        ? beeYellow(context).withValues(
-                                            alpha: focused ? 0.85 : 0.65,
-                                          )
-                                        : beeBorder(context),
-                                  ),
-                                ),
-                                child: Text(
-                                  'Download',
-                                  style: GoogleFonts.inter(
-                                    fontSize: 10,
-                                    fontWeight: FontWeight.w600,
-                                    color: _downloadingModelId == null
-                                        ? beeYellow(context)
-                                        : beeTextMuted(context),
-                                  ),
+                                  minHeight: 2,
                                 ),
                               ),
-                            ),
-                        ],
-                      ),
-                    ),
-                  );
-                }).toList(),
-              ),
+                              const SizedBox(height: 4),
+                              Text(
+                                '${WhisperModelDownloadService.formatBytes((_downloadProgress * model.sizeBytes).round())} / ${model.sizeDisplay}',
+                                style: GoogleFonts.inter(
+                                  fontSize: 11,
+                                  color: beeTextMuted(context),
+                                ),
+                              ),
+                            ],
+                          )
+                        : null,
+                  ),
+                );
+              },
             ),
-          ),
-
-          // Error message
           if (_downloadError && _downloadErrorMessage != null) ...[
-            const SizedBox(height: 6),
+            const SizedBox(height: 8),
             OnboardingStatusBadge(label: _downloadErrorMessage!, isError: true),
           ],
-
-          const SizedBox(height: 14),
-          OnboardingPrimaryButton(
-            label: hasDownloadedModel ? 'Continue' : 'Skip for Now',
-            icon: Icons.arrow_forward_rounded,
-            onTap: () async {
-              if (hasDownloadedModel) {
-                await widget.settingsService.setWhisperModelId(
-                  _selectedWhisperModelId,
-                );
-              }
-              widget.onNext();
-            },
-          ),
         ],
       ),
+      primaryLabel: hasDownloadedModel ? 'Continue' : 'Skip for now',
+      onPrimary: () async {
+        if (hasDownloadedModel) {
+          await widget.settingsService.setWhisperModelId(
+            _selectedWhisperModelId,
+          );
+        }
+        widget.onNext();
+      },
     );
   }
 
   // ── Shared ───────────────────────────────────────────────────────────
-
-  Widget _buildRadioIndicator(bool isSelected) {
-    return AnimatedContainer(
-      duration: const Duration(milliseconds: 200),
-      width: 18,
-      height: 18,
-      decoration: BoxDecoration(
-        shape: BoxShape.circle,
-        color: isSelected ? beeYellow(context) : Colors.transparent,
-        border: Border.all(
-          color: isSelected ? beeYellow(context) : beeBorder(context),
-          width: 1.5,
-        ),
-      ),
-      child: isSelected
-          ? Center(
-              child: Container(
-                width: 7,
-                height: 7,
-                decoration: const BoxDecoration(
-                  shape: BoxShape.circle,
-                  color: Colors.white,
-                ),
-              ),
-            )
-          : null,
-    );
-  }
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -1348,160 +1247,79 @@ class _RecordingModeStepState extends State<RecordingModeStep>
   @override
   Widget build(BuildContext context) {
     super.build(context);
-    return OnboardingStepShell(
-      icon: Icons.fiber_manual_record_rounded,
-      title: 'Recording Mode',
-      subtitle: 'How do you want to trigger voice recording?',
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Row(
-            children: [
-              Expanded(
-                child: OnboardingGlowCard(
-                  isSelected: _mode == RecordingMode.toggle,
-                  onTap: () => setState(() => _mode = RecordingMode.toggle),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Row(
-                        children: [
-                          Icon(
-                            Icons.touch_app_rounded,
-                            size: 20,
-                            color: _mode == RecordingMode.toggle
-                                ? beeYellow(context)
-                                : beeTextMuted(context),
-                          ),
-                          const SizedBox(width: 8),
-                          Text(
-                            'Toggle',
-                            style: GoogleFonts.inter(
-                              fontSize: 14,
-                              fontWeight: FontWeight.w700,
-                              color: _mode == RecordingMode.toggle
-                                  ? beeText(context)
-                                  : beeTextSub(context),
-                            ),
-                          ),
-                        ],
+    final mainHotkeyLabel = widget.settingsService.hotkey.displayString
+        .split(' + ')
+        .last;
+    return OnboardingStepScaffold(
+      title: 'How do you want to record?',
+      subtitle: 'Choose how your shortcut starts and stops dictation.',
+      body: IntrinsicHeight(
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Expanded(
+              child: OnboardingOptionTile(
+                vertical: true,
+                icon: Icons.touch_app_rounded,
+                title: 'Toggle',
+                description: 'Press once to start, again to stop.',
+                badge: 'Best for long dictation',
+                selected: _mode == RecordingMode.toggle,
+                footer: Row(
+                  children: [
+                    OnboardingKeycap(label: mainHotkeyLabel, small: true),
+                    const SizedBox(width: 8),
+                    Flexible(
+                      child: Text(
+                        '· · ·',
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(color: beeTextMuted(context)),
                       ),
-                      const SizedBox(height: 8),
-                      Text(
-                        'Press once to start, press again to stop and process.',
-                        style: GoogleFonts.inter(
-                          fontSize: 10,
-                          color: beeTextMuted(context),
-                          height: 1.4,
-                        ),
-                      ),
-                      const SizedBox(height: 6),
-                      Container(
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 6,
-                          vertical: 3,
-                        ),
-                        decoration: BoxDecoration(
-                          color: beeSurfaceHighest(
-                            context,
-                          ).withValues(alpha: 0.5),
-                          borderRadius: BorderRadius.circular(
-                            AppTheme.radiusXs,
-                          ),
-                        ),
-                        child: Text(
-                          'Great for longer recordings',
-                          style: GoogleFonts.inter(
-                            fontSize: 9,
-                            fontWeight: FontWeight.w600,
-                            color: beeYellow(context),
-                          ),
-                        ),
-                      ),
-                    ],
-                  ),
+                    ),
+                    const SizedBox(width: 8),
+                    OnboardingKeycap(label: mainHotkeyLabel, small: true),
+                  ],
                 ),
+                onTap: () => setState(() => _mode = RecordingMode.toggle),
               ),
-              const SizedBox(width: 10),
-              Expanded(
-                child: OnboardingGlowCard(
-                  isSelected: _mode == RecordingMode.hold,
-                  onTap: () => setState(() => _mode = RecordingMode.hold),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Row(
-                        children: [
-                          Icon(
-                            Icons.back_hand_rounded,
-                            size: 20,
-                            color: _mode == RecordingMode.hold
-                                ? beeYellow(context)
-                                : beeTextMuted(context),
-                          ),
-                          const SizedBox(width: 8),
-                          Text(
-                            'Hold',
-                            style: GoogleFonts.inter(
-                              fontSize: 14,
-                              fontWeight: FontWeight.w700,
-                              color: _mode == RecordingMode.hold
-                                  ? beeText(context)
-                                  : beeTextSub(context),
-                            ),
-                          ),
-                        ],
-                      ),
-                      const SizedBox(height: 8),
-                      Text(
-                        'Hold the hotkey to record. Release to stop and process.',
-                        style: GoogleFonts.inter(
-                          fontSize: 10,
-                          color: beeTextMuted(context),
-                          height: 1.4,
-                        ),
-                      ),
-                      const SizedBox(height: 6),
-                      Container(
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 6,
-                          vertical: 3,
-                        ),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: OnboardingOptionTile(
+                vertical: true,
+                icon: Icons.back_hand_rounded,
+                title: 'Hold',
+                description:
+                    'Hold the hotkey while you talk, release to finish.',
+                badge: 'Quick and natural',
+                selected: _mode == RecordingMode.hold,
+                footer: Row(
+                  children: [
+                    OnboardingKeycap(label: mainHotkeyLabel, small: true),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Container(
+                        height: 2,
                         decoration: BoxDecoration(
-                          color: beeSurfaceHighest(
-                            context,
-                          ).withValues(alpha: 0.5),
-                          borderRadius: BorderRadius.circular(
-                            AppTheme.radiusXs,
-                          ),
-                        ),
-                        child: Text(
-                          'Fast and intuitive',
-                          style: GoogleFonts.inter(
-                            fontSize: 9,
-                            fontWeight: FontWeight.w600,
-                            color: beeYellow(context),
-                          ),
+                          color: beeBorder(context),
+                          borderRadius: BorderRadius.circular(1),
                         ),
                       ),
-                    ],
-                  ),
+                    ),
+                  ],
                 ),
+                onTap: () => setState(() => _mode = RecordingMode.hold),
               ),
-            ],
-          ),
-
-          const SizedBox(height: 14),
-          OnboardingPrimaryButton(
-            label: 'Continue',
-            icon: Icons.arrow_forward_rounded,
-            onTap: () async {
-              await widget.settingsService.setRecordingMode(_mode);
-              widget.onNext();
-            },
-          ),
-        ],
+            ),
+          ],
+        ),
       ),
+      primaryLabel: 'Continue',
+      onPrimary: () async {
+        await widget.settingsService.setRecordingMode(_mode);
+        widget.onNext();
+      },
     );
   }
 }
@@ -1640,15 +1458,14 @@ class _HotkeyStepState extends State<HotkeyStep>
   @override
   Widget build(BuildContext context) {
     super.build(context);
-    return OnboardingStepShell(
-      icon: Icons.keyboard_command_key_rounded,
-      title: 'Set Your Hotkey',
+    final hotkeyLabels = _currentHotkey.displayString.split(' + ');
+    return OnboardingStepScaffold(
+      title: 'Pick your shortcut',
       subtitle:
           'Choose a keyboard shortcut to trigger voice recording from anywhere.',
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
+      body: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // Hotkey recorder
           KeyboardListener(
             focusNode: _focusNode,
             onKeyEvent: _handleKeyEvent,
@@ -1659,109 +1476,108 @@ class _HotkeyStepState extends State<HotkeyStep>
                   : 'Capture a new hotkey. Current: ${_currentHotkey.displayString}',
               builder: (context, focused) => AnimatedBuilder(
                 animation: _pulseAnimation,
-                builder: (context, child) {
-                  return Container(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 20,
-                      vertical: 14,
-                    ),
-                    decoration: BoxDecoration(
+                builder: (context, child) => Container(
+                  height: 150,
+                  width: double.infinity,
+                  padding: const EdgeInsets.all(20),
+                  decoration: BoxDecoration(
+                    color: beeSurfaceRaised(context),
+                    borderRadius: BorderRadius.circular(AppTheme.radiusLg),
+                    border: Border.all(
                       color: _isRecording
-                          ? beeYellow(context).withValues(alpha: 0.06)
-                          : beeSurfaceRaised(context),
-                      borderRadius: BorderRadius.circular(_kRadiusMd),
-                      border: Border.all(
-                        color: _isRecording
-                            ? beeYellow(context)
-                            : focused
-                            ? beeYellow(context).withValues(alpha: 0.45)
-                            : beeBorder(context),
-                        width: 1.5,
-                      ),
-                      boxShadow: _isRecording
-                          ? [
-                              BoxShadow(
-                                color: beeYellow(context).withValues(
-                                  alpha: 0.08 * _pulseAnimation.value,
+                          ? beeYellow(
+                              context,
+                            ).withValues(alpha: _pulseAnimation.value)
+                          : focused
+                          ? beeYellow(context)
+                          : beeBorder(context),
+                      width: 1.5,
+                    ),
+                  ),
+                  child: Center(
+                    child: _isRecording
+                        ? Column(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Text(
+                                'Press your shortcut…',
+                                style: GoogleFonts.inter(
+                                  fontSize: 16,
+                                  fontWeight: FontWeight.w600,
+                                  color: beeText(context),
                                 ),
-                                blurRadius: 16,
                               ),
-                            ]
-                          : [],
-                    ),
-                    child: Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Icon(
-                          _isRecording
-                              ? Icons.keyboard_rounded
-                              : Icons.keyboard_command_key_rounded,
-                          color: _isRecording
-                              ? beeYellow(context)
-                              : beeTextSub(context),
-                          size: 24,
-                        ),
-                        const SizedBox(width: 16),
-                        Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text(
-                              _isRecording
-                                  ? 'Press your hotkey...'
-                                  : _currentHotkey.displayString,
-                              style: GoogleFonts.inter(
-                                fontSize: 16,
-                                fontWeight: FontWeight.w600,
-                                color: _isRecording
-                                    ? beeYellow(context)
-                                    : beeText(context),
+                              const SizedBox(height: 8),
+                              Text(
+                                'Esc to cancel',
+                                style: GoogleFonts.inter(
+                                  fontSize: 12,
+                                  color: beeTextMuted(context),
+                                ),
                               ),
-                            ),
-                            Text(
-                              _isRecording
-                                  ? 'Press Esc to cancel'
-                                  : 'Tap to change',
-                              style: GoogleFonts.inter(
-                                fontSize: 11,
-                                color: beeTextMuted(context),
+                            ],
+                          )
+                        : Column(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              FittedBox(
+                                fit: BoxFit.scaleDown,
+                                child: Row(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    for (
+                                      var index = 0;
+                                      index < hotkeyLabels.length;
+                                      index++
+                                    ) ...[
+                                      if (index > 0) ...[
+                                        const SizedBox(width: 8),
+                                        Text(
+                                          '+',
+                                          style: GoogleFonts.inter(
+                                            fontSize: 14,
+                                            color: beeTextMuted(context),
+                                          ),
+                                        ),
+                                        const SizedBox(width: 8),
+                                      ],
+                                      OnboardingKeycap(
+                                        label: hotkeyLabels[index],
+                                      ),
+                                    ],
+                                  ],
+                                ),
                               ),
-                            ),
-                          ],
-                        ),
-                      ],
-                    ),
-                  );
-                },
+                              const SizedBox(height: 10),
+                              Text(
+                                'Click to change',
+                                style: GoogleFonts.inter(
+                                  fontSize: 12,
+                                  color: beeTextMuted(context),
+                                ),
+                              ),
+                            ],
+                          ),
+                  ),
+                ),
               ),
             ),
           ),
-
-          // Error
           if (_errorMessage != null) ...[
-            const SizedBox(height: 6),
+            const SizedBox(height: 8),
             OnboardingStatusBadge(label: _errorMessage!, isError: true),
           ],
-
-          const SizedBox(height: 14),
-          Row(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              OnboardingPrimaryButton(
-                label: 'Continue',
-                icon: Icons.arrow_forward_rounded,
-                onTap: widget.onNext,
-              ),
-              if (_currentHotkey != HotkeyConfig.defaultHotkey) ...[
-                const SizedBox(width: 10),
-                OnboardingSecondaryButton(
-                  label: 'Reset to Default',
-                  onTap: _resetToDefault,
-                ),
-              ],
-            ],
-          ),
         ],
       ),
+      primaryLabel: 'Continue',
+      onPrimary: widget.onNext,
+      secondaryActions: [
+        if (_currentHotkey != HotkeyConfig.defaultHotkey)
+          OnboardingSecondaryButton(
+            label: 'Reset to default',
+            onTap: _resetToDefault,
+          ),
+      ],
     );
   }
 }
@@ -1776,6 +1592,8 @@ class ReadyStep extends StatefulWidget {
   final VoidCallback? onGoToApiKeyStep;
   final VoidCallback? onGoToModelStep;
   final VoidCallback? onGoToProviderStep;
+  final VoidCallback? onGoToRecordingStep;
+  final VoidCallback? onGoToHotkeyStep;
 
   const ReadyStep({
     super.key,
@@ -1784,31 +1602,15 @@ class ReadyStep extends StatefulWidget {
     this.onGoToApiKeyStep,
     this.onGoToModelStep,
     this.onGoToProviderStep,
+    this.onGoToRecordingStep,
+    this.onGoToHotkeyStep,
   });
 
   @override
   State<ReadyStep> createState() => _ReadyStepState();
 }
 
-class _ReadyStepState extends State<ReadyStep>
-    with SingleTickerProviderStateMixin {
-  late AnimationController _successController;
-
-  @override
-  void initState() {
-    super.initState();
-    _successController = AnimationController(
-      duration: const Duration(milliseconds: 800),
-      vsync: this,
-    )..forward();
-  }
-
-  @override
-  void dispose() {
-    _successController.dispose();
-    super.dispose();
-  }
-
+class _ReadyStepState extends State<ReadyStep> {
   @override
   Widget build(BuildContext context) {
     final s = widget.settingsService;
@@ -1823,240 +1625,251 @@ class _ReadyStepState extends State<ReadyStep>
             WhisperService.listDownloadedModels().contains(s.whisperModelId));
 
     final cloudModel = AppConfig.getModelById(s.selectedModelId);
+    final styleNotApplied =
+        !s.promptIsApplied || cloudModel.isTranscriptionOnly;
     final whisperModelInfo = WhisperModelDownloadService.getModelInfo(
       s.whisperModelId,
     );
     final prompt = SystemPrompt.getById(s.selectedPromptId);
+    final hotkeyLabels = s.hotkey.displayString.split(' + ');
 
-    return Column(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        const SizedBox(height: 8),
-
-        // Animated orb — amber checkmark when ready, amber warning when not
-        AnimatedBuilder(
-          animation: _successController,
-          builder: (context, child) {
-            final t = Curves.easeOutBack.transform(
-              _successController.value.clamp(0.0, 1.0),
-            );
-            return Transform.scale(
-              scale: t,
-              child: Container(
-                width: 56,
-                height: 56,
-                decoration: BoxDecoration(
-                  shape: BoxShape.circle,
-                  gradient: isReady
-                      ? LinearGradient(
-                          colors: [beeYellow(context), beeYellowDim(context)],
-                          begin: Alignment.topLeft,
-                          end: Alignment.bottomRight,
-                        )
-                      : LinearGradient(
-                          colors: [
-                            beeYellow(context).withValues(alpha: 0.7),
-                            beeYellowDim(context),
+    return OnboardingStepScaffold(
+      title: isReady ? "You're all set" : 'Almost there',
+      subtitle: isReady
+          ? 'Beeamvo is configured and ready to use.'
+          : 'Configure a transcription backend to start using Beeamvo.',
+      body: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          if (!isReady) ...[
+            Container(
+              padding: const EdgeInsets.all(16),
+              decoration: BoxDecoration(
+                color: beeSurfaceRaised(context),
+                borderRadius: BorderRadius.circular(AppTheme.radiusLg),
+                border: Border.all(color: beeBorder(context)),
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Icon(
+                        Icons.warning_amber_rounded,
+                        size: 18,
+                        color: beeYellow(context),
+                      ),
+                      const SizedBox(width: 10),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              'No transcription backend configured',
+                              style: GoogleFonts.inter(
+                                fontSize: 13,
+                                fontWeight: FontWeight.w600,
+                                color: beeText(context),
+                              ),
+                            ),
+                            const SizedBox(height: 4),
+                            Text(
+                              isWhisper
+                                  ? 'Download a Whisper model to enable offline transcription, or switch to Cloud AI.'
+                                  : 'Choose compatible models and configure credentials for every active step.',
+                              style: GoogleFonts.inter(
+                                fontSize: 12,
+                                color: beeTextMuted(context),
+                                height: 1.4,
+                              ),
+                            ),
                           ],
                         ),
-                  boxShadow: [
-                    BoxShadow(
-                      color: beeYellow(context).withValues(alpha: 0.3),
-                      blurRadius: 20,
-                      spreadRadius: 3,
-                    ),
-                  ],
-                ),
-                child: Icon(
-                  isReady ? Icons.check_rounded : Icons.warning_amber_rounded,
-                  color: Colors.white,
-                  size: 28,
-                ),
-              ),
-            );
-          },
-        ),
-
-        const SizedBox(height: 16),
-        Text(
-          isReady ? "You're All Set!" : 'Almost There',
-          textAlign: TextAlign.center,
-          style: GoogleFonts.spaceGrotesk(
-            fontSize: 22,
-            fontWeight: FontWeight.w700,
-            color: beeText(context),
-            letterSpacing: -0.6,
-          ),
-        ),
-        const SizedBox(height: 4),
-        Text(
-          isReady
-              ? 'Beeamvo is configured and ready to use.'
-              : 'Configure a transcription backend to start using Beeamvo.',
-          textAlign: TextAlign.center,
-          style: GoogleFonts.inter(fontSize: 12, color: beeTextSub(context)),
-        ),
-
-        // Warning banner when no backend is configured
-        if (!isReady) ...[
-          const SizedBox(height: 14),
-          Container(
-            constraints: const BoxConstraints(maxWidth: 420),
-            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
-            decoration: BoxDecoration(
-              color: beeYellow(context).withValues(alpha: 0.08),
-              borderRadius: BorderRadius.circular(_kRadiusMd),
-              border: Border.all(
-                color: beeYellow(context).withValues(alpha: 0.30),
-              ),
-            ),
-            child: Column(
-              children: [
-                Row(
-                  children: [
-                    Icon(
-                      Icons.warning_amber_rounded,
-                      size: 18,
-                      color: beeYellow(context),
-                    ),
-                    const SizedBox(width: 10),
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            'No transcription backend configured',
-                            style: GoogleFonts.inter(
-                              fontSize: 12,
-                              fontWeight: FontWeight.w700,
-                              color: beeYellow(context),
-                            ),
-                          ),
-                          const SizedBox(height: 2),
-                          Text(
-                            isWhisper
-                                ? 'Download a Whisper model to enable offline transcription, or switch to Cloud AI.'
-                                : 'Choose compatible models and configure credentials for both cloud steps. Text-only providers require two-step refinement.',
-                            style: GoogleFonts.inter(
-                              fontSize: 10,
-                              color: beeTextSub(context),
-                              height: 1.4,
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 10),
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.end,
-                  children: [
-                    if (widget.onGoToProviderStep != null)
-                      OnboardingSecondaryButton(
-                        label: 'Change Engine',
-                        onTap: widget.onGoToProviderStep,
-                      ),
-                    if (!isWhisper && widget.onGoToApiKeyStep != null)
-                      OnboardingSecondaryButton(
-                        label: s.cloudProvider == CloudProvider.vertexAi
-                            ? 'Set Up Vertex AI'
-                            : 'Set Up API Key',
-                        onTap: widget.onGoToApiKeyStep,
-                      ),
-                    if (isWhisper && widget.onGoToModelStep != null) ...[
-                      OnboardingSecondaryButton(
-                        label: 'Download Model',
-                        onTap: widget.onGoToModelStep,
                       ),
                     ],
-                  ],
-                ),
-              ],
+                  ),
+                  const SizedBox(height: 10),
+                  Wrap(
+                    spacing: 6,
+                    runSpacing: 4,
+                    alignment: WrapAlignment.end,
+                    children: [
+                      if (widget.onGoToProviderStep != null)
+                        OnboardingSecondaryButton(
+                          label: 'Change engine',
+                          small: true,
+                          onTap: widget.onGoToProviderStep,
+                        ),
+                      if (!isWhisper && widget.onGoToApiKeyStep != null)
+                        OnboardingSecondaryButton(
+                          label: s.cloudProvider == CloudProvider.vertexAi
+                              ? 'Set up Vertex AI'
+                              : 'Set up account',
+                          small: true,
+                          onTap: widget.onGoToApiKeyStep,
+                        ),
+                      if (isWhisper && widget.onGoToModelStep != null)
+                        OnboardingSecondaryButton(
+                          label: 'Download model',
+                          small: true,
+                          onTap: widget.onGoToModelStep,
+                        ),
+                    ],
+                  ),
+                ],
+              ),
             ),
-          ),
-        ],
-
-        const SizedBox(height: 16),
-
-        // Summary card
-        Center(
-          child: Container(
-            constraints: const BoxConstraints(maxWidth: 420),
-            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+            const SizedBox(height: 12),
+          ],
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
             decoration: BoxDecoration(
               color: beeSurfaceRaised(context),
-              borderRadius: BorderRadius.circular(_kRadiusLg),
+              borderRadius: BorderRadius.circular(AppTheme.radiusLg),
               border: Border.all(color: beeDivider(context)),
             ),
             child: Column(
               children: [
                 _summaryRow(
-                  Icons.graphic_eq_rounded,
                   'Engine',
                   s.transcriptionBackend == TranscriptionBackend.cloud
                       ? 'Cloud'
                       : 'Offline (Whisper)',
+                  widget.onGoToProviderStep,
                 ),
-                Divider(color: beeDivider(context), height: 16),
+                Divider(color: beeDivider(context), height: 12),
                 _summaryRow(
-                  Icons.auto_awesome_rounded,
                   'Model',
                   isWhisper
                       ? (whisperModelInfo?.name ?? s.whisperModelId)
                       : cloudModel.displayName,
+                  widget.onGoToModelStep,
                 ),
-                Divider(color: beeDivider(context), height: 16),
+                Divider(color: beeDivider(context), height: 12),
                 _summaryRow(
-                  Icons.tune_rounded,
                   'Style',
-                  s.promptIsApplied ? prompt.name : 'Not applied',
+                  styleNotApplied ? 'Not applied' : prompt.name,
+                  cloudModel.isTranscriptionOnly
+                      ? null
+                      : widget.onGoToModelStep,
+                  valueMuted: styleNotApplied,
                 ),
-                Divider(color: beeDivider(context), height: 16),
+                Divider(color: beeDivider(context), height: 12),
                 _summaryRow(
-                  Icons.fiber_manual_record_rounded,
                   'Recording',
                   s.recordingMode == RecordingMode.toggle ? 'Toggle' : 'Hold',
+                  widget.onGoToRecordingStep,
                 ),
-                Divider(color: beeDivider(context), height: 16),
+                Divider(color: beeDivider(context), height: 12),
                 _summaryRow(
-                  Icons.keyboard_command_key_rounded,
                   'Hotkey',
                   s.hotkey.displayString,
+                  widget.onGoToHotkeyStep,
                 ),
               ],
             ),
           ),
-        ),
-
-        const SizedBox(height: 4),
-      ],
+          const SizedBox(height: 12),
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+            decoration: BoxDecoration(
+              color: beeSurfaceRaised(context),
+              borderRadius: BorderRadius.circular(AppTheme.radiusMd),
+              border: Border.all(color: beeBorder(context)),
+            ),
+            child: Row(
+              children: [
+                Text(
+                  'Try it',
+                  style: GoogleFonts.inter(
+                    fontSize: 12,
+                    fontWeight: FontWeight.w600,
+                    color: beeText(context),
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Wrap(
+                    spacing: 5,
+                    runSpacing: 4,
+                    crossAxisAlignment: WrapCrossAlignment.center,
+                    children: [
+                      const Text('Press'),
+                      for (
+                        var index = 0;
+                        index < hotkeyLabels.length;
+                        index++
+                      ) ...[
+                        if (index > 0) const Text('+'),
+                        OnboardingKeycap(
+                          label: hotkeyLabels[index],
+                          small: true,
+                        ),
+                      ],
+                      const Text('anywhere to start dictating.'),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+      primaryLabel: 'Start using Beeamvo',
+      primaryIcon: null,
+      onPrimary: widget.onFinish,
     );
   }
 
-  Widget _summaryRow(IconData icon, String label, String value) {
-    return Row(
-      children: [
-        Icon(icon, size: 16, color: beeYellow(context)),
-        const SizedBox(width: 10),
-        Text(
-          label,
-          style: GoogleFonts.inter(fontSize: 12, color: beeTextMuted(context)),
-        ),
-        const Spacer(),
-        Text(
-          value,
-          style: GoogleFonts.inter(
-            fontSize: 12,
-            fontWeight: FontWeight.w600,
-            color: beeText(context),
+  Widget _summaryRow(
+    String label,
+    String value,
+    VoidCallback? onEdit, {
+    bool valueMuted = false,
+  }) {
+    return SizedBox(
+      height: 44,
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.center,
+        children: [
+          Expanded(
+            flex: 3,
+            child: Text(
+              label,
+              style: GoogleFonts.inter(
+                fontSize: 12,
+                color: beeTextMuted(context),
+              ),
+            ),
           ),
-        ),
-      ],
+          Expanded(
+            flex: 6,
+            child: Text(
+              value,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: GoogleFonts.inter(
+                fontSize: 13,
+                fontWeight: valueMuted ? FontWeight.w500 : FontWeight.w600,
+                color: valueMuted ? beeTextMuted(context) : beeText(context),
+              ),
+            ),
+          ),
+          SizedBox(
+            width: 44,
+            child: onEdit == null
+                ? null
+                : OnboardingSecondaryButton(
+                    label: 'Edit',
+                    small: true,
+                    onTap: onEdit,
+                  ),
+          ),
+        ],
+      ),
     );
   }
 }
 
 // ─── local tokens ───────────────────────────────────────────────────────
-const double _kRadiusMd = AppTheme.radiusMd;
-const double _kRadiusLg = AppTheme.radiusLg;

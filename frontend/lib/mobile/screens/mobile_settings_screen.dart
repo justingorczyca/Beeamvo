@@ -1,7 +1,10 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:package_info_plus/package_info_plus.dart';
 
 import '../../config.dart';
+import '../../services/codex_oauth_manager.dart';
 import '../../widgets/settings/first_pass_settings.dart';
 import '../../models/system_prompt.dart';
 import '../../services/cloud_transcription_service.dart';
@@ -29,6 +32,8 @@ class _MobileSettingsScreenState extends State<MobileSettingsScreen> {
   String? _message;
   bool _busy = true;
   bool _verifying = false;
+  bool _signingIn = false;
+  CodexOAuthFlow? _codexFlow;
   String? _version;
 
   @override
@@ -41,6 +46,7 @@ class _MobileSettingsScreenState extends State<MobileSettingsScreen> {
   @override
   void dispose() {
     widget.settingsService.removeListener(_refresh);
+    unawaited(_codexFlow?.cancel() ?? Future<void>.value());
     _keyController.dispose();
     super.dispose();
   }
@@ -98,8 +104,32 @@ class _MobileSettingsScreenState extends State<MobileSettingsScreen> {
     }
   }
 
-  /// The transcription account is always Gemini or Vertex; text-only
-  /// providers are configured in the pass-2 section.
+  Future<void> _signInCodex() async {
+    setState(() {
+      _signingIn = true;
+      _message = null;
+    });
+    try {
+      final flow = _codexFlow = await widget.settingsService.codexOAuth
+          .startLogin();
+      await flow.completion;
+      await widget.settingsService.refreshCodexAuthState();
+    } catch (_) {
+      if (mounted) {
+        setState(() => _message = 'Sign-in failed. Please try again.');
+      }
+    } finally {
+      _codexFlow = null;
+      if (mounted) setState(() => _signingIn = false);
+    }
+  }
+
+  Future<void> _signOutCodex() async {
+    await widget.settingsService.signOutCodex();
+    if (mounted) setState(() => _message = 'Signed out of ChatGPT.');
+  }
+
+  /// OpenAI API-key and Grok providers are configured in the pass-2 section.
   Future<void> _removeKey() async {
     final s = widget.settingsService;
     if (s.cloudProvider == CloudProvider.vertexAi) {
@@ -112,6 +142,7 @@ class _MobileSettingsScreenState extends State<MobileSettingsScreen> {
 
   Future<String?> _readCredential() async {
     final s = widget.settingsService;
+    if (s.cloudProvider == CloudProvider.codexOAuth) return null;
     return s.cloudProvider == CloudProvider.vertexAi
         ? s.vertexProjectId
         : await s.readGeminiApiKey();
@@ -123,6 +154,7 @@ class _MobileSettingsScreenState extends State<MobileSettingsScreen> {
       return const Scaffold(body: Center(child: CircularProgressIndicator()));
     }
     final settings = widget.settingsService;
+    final isCodex = settings.cloudProvider == CloudProvider.codexOAuth;
     final firstModel = AppConfig.getModelById(settings.selectedModelId);
     final firstThinking = settings.getThinkingLevelForModel(firstModel.id);
     final prompts = [
@@ -142,7 +174,7 @@ class _MobileSettingsScreenState extends State<MobileSettingsScreen> {
               isExpanded: true,
               decoration: const InputDecoration(
                 labelText: 'Transcription provider',
-                helperText: 'Receives your audio. Gemini models transcribe it.',
+                helperText: 'Receives your audio and turns it into text.',
               ),
               items: [
                 for (final p in AppConfig.firstPassAudioProviders)
@@ -163,7 +195,48 @@ class _MobileSettingsScreenState extends State<MobileSettingsScreen> {
                       }
                     },
             ),
-            if (_storedKey != null)
+            if (isCodex)
+              ListTile(
+                contentPadding: EdgeInsets.zero,
+                title: const Text('ChatGPT account'),
+                subtitle: Text(
+                  settings.hasCodexAuth ? 'Signed in' : 'Not signed in',
+                ),
+                trailing: _signingIn
+                    ? TextButton(
+                        onPressed: () => _codexFlow?.cancel(),
+                        child: const Text('Cancel'),
+                      )
+                    : settings.hasCodexAuth
+                    ? Wrap(
+                        spacing: 4,
+                        children: [
+                          IconButton(
+                            tooltip: 'Verify',
+                            onPressed: _verifying ? null : _verify,
+                            icon: _verifying
+                                ? const SizedBox(
+                                    width: 18,
+                                    height: 18,
+                                    child: CircularProgressIndicator(
+                                      strokeWidth: 2,
+                                    ),
+                                  )
+                                : const Icon(Icons.verified_outlined),
+                          ),
+                          IconButton(
+                            tooltip: 'Sign out',
+                            onPressed: _signOutCodex,
+                            icon: const Icon(Icons.logout_rounded),
+                          ),
+                        ],
+                      )
+                    : TextButton(
+                        onPressed: _signInCodex,
+                        child: const Text('Sign in'),
+                      ),
+              )
+            else if (_storedKey != null)
               ListTile(
                 contentPadding: EdgeInsets.zero,
                 title: Text(
@@ -191,21 +264,22 @@ class _MobileSettingsScreenState extends State<MobileSettingsScreen> {
                   ],
                 ),
               ),
-            TextField(
-              controller: _keyController,
-              obscureText: settings.cloudProvider != CloudProvider.vertexAi,
-              decoration: InputDecoration(
-                labelText: settings.cloudProvider == CloudProvider.vertexAi
-                    ? 'Vertex project ID (requires ADC)'
-                    : '${settings.cloudProvider.displayName} API key',
-                suffixIcon: IconButton(
-                  tooltip: 'Save',
-                  onPressed: _saveKey,
-                  icon: const Icon(Icons.save_outlined),
+            if (!isCodex)
+              TextField(
+                controller: _keyController,
+                obscureText: settings.cloudProvider != CloudProvider.vertexAi,
+                decoration: InputDecoration(
+                  labelText: settings.cloudProvider == CloudProvider.vertexAi
+                      ? 'Vertex project ID (requires ADC)'
+                      : '${settings.cloudProvider.displayName} API key',
+                  suffixIcon: IconButton(
+                    tooltip: 'Save',
+                    onPressed: _saveKey,
+                    icon: const Icon(Icons.save_outlined),
+                  ),
                 ),
+                onSubmitted: (_) => _saveKey(),
               ),
-              onSubmitted: (_) => _saveKey(),
-            ),
             if (_message != null) ...[
               const SizedBox(height: 8),
               Text(_message!),

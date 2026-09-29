@@ -1,9 +1,5 @@
 import 'dart:typed_data';
 
-import 'package:flutter/material.dart';
-import 'package:flutter_test/flutter_test.dart';
-import 'package:package_info_plus/package_info_plus.dart';
-
 import 'package:beeamvo/mobile/mobile_transcription_controller.dart';
 import 'package:beeamvo/mobile/screens/mobile_history_screen.dart';
 import 'package:beeamvo/mobile/screens/mobile_home_screen.dart';
@@ -14,6 +10,9 @@ import 'package:beeamvo/services/cloud_transcription_service.dart';
 import 'package:beeamvo/services/settings_service.dart';
 import 'package:beeamvo/services/usage_stats_service.dart';
 import 'package:beeamvo/theme/app_theme.dart';
+import 'package:flutter/material.dart';
+import 'package:flutter_test/flutter_test.dart';
+import 'package:package_info_plus/package_info_plus.dart';
 
 class _Settings extends SettingsService {
   _Settings({required this.credentials});
@@ -21,11 +20,23 @@ class _Settings extends SettingsService {
   final history = <ClipboardHistoryEntry>[];
   String promptId = 'standard';
   String modelId = 'gemini-3.5-flash-lite';
+  CloudProvider provider = CloudProvider.geminiApiKey;
+  bool codexSignedIn = false;
   bool? clearKeepPinned;
   bool historyEnabled = true;
 
   @override
   bool get hasCloudCredentials => credentials;
+  @override
+  CloudProvider get cloudProvider => provider;
+  @override
+  bool get hasCodexAuth => codexSignedIn;
+  @override
+  Future<void> setCloudProvider(CloudProvider provider) async {
+    this.provider = provider;
+    notifyListeners();
+  }
+
   @override
   List<ClipboardHistoryEntry> get clipboardHistory => history;
   @override
@@ -231,6 +242,51 @@ void main() {
     },
   );
 
+  testWidgets('mobile shows ChatGPT sign-in instead of an API-key field', (
+    tester,
+  ) async {
+    await tester.binding.setSurfaceSize(const Size(900, 1200));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+    final settings = _Settings(credentials: false)
+      ..provider = CloudProvider.codexOAuth
+      ..modelId = 'chatgpt-transcribe';
+    final cloud = CloudTranscriptionService();
+    addTearDown(cloud.dispose);
+    await tester.pumpWidget(
+      MaterialApp(
+        home: MobileSettingsScreen(
+          settingsService: settings,
+          cloudService: cloud,
+          packageInfoLoader: () async => PackageInfo(
+            appName: 'Beeamvo',
+            packageName: 'com.beeamvo.app',
+            version: '1',
+            buildNumber: '1',
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('ChatGPT account'), findsOneWidget);
+    expect(find.text('Not signed in'), findsOneWidget);
+    expect(find.text('Sign in'), findsOneWidget);
+    expect(
+      find.text('Receives your audio and turns it into text.'),
+      findsOneWidget,
+    );
+    expect(find.text('API key'), findsNothing);
+
+    settings.codexSignedIn = true;
+    settings.notifyListeners();
+    await tester.pumpAndSettle();
+    expect(find.text('Signed in'), findsOneWidget);
+    expect(find.byTooltip('Verify'), findsOneWidget);
+    expect(find.byTooltip('Sign out'), findsOneWidget);
+    expect(find.text('Sign in'), findsNothing);
+    expect(tester.takeException(), isNull);
+  });
+
   testWidgets('home and settings use dark theme surfaces', (tester) async {
     final settings = _Settings(credentials: true);
     await tester.pumpWidget(
@@ -363,55 +419,61 @@ void main() {
     );
   });
 
-  testWidgets('two-step polish offers every provider; transcription only '
-      'Gemini and Vertex', (tester) async {
-    final settings = _Settings(credentials: true);
-    await settings.setTwoPassTranscriptionEnabled(true);
-    await tester.pumpWidget(
-      MaterialApp(
-        home: MobileSettingsScreen(
-          settingsService: settings,
-          cloudService: CloudTranscriptionService(),
-          packageInfoLoader: () async => PackageInfo(
-            appName: 'Beeamvo',
-            packageName: 'com.beeamvo.app',
-            version: '1.2.3',
-            buildNumber: '1',
+  testWidgets(
+    'two-step polish offers every provider; transcription also offers ChatGPT',
+    (tester) async {
+      final settings = _Settings(credentials: true);
+      await settings.setTwoPassTranscriptionEnabled(true);
+      await tester.pumpWidget(
+        MaterialApp(
+          home: MobileSettingsScreen(
+            settingsService: settings,
+            cloudService: CloudTranscriptionService(),
+            packageInfoLoader: () async => PackageInfo(
+              appName: 'Beeamvo',
+              packageName: 'com.beeamvo.app',
+              version: '1.2.3',
+              buildNumber: '1',
+            ),
           ),
         ),
-      ),
-    );
-    await tester.pumpAndSettle();
-    final transcription = tester
-        .widget<DropdownButton<CloudProvider>>(
-          find.byType(DropdownButton<CloudProvider>).first,
-        )
-        .items!
-        .map((i) => i.value);
-    expect(transcription, [CloudProvider.geminiApiKey, CloudProvider.vertexAi]);
+      );
+      await tester.pumpAndSettle();
+      final transcription = tester
+          .widget<DropdownButton<CloudProvider>>(
+            find.byType(DropdownButton<CloudProvider>).first,
+          )
+          .items!
+          .map((i) => i.value);
+      expect(transcription, [
+        CloudProvider.geminiApiKey,
+        CloudProvider.vertexAi,
+        CloudProvider.codexOAuth,
+      ]);
 
-    final polishField = find.byWidgetPredicate(
-      (w) =>
-          w.key is ValueKey<String> &&
-          (w.key! as ValueKey<String>).value.startsWith('polish-provider-'),
-    );
-    await tester.scrollUntilVisible(
-      polishField,
-      200,
-      scrollable: find.byType(Scrollable).first,
-    );
-    final polish = tester
-        .widget<DropdownButton<CloudProvider>>(
-          find.descendant(
-            of: polishField,
-            matching: find.byType(DropdownButton<CloudProvider>),
-          ),
-        )
-        .items!
-        .map((i) => i.value);
-    expect(polish, CloudProvider.values);
-    expect(tester.takeException(), isNull);
-  });
+      final polishField = find.byWidgetPredicate(
+        (w) =>
+            w.key is ValueKey<String> &&
+            (w.key! as ValueKey<String>).value.startsWith('polish-provider-'),
+      );
+      await tester.scrollUntilVisible(
+        polishField,
+        200,
+        scrollable: find.byType(Scrollable).first,
+      );
+      final polish = tester
+          .widget<DropdownButton<CloudProvider>>(
+            find.descendant(
+              of: polishField,
+              matching: find.byType(DropdownButton<CloudProvider>),
+            ),
+          )
+          .items!
+          .map((i) => i.value);
+      expect(polish, CloudProvider.values);
+      expect(tester.takeException(), isNull);
+    },
+  );
 
   testWidgets('history clear all confirms and removes pinned entries', (
     tester,
