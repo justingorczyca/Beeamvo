@@ -14,134 +14,167 @@ const double _kRadiusMd = AppTheme.radiusMd;
 const double _kRadiusLg = AppTheme.radiusLg;
 const double _kRadiusPill = AppTheme.radiusPill;
 
-// ─── Step Shell ──────────────────────────────────────────────────────────
+// ─── Step Navigation ────────────────────────────────────────────────────
 
-/// Consistent layout wrapper for every onboarding step.
-class OnboardingStepShell extends StatelessWidget {
-  final IconData icon;
+class OnboardingNav extends InheritedWidget {
+  final int stepNumber;
+  final int totalSteps;
+  final VoidCallback onBack;
+
+  const OnboardingNav({
+    super.key,
+    required this.stepNumber,
+    required this.totalSteps,
+    required this.onBack,
+    required super.child,
+  });
+
+  static OnboardingNav? maybeOf(BuildContext context) =>
+      context.dependOnInheritedWidgetOfExactType<OnboardingNav>();
+
+  @override
+  bool updateShouldNotify(OnboardingNav oldWidget) =>
+      stepNumber != oldWidget.stepNumber ||
+      totalSteps != oldWidget.totalSteps ||
+      onBack != oldWidget.onBack;
+}
+
+class OnboardingStepScaffold extends StatelessWidget {
   final String title;
   final String subtitle;
-  final Widget child;
-  final double iconSize;
+  final Widget body;
+  final String primaryLabel;
+  final VoidCallback? onPrimary;
+  final bool primaryLoading;
+  final IconData? primaryIcon;
+  final List<Widget> secondaryActions;
 
-  const OnboardingStepShell({
+  const OnboardingStepScaffold({
     super.key,
-    required this.icon,
     required this.title,
     required this.subtitle,
-    required this.child,
-    this.iconSize = 32,
+    required this.body,
+    required this.primaryLabel,
+    required this.onPrimary,
+    this.primaryLoading = false,
+    this.primaryIcon = Icons.arrow_forward_rounded,
+    this.secondaryActions = const [],
   });
 
   @override
   Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 48),
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          const SizedBox(height: 8),
-          // Icon container — compact
-          Container(
-            width: 42,
-            height: 42,
-            decoration: BoxDecoration(
-              color: beeYellow(context).withValues(alpha: 0.10),
-              borderRadius: BorderRadius.circular(_kRadiusMd),
-              border: Border.all(
-                color: beeYellow(context).withValues(alpha: 0.22),
-              ),
-            ),
-            child: Center(
-              child: Icon(
-                icon,
-                size: iconSize * 0.72,
-                color: beeYellow(context),
-              ),
-            ),
-          ),
-          const SizedBox(height: 10),
-          Text(
-            title,
-            textAlign: TextAlign.center,
-            style: GoogleFonts.spaceGrotesk(
-              fontSize: 18,
-              fontWeight: FontWeight.w700,
-              color: beeText(context),
-              letterSpacing: -0.4,
-            ),
-          ),
-          const SizedBox(height: 3),
-          Text(
-            subtitle,
-            textAlign: TextAlign.center,
-            style: GoogleFonts.inter(
-              fontSize: 11,
-              color: beeTextSub(context),
-              height: 1.4,
-            ),
-          ),
-          const SizedBox(height: 12),
-          Flexible(child: child),
-          const SizedBox(height: 4),
-        ],
-      ),
-    );
-  }
-}
-
-// ─── Animated Background ────────────────────────────────────────────────
-
-/// Subtle animated amber-glow background used behind the onboarding wizard.
-class OnboardingBackground extends StatefulWidget {
-  final Widget child;
-  const OnboardingBackground({super.key, required this.child});
-
-  @override
-  State<OnboardingBackground> createState() => _OnboardingBackgroundState();
-}
-
-class _OnboardingBackgroundState extends State<OnboardingBackground>
-    with SingleTickerProviderStateMixin {
-  late AnimationController _controller;
-
-  @override
-  void initState() {
-    super.initState();
-    _controller = AnimationController(
-      duration: const Duration(seconds: 8),
-      vsync: this,
-    )..repeat(reverse: true);
-  }
-
-  @override
-  void dispose() {
-    _controller.dispose();
-    super.dispose();
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return AnimatedBuilder(
-      animation: _controller,
-      builder: (context, child) {
-        final t = _controller.value;
-        return Container(
-          decoration: BoxDecoration(
-            gradient: RadialGradient(
-              center: Alignment(0.0 + 0.3 * (t - 0.5), -0.6 + 0.2 * (t - 0.5)),
-              radius: 1.2,
-              colors: [
-                beeYellow(context).withValues(alpha: 0.04 + 0.02 * t),
-                beeSurface(context).withValues(alpha: 0.0),
+    final nav = OnboardingNav.maybeOf(context);
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Padding(
+          padding: const EdgeInsets.fromLTRB(40, 32, 40, 24),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              if (nav != null) ...[
+                Text(
+                  'STEP ${nav.stepNumber} OF ${nav.totalSteps}',
+                  style: GoogleFonts.inter(
+                    fontSize: 11,
+                    fontWeight: FontWeight.w600,
+                    letterSpacing: 0.8,
+                    color: beeTextMuted(context),
+                  ),
+                ),
+                const SizedBox(height: 12),
               ],
-              stops: const [0.0, 0.7],
+              Text(
+                title,
+                style: GoogleFonts.spaceGrotesk(
+                  fontSize: 26,
+                  fontWeight: FontWeight.w700,
+                  letterSpacing: -0.8,
+                  color: beeText(context),
+                ),
+              ),
+              const SizedBox(height: 8),
+              ConstrainedBox(
+                constraints: const BoxConstraints(maxWidth: 480),
+                child: Text(
+                  subtitle,
+                  style: GoogleFonts.inter(
+                    fontSize: 13,
+                    color: beeTextSub(context),
+                    height: 1.4,
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+        Expanded(
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 40),
+            child: SingleChildScrollView(
+              child: Align(alignment: Alignment.topLeft, child: body),
             ),
           ),
-          child: child,
-        );
-      },
-      child: widget.child,
+        ),
+        Container(
+          constraints: const BoxConstraints(minHeight: 64),
+          padding: const EdgeInsets.symmetric(horizontal: 40, vertical: 12),
+          decoration: BoxDecoration(
+            border: Border(top: BorderSide(color: beeDivider(context))),
+          ),
+          child: LayoutBuilder(
+            builder: (context, constraints) {
+              final actions = [
+                ...secondaryActions,
+                OnboardingPrimaryButton(
+                  label: primaryLabel,
+                  icon: primaryIcon,
+                  onTap: onPrimary,
+                  isLoading: primaryLoading,
+                ),
+              ];
+              final backButton = nav == null
+                  ? null
+                  : OnboardingSecondaryButton(label: 'Back', onTap: nav.onBack);
+              final actionsWrap = Wrap(
+                alignment: WrapAlignment.end,
+                crossAxisAlignment: WrapCrossAlignment.center,
+                spacing: 8,
+                runSpacing: 8,
+                children: actions,
+              );
+              if (constraints.maxWidth < 360) {
+                return Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    if (backButton != null)
+                      Align(alignment: Alignment.centerLeft, child: backButton),
+                    if (backButton != null) const SizedBox(height: 8),
+                    Row(
+                      crossAxisAlignment: CrossAxisAlignment.center,
+                      children: [Flexible(child: actionsWrap)],
+                    ),
+                  ],
+                );
+              }
+              return Row(
+                crossAxisAlignment: CrossAxisAlignment.center,
+                children: [
+                  if (backButton != null) backButton,
+                  const Spacer(),
+                  if (constraints.maxWidth < 520)
+                    Flexible(flex: 4, child: actionsWrap)
+                  else
+                    for (final (index, action) in actions.indexed) ...[
+                      if (index > 0) const SizedBox(width: 8),
+                      action,
+                    ],
+                ],
+              );
+            },
+          ),
+        ),
+      ],
     );
   }
 }
@@ -153,6 +186,7 @@ class OnboardingPrimaryButton extends StatelessWidget {
   final IconData? icon;
   final VoidCallback? onTap;
   final bool isLoading;
+  final bool small;
 
   const OnboardingPrimaryButton({
     super.key,
@@ -160,62 +194,61 @@ class OnboardingPrimaryButton extends StatelessWidget {
     this.icon,
     this.onTap,
     this.isLoading = false,
+    this.small = false,
   });
 
   @override
   Widget build(BuildContext context) {
-    final accent = beeYellow(context);
     final enabled = onTap != null && !isLoading;
     return BeeInteractive(
       onTap: enabled ? onTap : null,
       semanticLabel: isLoading ? '$label (loading)' : label,
       builder: (context, focused) => Opacity(
-        opacity: enabled ? 1.0 : 0.5,
+        opacity: enabled || isLoading ? 1 : 0.4,
         child: AnimatedContainer(
           duration: const Duration(milliseconds: 150),
-          padding: const EdgeInsets.symmetric(horizontal: 28, vertical: 12),
+          height: small ? 32 : 40,
+          padding: EdgeInsets.symmetric(horizontal: small ? 12 : 20),
           decoration: BoxDecoration(
-            gradient: LinearGradient(colors: [accent, beeYellowDim(context)]),
+            color: focused
+                ? beeYellow(context).withValues(alpha: 0.86)
+                : beeYellow(context),
             borderRadius: BorderRadius.circular(_kRadiusMd),
-            border: Border.all(
-              color: focused
-                  ? Colors.white.withValues(alpha: 0.55)
-                  : Colors.transparent,
-              width: 1.5,
-            ),
-            boxShadow: [
-              BoxShadow(
-                color: accent.withValues(alpha: focused ? 0.28 : 0.15),
-                blurRadius: focused ? 16 : 12,
-                spreadRadius: 1,
-              ),
-            ],
           ),
+          foregroundDecoration: focused
+              ? BoxDecoration(
+                  border: Border.all(
+                    color: beeYellow(context).withValues(alpha: 0.35),
+                    width: 2,
+                  ),
+                  borderRadius: BorderRadius.circular(_kRadiusMd + 2),
+                )
+              : null,
           child: Row(
             mainAxisSize: MainAxisSize.min,
             children: [
-              if (icon != null) ...[
-                Icon(icon, size: 18, color: Colors.white),
+              Text(
+                label,
+                style: GoogleFonts.inter(
+                  fontSize: small ? 12 : 13,
+                  fontWeight: FontWeight.w600,
+                  color: beeBlack(context),
+                ),
+              ),
+              if (isLoading) ...[
                 const SizedBox(width: 8),
-              ],
-              if (isLoading)
                 SizedBox(
-                  width: 18,
-                  height: 18,
+                  width: 16,
+                  height: 16,
                   child: CircularProgressIndicator(
                     strokeWidth: 2,
-                    valueColor: const AlwaysStoppedAnimation(Colors.white),
-                  ),
-                )
-              else
-                Text(
-                  label,
-                  style: GoogleFonts.inter(
-                    fontSize: 14,
-                    fontWeight: FontWeight.w700,
-                    color: Colors.white,
+                    valueColor: AlwaysStoppedAnimation(beeBlack(context)),
                   ),
                 ),
+              ] else if (icon != null) ...[
+                const SizedBox(width: 8),
+                Icon(icon, size: 16, color: beeBlack(context)),
+              ],
             ],
           ),
         ),
@@ -229,8 +262,14 @@ class OnboardingPrimaryButton extends StatelessWidget {
 class OnboardingSecondaryButton extends StatelessWidget {
   final String label;
   final VoidCallback? onTap;
+  final bool small;
 
-  const OnboardingSecondaryButton({super.key, required this.label, this.onTap});
+  const OnboardingSecondaryButton({
+    super.key,
+    required this.label,
+    this.onTap,
+    this.small = false,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -240,116 +279,236 @@ class OnboardingSecondaryButton extends StatelessWidget {
       semanticLabel: label,
       builder: (context, focused) => AnimatedContainer(
         duration: const Duration(milliseconds: 150),
-        padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+        height: small ? 32 : 40,
+        padding: EdgeInsets.symmetric(horizontal: small ? 10 : 14),
         decoration: BoxDecoration(
-          color: enabled && focused
-              ? beeText(context).withValues(alpha: 0.06)
+          color: focused
+              ? beeText(context).withValues(alpha: 0.05)
               : Colors.transparent,
           borderRadius: BorderRadius.circular(_kRadiusMd),
         ),
+        child: Center(
+          widthFactor: 1,
+          child: Text(
+            label,
+            style: GoogleFonts.inter(
+              fontSize: small ? 12 : 13,
+              fontWeight: FontWeight.w500,
+              color: enabled ? beeTextSub(context) : beeTextMuted(context),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+// ─── Selection Tile ─────────────────────────────────────────────────────
+
+class OnboardingOptionTile extends StatelessWidget {
+  final IconData icon;
+  final String title;
+  final String description;
+  final String? badge;
+  final bool selected;
+  final bool vertical;
+  final bool compact;
+  final VoidCallback? onTap;
+  final Widget? trailing;
+  final Widget? footer;
+
+  const OnboardingOptionTile({
+    super.key,
+    required this.icon,
+    required this.title,
+    required this.description,
+    this.badge,
+    this.selected = false,
+    this.vertical = false,
+    this.compact = false,
+    this.onTap,
+    this.trailing,
+    this.footer,
+  });
+
+  Widget _iconWell(BuildContext context) {
+    return AnimatedContainer(
+      duration: const Duration(milliseconds: 200),
+      width: compact ? 32 : 36,
+      height: compact ? 32 : 36,
+      decoration: BoxDecoration(
+        color: selected ? beeYellow(context) : beeSurfaceHighest(context),
+        borderRadius: BorderRadius.circular(9),
+      ),
+      child: Icon(
+        icon,
+        size: 18,
+        color: selected ? beeBlack(context) : beeTextSub(context),
+      ),
+    );
+  }
+
+  Widget _title(BuildContext context) {
+    return Row(
+      children: [
+        Flexible(
+          child: Text(
+            title,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: GoogleFonts.inter(
+              fontSize: vertical ? 14 : 14,
+              fontWeight: FontWeight.w600,
+              color: beeText(context),
+            ),
+          ),
+        ),
+        if (badge != null && !vertical) ...[
+          const SizedBox(width: 8),
+          _badge(context),
+        ],
+      ],
+    );
+  }
+
+  Widget _badge(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
+      decoration: BoxDecoration(
+        color: beeText(context).withValues(alpha: 0.06),
+        borderRadius: BorderRadius.circular(_kRadiusPill),
+      ),
+      child: Text(
+        badge!,
+        maxLines: 1,
+        overflow: TextOverflow.ellipsis,
+        style: GoogleFonts.inter(
+          fontSize: 10.5,
+          fontWeight: FontWeight.w600,
+          color: beeTextSub(context),
+        ),
+      ),
+    );
+  }
+
+  Widget _textContent(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        _title(context),
+        const SizedBox(height: 4),
+        Text(
+          description,
+          style: GoogleFonts.inter(
+            fontSize: 12,
+            color: beeTextMuted(context),
+            height: 1.4,
+          ),
+        ),
+        if (vertical && badge != null) ...[
+          const SizedBox(height: 6),
+          _badge(context),
+        ],
+        if (footer != null) ...[const SizedBox(height: 8), footer!],
+      ],
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final selection = trailing ?? BeeRadioIndicator(selected: selected);
+    return Semantics(
+      selected: selected,
+      button: true,
+      child: BeeInteractive(
+        onTap: onTap,
+        semanticLabel: title,
+        selected: selected,
+        toggled: selected,
+        builder: (context, focused) {
+          final borderColor = selected
+              ? beeYellow(context)
+              : focused
+              ? beeTextMuted(context).withValues(alpha: 0.5)
+              : beeBorder(context).withValues(alpha: 0.6);
+          return AnimatedContainer(
+            duration: const Duration(milliseconds: 200),
+            padding: EdgeInsets.symmetric(
+              horizontal: 16,
+              vertical: compact ? 11 : 14,
+            ),
+            decoration: BoxDecoration(
+              color: selected
+                  ? beeYellow(context).withValues(alpha: 0.035)
+                  : beeSurfaceRaised(context),
+              borderRadius: BorderRadius.circular(_kRadiusLg),
+              border: Border.all(color: borderColor, width: selected ? 1.5 : 1),
+            ),
+            child: vertical
+                ? Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          _iconWell(context),
+                          const Spacer(),
+                          selection,
+                        ],
+                      ),
+                      const SizedBox(height: 12),
+                      _textContent(context),
+                    ],
+                  )
+                : Row(
+                    children: [
+                      _iconWell(context),
+                      const SizedBox(width: 14),
+                      Expanded(child: _textContent(context)),
+                      const SizedBox(width: 14),
+                      selection,
+                    ],
+                  ),
+          );
+        },
+      ),
+    );
+  }
+}
+
+class OnboardingKeycap extends StatelessWidget {
+  final String label;
+  final bool small;
+
+  const OnboardingKeycap({super.key, required this.label, this.small = false});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      constraints: BoxConstraints(minWidth: small ? 24 : 40),
+      height: small ? 24 : 40,
+      padding: EdgeInsets.symmetric(horizontal: small ? 6 : 12),
+      decoration: BoxDecoration(
+        color: beeSurface(context),
+        borderRadius: BorderRadius.circular(_kRadiusSm),
+        border: Border(
+          top: BorderSide(color: beeBorder(context)),
+          left: BorderSide(color: beeBorder(context)),
+          right: BorderSide(color: beeBorder(context)),
+          bottom: BorderSide(color: beeBorder(context), width: 2),
+        ),
+      ),
+      child: Align(
+        alignment: Alignment.center,
+        widthFactor: 1,
         child: Text(
           label,
-          style: GoogleFonts.inter(
-            fontSize: 13,
-            fontWeight: FontWeight.w500,
-            color: enabled ? beeTextSub(context) : beeTextMuted(context),
+          style: GoogleFonts.spaceGrotesk(
+            fontSize: small ? 11 : 16,
+            fontWeight: FontWeight.w600,
+            color: beeText(context),
           ),
         ),
-      ),
-    );
-  }
-}
-
-// ─── Progress Bar ───────────────────────────────────────────────────────
-
-class OnboardingProgress extends StatelessWidget {
-  final int currentStep;
-  final int totalSteps;
-
-  const OnboardingProgress({
-    super.key,
-    required this.currentStep,
-    required this.totalSteps,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 48),
-      child: Row(
-        children: List.generate(totalSteps, (i) {
-          final isActive = i == currentStep;
-          final isCompleted = i < currentStep;
-          return Expanded(
-            child: Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 2),
-              child: AnimatedContainer(
-                duration: const Duration(milliseconds: 300),
-                height: 3,
-                decoration: BoxDecoration(
-                  color: isCompleted
-                      ? beeYellow(context)
-                      : isActive
-                      ? beeYellow(context).withValues(alpha: 0.75)
-                      : beeSurfaceHighest(context),
-                  borderRadius: BorderRadius.circular(_kRadiusPill),
-                ),
-              ),
-            ),
-          );
-        }),
-      ),
-    );
-  }
-}
-
-// ─── Glow Card ──────────────────────────────────────────────────────────
-
-class OnboardingGlowCard extends StatelessWidget {
-  final Widget child;
-  final Color? accentColor;
-  final bool isSelected;
-  final VoidCallback? onTap;
-
-  const OnboardingGlowCard({
-    super.key,
-    required this.child,
-    this.accentColor,
-    this.isSelected = false,
-    this.onTap,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    final accent = accentColor ?? beeYellow(context);
-    return BeeInteractive(
-      onTap: onTap,
-      builder: (context, focused) => AnimatedContainer(
-        duration: const Duration(milliseconds: 200),
-        padding: const EdgeInsets.all(10),
-        decoration: BoxDecoration(
-          color: isSelected
-              ? accent.withValues(alpha: 0.08)
-              : beeSurfaceRaised(context),
-          borderRadius: BorderRadius.circular(_kRadiusLg),
-          border: Border.all(
-            color: isSelected
-                ? accent.withValues(alpha: 0.50)
-                : focused
-                ? accent.withValues(alpha: 0.30)
-                : beeBorder(context).withValues(alpha: 0.6),
-          ),
-          boxShadow: isSelected
-              ? [
-                  BoxShadow(
-                    color: accent.withValues(alpha: 0.08),
-                    blurRadius: 16,
-                    spreadRadius: 1,
-                  ),
-                ]
-              : [],
-        ),
-        child: child,
       ),
     );
   }
@@ -378,21 +537,38 @@ class OnboardingTextField extends StatefulWidget {
 }
 
 class _OnboardingTextFieldState extends State<OnboardingTextField> {
+  late final FocusNode _focusNode = FocusNode()..addListener(_onFocusChange);
+
+  void _onFocusChange() => setState(() {});
+
+  @override
+  void dispose() {
+    _focusNode
+      ..removeListener(_onFocusChange)
+      ..dispose();
+    super.dispose();
+  }
+
   @override
   Widget build(BuildContext context) {
     return AnimatedContainer(
-      duration: const Duration(milliseconds: 200),
+      duration: const Duration(milliseconds: 150),
+      height: 44,
       decoration: BoxDecoration(
-        color: beeSurfaceHighest(context),
+        color: beeSurfaceRaised(context),
         borderRadius: BorderRadius.circular(_kRadiusMd),
-        border: Border.all(color: beeBorder(context)),
+        border: Border.all(
+          color: _focusNode.hasFocus ? beeYellow(context) : beeBorder(context),
+          width: _focusNode.hasFocus ? 1.5 : 1,
+        ),
       ),
       child: TextField(
+        focusNode: _focusNode,
         controller: widget.controller,
         obscureText: widget.obscureText,
         onChanged: widget.onChanged,
         style: GoogleFonts.inter(
-          fontSize: 15,
+          fontSize: 14,
           fontWeight: FontWeight.w500,
           color: beeText(context),
         ),
@@ -401,8 +577,8 @@ class _OnboardingTextFieldState extends State<OnboardingTextField> {
           hintStyle: GoogleFonts.inter(color: beeTextMuted(context)),
           border: InputBorder.none,
           contentPadding: const EdgeInsets.symmetric(
-            horizontal: 16,
-            vertical: 14,
+            horizontal: 14,
+            vertical: 11,
           ),
           suffixIcon: widget.suffixIcon,
         ),
@@ -437,7 +613,6 @@ class OnboardingStatusBadge extends StatelessWidget {
       decoration: BoxDecoration(
         color: color.withValues(alpha: 0.10),
         borderRadius: BorderRadius.circular(_kRadiusSm),
-        border: Border.all(color: color.withValues(alpha: 0.25)),
       ),
       child: Row(
         mainAxisSize: MainAxisSize.min,
@@ -455,7 +630,7 @@ class OnboardingStatusBadge extends StatelessWidget {
           Text(
             label,
             style: GoogleFonts.inter(
-              fontSize: 11,
+              fontSize: 12,
               fontWeight: FontWeight.w600,
               color: color,
             ),
