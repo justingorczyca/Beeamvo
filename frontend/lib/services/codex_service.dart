@@ -14,18 +14,10 @@ import 'pinned_http_client.dart';
 import 'responses_stream_parser.dart';
 import 'settings_service.dart';
 
-/// Cloud transcription client backed by the ChatGPT Codex Responses backend
-/// (`{base}/responses`), authenticated via OAuth rather than an API key.
+/// Cloud transcription and text polishing through ChatGPT Codex OAuth.
 ///
-/// Codex is a **text-only, polish-only** provider: the backend does not
-/// accept audio input, so [transcribeAudio] and [transcribeAndImprove] fail
-/// with a clear error and callers should pair Codex with offline Whisper (or
-/// another provider) for the transcription step.
-///
-/// The backend is stream-only in practice: every request sets
-/// `"stream": true` and the response body is consumed as server-sent events.
-/// `response.output_text.delta` events are concatenated, with
-/// `response.completed` used as a fallback when no deltas arrive.
+/// Audio uses ChatGPT's dedicated `/transcribe` endpoint; prompt-capable
+/// models use the stream-only Codex Responses backend.
 class CodexService implements CloudTranscriptionClient {
   CodexService({
     http.Client? httpClient,
@@ -120,6 +112,13 @@ class CodexService implements CloudTranscriptionClient {
 
   Uri get _responsesUri =>
       Uri.parse('${AppConfig.codexDefaultBaseUrl}/responses');
+  Uri get _transcribeUri => Uri.parse(AppConfig.codexTranscribeUrl);
+
+  CloudTranscriptionException _timeoutException() =>
+      CloudTranscriptionException(
+        'ChatGPT Codex did not respond within '
+        '${_requestTimeout.inSeconds} seconds. Try again in a moment.',
+      );
 
   Future<Map<String, String>> _authHeaders({required bool streaming}) async {
     final credentials = await _oauth.loadCredentials();
@@ -199,26 +198,20 @@ class CodexService implements CloudTranscriptionClient {
     };
   }
 
-  /// Sends [payload] to the Codex Responses endpoint and aggregates the SSE
-  /// stream into final text.
-  ///
-  /// A `401` triggers one forced credential refresh and a single retry.
-  /// `429`/5xx statuses retry with bounded delays.
-  Future<String> _postResponses(Map<String, dynamic> payload) async {
+  Future<http.StreamedResponse> _sendWithAuthRetry({
+    required bool streaming,
+    required bool transcriptionEndpoint,
+    required Future<http.StreamedResponse> Function(Map<String, String> headers)
+    requestBuilder,
+  }) async {
     var refreshAttempted = false;
     for (var attempt = 0; ; attempt++) {
       http.StreamedResponse streamed;
       try {
-        final headers = await _authHeaders(streaming: true);
-        final request = http.Request('POST', _responsesUri)
-          ..headers.addAll(headers)
-          ..body = jsonEncode(payload);
-        streamed = await _httpClient.send(request).timeout(_requestTimeout);
+        final headers = await _authHeaders(streaming: streaming);
+        streamed = await requestBuilder(headers).timeout(_requestTimeout);
       } on TimeoutException {
-        throw CloudTranscriptionException(
-          'ChatGPT Codex did not respond within '
-          '${_requestTimeout.inSeconds} seconds. Try again in a moment.',
-        );
+        throw _timeoutException();
       }
 
       if (streamed.statusCode == HttpStatus.unauthorized && !refreshAttempted) {
@@ -245,11 +238,118 @@ class CodexService implements CloudTranscriptionClient {
 
       if (streamed.statusCode < 200 || streamed.statusCode >= 300) {
         await streamed.stream.drain<void>();
-        _throwHttpFailure(streamed.statusCode);
+        _throwHttpFailure(
+          streamed.statusCode,
+          transcriptionEndpoint: transcriptionEndpoint,
+        );
       }
 
-      return _collectStreamedText(streamed.stream);
+      return streamed;
     }
+  }
+
+  /// Sends [payload] to the Codex Responses endpoint and aggregates the SSE
+  /// stream into final text.
+  Future<String> _postResponses(Map<String, dynamic> payload) async {
+    final streamed = await _sendWithAuthRetry(
+      streaming: true,
+      transcriptionEndpoint: false,
+      requestBuilder: (headers) {
+        final request = http.Request('POST', _responsesUri)
+          ..headers.addAll(headers)
+          ..body = jsonEncode(payload);
+        return _httpClient.send(request);
+      },
+    );
+    return _collectStreamedText(streamed.stream);
+  }
+
+  Future<http.StreamedResponse> _postTranscription(
+    Uint8List audioData,
+    String mimeType,
+  ) {
+    final normalizedMimeType = mimeType.toLowerCase().split(';').first.trim();
+    final (filename, contentType) = switch (normalizedMimeType) {
+      'audio/mp4' => ('audio.m4a', http.MediaType('audio', 'mp4')),
+      'audio/m4a' => ('audio.m4a', http.MediaType('audio', 'm4a')),
+      'audio/mpeg' => ('audio.mp3', http.MediaType('audio', 'mpeg')),
+      'audio/webm' => ('audio.webm', http.MediaType('audio', 'webm')),
+      _ => ('audio.wav', http.MediaType('audio', 'wav')),
+    };
+    final language = _settingsService?.spokenLanguage;
+    return _sendWithAuthRetry(
+      streaming: false,
+      transcriptionEndpoint: true,
+      requestBuilder: (headers) {
+        headers.remove(HttpHeaders.contentTypeHeader);
+        final request = http.MultipartRequest('POST', _transcribeUri)
+          ..headers.addAll(headers)
+          ..files.add(
+            http.MultipartFile.fromBytes(
+              'file',
+              audioData,
+              filename: filename,
+              contentType: contentType,
+            ),
+          );
+        if (language != null && language != 'auto') {
+          request.fields['language'] = language;
+        }
+        return _httpClient.send(request);
+      },
+    );
+  }
+
+  static Uint8List _silentWav() {
+    const sampleRate = 16000;
+    const channels = 1;
+    const bitsPerSample = 16;
+    const dataLength = sampleRate * channels * bitsPerSample ~/ 8;
+    final wav = Uint8List(44 + dataLength);
+    final header = ByteData.sublistView(wav);
+    void writeAscii(int offset, String value) {
+      wav.setAll(offset, ascii.encode(value));
+    }
+
+    writeAscii(0, 'RIFF');
+    header.setUint32(4, 36 + dataLength, Endian.little);
+    writeAscii(8, 'WAVE');
+    writeAscii(12, 'fmt ');
+    header.setUint32(16, 16, Endian.little);
+    header.setUint16(20, 1, Endian.little);
+    header.setUint16(22, channels, Endian.little);
+    header.setUint32(24, sampleRate, Endian.little);
+    header.setUint32(
+      28,
+      sampleRate * channels * bitsPerSample ~/ 8,
+      Endian.little,
+    );
+    header.setUint16(32, channels * bitsPerSample ~/ 8, Endian.little);
+    header.setUint16(34, bitsPerSample, Endian.little);
+    writeAscii(36, 'data');
+    header.setUint32(40, dataLength, Endian.little);
+    return wav;
+  }
+
+  @visibleForTesting
+  String parseTranscriptionResponse(http.Response response) {
+    if (response.statusCode < 200 || response.statusCode >= 300) {
+      _throwHttpFailure(response.statusCode, transcriptionEndpoint: true);
+    }
+    late final dynamic decoded;
+    try {
+      decoded = jsonDecode(response.body);
+    } catch (_) {
+      throw CloudTranscriptionException(
+        'ChatGPT returned an invalid transcription response.',
+      );
+    }
+    if (decoded is! Map || decoded['text'] is! String) {
+      throw CloudTranscriptionException(
+        'ChatGPT returned an invalid transcription response.',
+      );
+    }
+    return (decoded['text'] as String).trim();
   }
 
   /// Aggregates `data:` SSE lines into final output text.
@@ -260,7 +360,10 @@ class CodexService implements CloudTranscriptionClient {
     ).collect(byteStream);
   }
 
-  Never _throwHttpFailure(int statusCode) {
+  Never _throwHttpFailure(
+    int statusCode, {
+    bool transcriptionEndpoint = false,
+  }) {
     if (kDebugMode) {
       debugPrint(
         '[CodexService] request failed: HTTP $statusCode; '
@@ -279,6 +382,13 @@ class CodexService implements CloudTranscriptionClient {
           'ChatGPT Codex session expired. Sign in again in Settings.',
         );
       case 404:
+      case 405:
+        if (transcriptionEndpoint) {
+          throw CloudTranscriptionException(
+            "ChatGPT's transcription endpoint is unavailable (HTTP "
+            '$statusCode). Try again later or contact support.',
+          );
+        }
         throw CloudTranscriptionException(
           'ChatGPT Codex could not find the selected model. Choose another '
           'model in Settings.',
@@ -305,7 +415,16 @@ class CodexService implements CloudTranscriptionClient {
   @override
   Future<void> verifySetup() async {
     try {
-      await _postResponses(buildVerifyPayload(_currentModel));
+      if (_currentModel.isTranscriptionOnly) {
+        final response = await _postTranscription(_silentWav(), 'audio/wav');
+        try {
+          await response.stream.drain<void>().timeout(_requestTimeout);
+        } on TimeoutException {
+          throw _timeoutException();
+        }
+      } else {
+        await _postResponses(buildVerifyPayload(_currentModel));
+      }
     } on CodexSignInRequiredException {
       rethrow;
     }
@@ -342,10 +461,27 @@ class CodexService implements CloudTranscriptionClient {
     String? modelOverrideId,
     GeminiThinkingLevel? thinkingLevelOverride,
   }) async {
-    throw CloudTranscriptionException(
-      'ChatGPT Codex models cannot transcribe audio. Transcribe with Gemini '
-      'or the Offline engine, then choose ChatGPT for the two-step polish.',
-    );
+    final model = _resolveModel(modelOverrideId);
+    if (!model.isTranscriptionOnly) {
+      throw CloudTranscriptionException(
+        '${model.displayName} does not accept audio input. Choose ChatGPT '
+        'Transcribe in Settings.',
+      );
+    }
+    try {
+      final streamed = await _postTranscription(audioData, mimeType);
+      late final http.Response response;
+      try {
+        response = await http.Response.fromStream(
+          streamed,
+        ).timeout(_requestTimeout);
+      } on TimeoutException {
+        throw _timeoutException();
+      }
+      return parseTranscriptionResponse(response);
+    } on CodexSignInRequiredException catch (e) {
+      throw CloudTranscriptionException(e.toString());
+    }
   }
 
   @override
@@ -356,6 +492,13 @@ class CodexService implements CloudTranscriptionClient {
     String? modelOverrideId,
     GeminiThinkingLevel? thinkingLevelOverride,
   }) async {
-    return transcribeAudio(audioData, mimeType);
+    final model = _resolveModel(modelOverrideId);
+    if (!model.isTranscriptionOnly) {
+      throw CloudTranscriptionException(
+        '${model.displayName} does not accept audio input. Choose ChatGPT '
+        'Transcribe in Settings.',
+      );
+    }
+    return transcribeAudio(audioData, mimeType, modelOverrideId: model.id);
   }
 }

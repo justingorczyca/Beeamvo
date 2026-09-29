@@ -495,10 +495,11 @@ class AppConfig {
   /// ChatGPT-account models served through the Codex Responses backend
   /// (`https://chatgpt.com/backend-api/codex/responses`, stream-only).
   ///
-  /// None of these accept audio input — Codex is a polish/refinement
-  /// provider. `supportedThinkingLevels` map directly onto
-  /// `reasoning.effort` (`none` maps to `reasoning.effort: none`);
-  /// `chat-latest` sends no `reasoning` block.
+  /// Prompt-capable models use the Codex Responses backend. ChatGPT
+  /// transcription uses the dedicated `/transcribe` endpoint without a model
+  /// field. `supportedThinkingLevels` map directly onto `reasoning.effort`
+  /// (`none` maps to `reasoning.effort: none`); `chat-latest` sends no
+  /// `reasoning` block.
   static const List<GeminiModelConfig> codexModels = [
     _gpt6Astra,
     _gpt6Sol,
@@ -539,6 +540,16 @@ class AppConfig {
       modelName: 'chat-latest',
       description:
           'The model behind ChatGPT. No reasoning step — quickest reply.',
+    ),
+    GeminiModelConfig(
+      id: 'chatgpt-transcribe',
+      name: 'ChatGPT Transcribe',
+      modelName: 'chatgpt-transcribe',
+      isTranscriptionOnly: true,
+      supportsAudio: true,
+      description:
+          "ChatGPT's dictation speech model on your ChatGPT plan. Writing "
+          'styles are not applied.',
     ),
   ];
 
@@ -656,13 +667,12 @@ class AppConfig {
 
   /// Providers allowed to receive raw audio for the first transcription pass
   /// (single-pass cloud dictation, or Pass 1 of two-pass). Local Whisper is
-  /// the other allowed first pass. OpenAI keeps its speech models and its
-  /// `/audio/transcriptions` client support for future use, but the app-level
-  /// pipeline never selects it for audio: every non-Gemini provider only ever
-  /// receives validated transcript text for refinement.
+  /// the other allowed first pass. ChatGPT uses its dedicated `/transcribe`
+  /// endpoint; OpenAI API-key and Grok providers remain polish-only.
   static const Set<CloudProvider> firstPassAudioProviders = {
     CloudProvider.geminiApiKey,
     CloudProvider.vertexAi,
+    CloudProvider.codexOAuth,
   };
 
   /// Whether [provider] may serve the app's raw audio-to-text first pass.
@@ -672,8 +682,7 @@ class AppConfig {
   /// Audio-capable models a provider may actually serve in this app, i.e.
   /// the raw audio-to-text first pass. Restricted to
   /// [firstPassAudioProviders]; refinement-only providers return an empty
-  /// list even when their catalog contains speech models, which keeps them
-  /// out of every selector and makes audio requests fail the runtime guard.
+  /// list even when their catalog contains speech models.
   static List<GeminiModelConfig> audioModelsForProvider(
     CloudProvider provider,
   ) {
@@ -710,9 +719,8 @@ class AppConfig {
   /// first pass.
   ///
   /// Vertex shares the Gemini catalog but cannot serve the dedicated
-  /// transcription model. OpenAI keeps its speech models catalogued for
-  /// future use but is not a first-pass provider in this app, and Codex and
-  /// Grok have no speech models at all.
+  /// Gemini transcription model. OpenAI keeps its speech models catalogued
+  /// for future use but is not a first-pass provider in this app.
   static List<GeminiModelConfig> transcriptionModelsForProvider(
     CloudProvider provider,
   ) {
@@ -721,9 +729,10 @@ class AppConfig {
         return transcriptionModels;
       case CloudProvider.vertexAi:
       case CloudProvider.openaiApiKey:
-      case CloudProvider.codexOAuth:
       case CloudProvider.grokOAuth:
         return const [];
+      case CloudProvider.codexOAuth:
+        return codexModels.where((model) => model.isTranscriptionOnly).toList();
     }
   }
 
@@ -846,12 +855,12 @@ class AppConfig {
   /// Default prompt-capable OpenAI model (refinement + chained single pass).
   static const String defaultOpenAiModelId = 'gpt-5.4-mini';
 
-  /// OpenAI speech model used by `/audio/transcriptions`. Retained for the
+  /// OpenAI speech model used by `/audio/transcriptions`. Retained for
   /// client-level endpoint support; OpenAI is not selectable as the app's
   /// audio first pass (see [firstPassAudioProviders]).
   static const String defaultOpenAiTranscriptionModelId = 'gpt-transcribe';
 
-  /// Default Codex model (refinement only — Codex models cannot transcribe).
+  /// Default Codex model for prompt-capable polish.
   static const String defaultCodexModelId = 'gpt-5.6-terra';
 
   /// Base URL for the standard OpenAI API; overridable for compatible
@@ -861,6 +870,10 @@ class AppConfig {
   /// Codex Responses backend root; `/responses` is appended per request.
   static const String codexDefaultBaseUrl =
       'https://chatgpt.com/backend-api/codex';
+
+  /// ChatGPT-account transcription endpoint used by Codex OAuth.
+  static const String codexTranscribeUrl =
+      'https://chatgpt.com/backend-api/transcribe';
 
   /// Default Grok model (refinement only — Grok models cannot transcribe).
   static const String defaultGrokModelId = 'grok-4.3';

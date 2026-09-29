@@ -311,14 +311,17 @@ class _ProviderStepState extends State<ProviderStep>
           // Cloud provider sub-choice
           if (_backend == TranscriptionBackend.cloud) ...[
             const SizedBox(height: 10),
-            Row(
-              children: [
-                for (final (i, provider)
-                    in AppConfig.firstPassAudioProviders.indexed) ...[
-                  if (i > 0) const SizedBox(width: 8),
-                  Expanded(child: _providerCard(provider)),
+            IntrinsicHeight(
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  for (final (i, provider)
+                      in AppConfig.firstPassAudioProviders.indexed) ...[
+                    if (i > 0) const SizedBox(width: 8),
+                    Expanded(child: _providerCard(provider)),
+                  ],
                 ],
-              ],
+              ),
             ),
           ],
 
@@ -574,7 +577,7 @@ class _ApiKeyStepState extends State<ApiKeyStep>
       ),
       CloudProvider.codexOAuth => (
         'ChatGPT Sign-In',
-        'Sign in with your ChatGPT account — no API key needed. Codex models polish text; pair them with Offline for speech-to-text.',
+        'Sign in with your ChatGPT account — no API key needed. ChatGPT Transcribe turns speech into text on your ChatGPT plan.',
       ),
       CloudProvider.grokOAuth => (
         'xAI Sign-In',

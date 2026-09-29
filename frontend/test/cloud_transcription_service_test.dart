@@ -471,15 +471,27 @@ void main() {
       );
     });
 
+    test('verifies Codex first pass using its transcription model', () async {
+      final codexClient = FakeCloudClient();
+      final settings = _ReadyCodexSettings();
+      final service = CloudTranscriptionService(codexService: codexClient);
+      addTearDown(service.dispose);
+      service.attachSettings(settings);
+
+      await service.verifyTranscriptionSetup(settings);
+
+      expect(codexClient.verifyCalls, 1);
+      expect(codexClient.selectedModelIds, contains('chatgpt-transcribe'));
+    });
+
     test(
       'orchestrator refuses to send audio to a non-first-pass provider',
       () async {
         final openAiClient = FakeCloudClient(response: 'audio reply');
         final service = CloudTranscriptionService(openAiService: openAiClient);
         addTearDown(service.dispose);
-        // OpenAI keeps speech models in its catalog, but the audio first pass
-        // is restricted to the Gemini family; no orchestrator path may send
-        // audio to it.
+        // OpenAI keeps speech models in its catalog, but it is not a
+        // first-pass provider; no orchestrator path may send audio to it.
         service.attachSettings(
           FakeCloudSettingsService(
             provider: CloudProvider.openaiApiKey,
@@ -648,6 +660,65 @@ void main() {
       },
     );
 
+    test(
+      'Codex single-pass uses ChatGPT Transcribe without a prompt',
+      () async {
+        final codex = FakeCloudClient(response: 'raw ChatGPT transcript');
+        final service = CloudTranscriptionService(codexService: codex);
+        addTearDown(service.dispose);
+        service.attachSettings(
+          FakeCloudSettingsService(
+            provider: CloudProvider.codexOAuth,
+            modelId: 'chatgpt-transcribe',
+          ),
+        );
+
+        expect(
+          await service.transcribeSinglePass(
+            Uint8List.fromList([1, 2, 3]),
+            'audio/wav',
+            missionInstruction: 'This must not be applied.',
+          ),
+          'raw ChatGPT transcript',
+        );
+        expect(codex.transcribeCalls, 1);
+        expect(codex.lastTranscribeModelOverrideId, 'chatgpt-transcribe');
+        expect(codex.transcribeAndImproveCalls, 0);
+        expect(codex.improveCalls, 0);
+      },
+    );
+
+    test(
+      'Codex two-pass transcribes first and polishes with a GPT model',
+      () async {
+        final codex = FakeCloudClient(response: 'raw transcript');
+        final settings = FakeCloudSettingsService(
+          provider: CloudProvider.codexOAuth,
+          modelId: 'chatgpt-transcribe',
+          refinement: CloudProvider.codexOAuth,
+        );
+        final service = CloudTranscriptionService(codexService: codex);
+        addTearDown(service.dispose);
+        service.attachSettings(settings);
+
+        expect(
+          await service.transcribeTwoPass(
+            Uint8List.fromList([1, 2, 3]),
+            'audio/wav',
+            settings: settings,
+            missionInstruction: 'Polish this transcript.',
+          ),
+          'raw transcript',
+        );
+        expect(codex.transcribeCalls, 1);
+        expect(codex.lastTranscribeModelOverrideId, 'chatgpt-transcribe');
+        expect(codex.improveCalls, 1);
+        expect(codex.lastImproveModelOverrideId, AppConfig.defaultCodexModelId);
+        expect(codex.lastImproveModelOverrideId, isNot('chatgpt-transcribe'));
+        expect(codex.transcribeAndImproveCalls, 0);
+      },
+    );
+
     for (final model in AppConfig.mainModels) {
       test(
         'single-pass keeps style processing in one request for ${model.id}',
@@ -802,4 +873,12 @@ class _ReadySettings extends FakeCloudSettingsService {
 
   @override
   bool hasCredentialsForProvider(CloudProvider provider) => true;
+}
+
+class _ReadyCodexSettings extends FakeCloudSettingsService {
+  _ReadyCodexSettings()
+    : super(provider: CloudProvider.codexOAuth, modelId: 'chatgpt-transcribe');
+
+  @override
+  bool get hasCloudCredentials => true;
 }

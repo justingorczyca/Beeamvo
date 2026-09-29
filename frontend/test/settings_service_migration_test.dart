@@ -225,6 +225,33 @@ void main() {
     });
   }
 
+  test('a migrated Codex first pass survives a later launch', () async {
+    final (settings, file) = await _initWith(root, {
+      'cloud_provider': 'codexOAuth',
+      'legacy_primary_roles_migrated': true,
+    });
+    await settings.setSelectedModelId('chatgpt-transcribe');
+
+    final reloaded = SettingsService(
+      applicationSupportDirectory: root,
+      credentialStore: InMemorySecureCredentialStore(),
+    );
+    await reloaded.initialize();
+
+    expect(reloaded.cloudProvider, CloudProvider.codexOAuth);
+    expect(reloaded.selectedModelId, 'chatgpt-transcribe');
+    expect(
+      jsonDecode(await file.readAsString())['legacy_primary_roles_migrated'],
+      isTrue,
+    );
+  });
+
+  test('a fresh install records the legacy primary migration flag', () async {
+    final (_, file) = await _initWith(root, {});
+    final persisted = jsonDecode(await file.readAsString()) as Map;
+    expect(persisted['legacy_primary_roles_migrated'], isTrue);
+  });
+
   test(
     'a text-only primary without a usable first pass falls back to Gemini',
     () async {

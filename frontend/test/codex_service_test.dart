@@ -7,6 +7,7 @@ import 'package:beeamvo/services/cloud_transcription_client.dart';
 import 'package:beeamvo/services/codex_oauth_manager.dart';
 import 'package:beeamvo/services/codex_service.dart';
 import 'package:beeamvo/services/secure_credential_store.dart';
+import 'package:beeamvo/services/settings_service.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
@@ -16,6 +17,14 @@ http.StreamedResponse _sse(String body, {int status = 200}) {
     Stream<List<int>>.fromIterable([utf8.encode(body)]),
     status,
     headers: {'content-type': 'text/event-stream'},
+  );
+}
+
+http.StreamedResponse _json(String body, {int status = 200}) {
+  return http.StreamedResponse(
+    Stream<List<int>>.fromIterable([utf8.encode(body)]),
+    status,
+    headers: {'content-type': 'application/json'},
   );
 }
 
@@ -51,6 +60,15 @@ CodexCredentials _credentials({
     createdAt: now,
     updatedAt: now,
   );
+}
+
+class _TestSettings extends SettingsService {
+  _TestSettings(this.spokenLanguageOverride);
+
+  final String spokenLanguageOverride;
+
+  @override
+  String get spokenLanguage => spokenLanguageOverride;
 }
 
 void main() {
@@ -240,26 +258,304 @@ void main() {
 
   group('audio surface', () {
     test(
-      'audio entry points fail with a clear Codex limitation error',
+      'posts multipart audio to the dedicated endpoint with Codex headers',
+      () async {
+        final audio = Uint8List.fromList([0, 1, 2, 255, 42]);
+        http.BaseRequest? captured;
+        Uint8List? body;
+        final service = CodexService(
+          oauthManager: await signedIn(),
+          httpClient: MockClient.streaming((request, requestBody) async {
+            captured = request;
+            body = await requestBody.toBytes();
+            return _json('{"text":"  transcribed words  "}');
+          }),
+        );
+        expect(
+          await service.transcribeAudio(
+            audio,
+            'audio/wav',
+            modelOverrideId: 'chatgpt-transcribe',
+          ),
+          'transcribed words',
+        );
+
+        expect(captured!.url, Uri.parse(AppConfig.codexTranscribeUrl));
+        expect(captured!.headers['authorization'], 'Bearer at-valid');
+        expect(captured!.headers['ChatGPT-Account-Id'], 'acct-1');
+        expect(captured!.headers['originator'], 'beeamvo');
+        expect(captured!.headers['user-agent'], 'Beeamvo/1.0');
+        expect(captured!.headers['session_id'], isNotEmpty);
+        expect(captured!.headers['accept'], isNull);
+        expect(
+          captured!.headers['content-type'],
+          startsWith('multipart/form-data; boundary='),
+        );
+        final multipart = latin1.decode(body!);
+        expect(multipart, contains('name="file"; filename="audio.wav"'));
+        expect(multipart, contains('content-type: audio/wav'));
+        expect(multipart, contains('name="file"'));
+        expect(multipart, isNot(contains('name="model"')));
+        expect(body, containsAllInOrder(audio));
+      },
+    );
+
+    test(
+      'sends language when selected and omits automatic detection',
+      () async {
+        final payloads = <String>[];
+        final manager = await signedIn();
+        final client = MockClient.streaming((_, requestBody) async {
+          payloads.add(latin1.decode(await requestBody.toBytes()));
+          return _json('{"text":"ok"}');
+        });
+        final service = CodexService(oauthManager: manager, httpClient: client);
+        service.attachSettings(_TestSettings('de'));
+        await service.transcribeAudio(
+          Uint8List.fromList([1]),
+          'audio/wav',
+          modelOverrideId: 'chatgpt-transcribe',
+        );
+        service.attachSettings(_TestSettings('auto'));
+        await service.transcribeAudio(
+          Uint8List.fromList([2]),
+          'audio/wav',
+          modelOverrideId: 'chatgpt-transcribe',
+        );
+
+        expect(payloads.first, contains('name="language"\r\n\r\nde'));
+        expect(payloads.last, isNot(contains('name="language"')));
+      },
+    );
+
+    test('maps supported MIME types to their expected filenames', () async {
+      final filenames = <String>[];
+      final service = CodexService(
+        oauthManager: await signedIn(),
+        httpClient: MockClient.streaming((_, requestBody) async {
+          filenames.add(latin1.decode(await requestBody.toBytes()));
+          return _json('{"text":"ok"}');
+        }),
+      );
+      for (final (mimeType, filename) in const [
+        ('audio/wav', 'audio.wav'),
+        ('audio/mp4', 'audio.m4a'),
+        ('audio/m4a', 'audio.m4a'),
+        ('audio/mpeg', 'audio.mp3'),
+        ('audio/webm', 'audio.webm'),
+        ('audio/unknown', 'audio.wav'),
+      ]) {
+        await service.transcribeAudio(
+          Uint8List.fromList([1]),
+          mimeType,
+          modelOverrideId: 'chatgpt-transcribe',
+        );
+        expect(filenames.last, contains('filename="$filename"'));
+      }
+    });
+
+    test(
+      'transcribeAndImprove returns raw transcription-only output',
       () async {
         final service = CodexService(
-          httpClient: MockClient.streaming((_, _) async => _sse('')),
+          oauthManager: await signedIn(),
+          httpClient: MockClient.streaming(
+            (_, _) async => _json('{"text":"  raw speech  "}'),
+          ),
         );
-        for (final call in [
-          () => service.transcribeAudio(Uint8List(0), 'audio/wav'),
-          () => service.transcribeAndImprove(Uint8List(0), 'audio/wav'),
-        ]) {
-          await expectLater(
-            call(),
-            throwsA(
-              isA<CloudTranscriptionException>().having(
-                (e) => e.message,
-                'message',
-                contains('cannot transcribe audio'),
-              ),
-            ),
+        expect(
+          await service.transcribeAndImprove(
+            Uint8List.fromList([1]),
+            'audio/wav',
+            modelOverrideId: 'chatgpt-transcribe',
+          ),
+          'raw speech',
+        );
+      },
+    );
+
+    test('prompt-capable Codex models are rejected for audio', () async {
+      var calls = 0;
+      final service = CodexService(
+        oauthManager: await signedIn(),
+        httpClient: MockClient.streaming((_, _) async {
+          calls++;
+          return _json('{"text":"unused"}');
+        }),
+      );
+      await expectLater(
+        service.transcribeAudio(
+          Uint8List.fromList([1]),
+          'audio/wav',
+          modelOverrideId: AppConfig.defaultCodexModelId,
+        ),
+        throwsA(
+          isA<CloudTranscriptionException>().having(
+            (e) => e.message,
+            'message',
+            contains('does not accept audio'),
+          ),
+        ),
+      );
+      expect(calls, 0);
+    });
+
+    test(
+      'missing or non-string text is rejected; empty string is preserved',
+      () async {
+        for (final body in const ['{}', '{"text":2}', '{"text":""}']) {
+          final service = CodexService(
+            oauthManager: await signedIn(),
+            httpClient: MockClient.streaming((_, _) async => _json(body)),
           );
+          final request = service.transcribeAudio(
+            Uint8List.fromList([1]),
+            'audio/wav',
+            modelOverrideId: 'chatgpt-transcribe',
+          );
+          if (body == '{"text":""}') {
+            expect(await request, isEmpty);
+          } else {
+            await expectLater(
+              request,
+              throwsA(isA<CloudTranscriptionException>()),
+            );
+          }
         }
+      },
+    );
+
+    test(
+      'transcription verification uploads a one-second silent WAV',
+      () async {
+        http.BaseRequest? captured;
+        Uint8List? body;
+        final service = CodexService(
+          oauthManager: await signedIn(),
+          httpClient: MockClient.streaming((request, requestBody) async {
+            captured = request;
+            body = await requestBody.toBytes();
+            return _json('{"text":""}');
+          }),
+        );
+        service.setModelById('chatgpt-transcribe');
+        await service.verifySetup();
+
+        expect(captured!.url, Uri.parse(AppConfig.codexTranscribeUrl));
+        expect(
+          captured!.headers['content-type'],
+          startsWith('multipart/form-data'),
+        );
+        final multipart = latin1.decode(body!);
+        expect(multipart, contains('filename="audio.wav"'));
+        expect(multipart, contains('RIFF'));
+        expect(multipart, contains('WAVE'));
+        expect(multipart, isNot(contains('name="model"')));
+      },
+    );
+
+    for (final status in const [404, 405]) {
+      test('$status reports that transcription is unavailable', () async {
+        final service = CodexService(
+          oauthManager: await signedIn(),
+          httpClient: MockClient.streaming(
+            (_, _) async => _json('', status: status),
+          ),
+        );
+        await expectLater(
+          service.transcribeAudio(
+            Uint8List.fromList([1]),
+            'audio/wav',
+            modelOverrideId: 'chatgpt-transcribe',
+          ),
+          throwsA(
+            isA<CloudTranscriptionException>().having(
+              (e) => e.message,
+              'message',
+              contains("ChatGPT's transcription endpoint is unavailable"),
+            ),
+          ),
+        );
+      });
+    }
+
+    test('429 and server errors retain safe status messages', () async {
+      final rateLimited = CodexService(
+        oauthManager: await signedIn(),
+        httpClient: MockClient.streaming((_, _) async {
+          return _json('', status: 429);
+        }),
+      );
+      await expectLater(
+        rateLimited.transcribeAudio(
+          Uint8List.fromList([1]),
+          'audio/wav',
+          modelOverrideId: 'chatgpt-transcribe',
+        ),
+        throwsA(
+          isA<CloudTranscriptionException>().having(
+            (e) => e.message,
+            'message',
+            contains('rate-limiting'),
+          ),
+        ),
+      );
+
+      final unavailable = CodexService(
+        oauthManager: await signedIn(),
+        httpClient: MockClient.streaming(
+          (_, _) async => _json('', status: 500),
+        ),
+      );
+      await expectLater(
+        unavailable.transcribeAudio(
+          Uint8List.fromList([1]),
+          'audio/wav',
+          modelOverrideId: 'chatgpt-transcribe',
+        ),
+        throwsA(
+          isA<CloudTranscriptionException>().having(
+            (e) => e.message,
+            'message',
+            contains('temporarily unavailable'),
+          ),
+        ),
+      );
+    });
+
+    test(
+      'a 401 refresh retries with a freshly built multipart request',
+      () async {
+        final manager = oauth();
+        await manager.saveCredentials(_credentials(accessToken: 'at-stale'));
+        final requests = <http.BaseRequest>[];
+        final bodies = <Uint8List>[];
+        final service = CodexService(
+          oauthManager: manager,
+          httpClient: MockClient.streaming((request, requestBody) async {
+            requests.add(request);
+            bodies.add(await requestBody.toBytes());
+            if (requests.length == 1) return _json('', status: 401);
+            return _json('{"text":"fresh"}');
+          }),
+        );
+
+        expect(
+          await service.transcribeAudio(
+            Uint8List.fromList([1, 2, 3]),
+            'audio/wav',
+            modelOverrideId: 'chatgpt-transcribe',
+          ),
+          'fresh',
+        );
+        expect(requests, hasLength(2));
+        expect(identical(requests.first, requests.last), isFalse);
+        expect(requests.map((request) => request.headers['authorization']), [
+          'Bearer at-stale',
+          'Bearer at-refreshed',
+        ]);
+        expect(bodies.first, isNot(equals(bodies.last)));
+        expect(tokenBodies.single['grant_type'], 'refresh_token');
       },
     );
   });

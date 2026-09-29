@@ -362,7 +362,7 @@ void main() {
     );
   });
 
-  testWidgets('the transcription account offers only Gemini and Vertex', (
+  testWidgets('the transcription account offers all audio providers', (
     WidgetTester tester,
   ) async {
     final settings = FakeAiModelsSettingsService();
@@ -372,6 +372,7 @@ void main() {
     expect(picker().options.map((o) => o.val), [
       CloudProvider.geminiApiKey,
       CloudProvider.vertexAi,
+      CloudProvider.codexOAuth,
     ]);
 
     await tester.tap(find.text('Vertex AI'));
@@ -379,6 +380,59 @@ void main() {
     expect(settings.provider, CloudProvider.vertexAi);
     expect(picker().value, CloudProvider.vertexAi);
     expect(find.text('Project ID'), findsOneWidget);
+  });
+
+  testWidgets('ChatGPT is a first-pass option without a segmented overflow', (
+    WidgetTester tester,
+  ) async {
+    final settings = FakeAiModelsSettingsService(twoPassEnabled: false);
+    await _pumpAiModelsPage(tester, settings);
+    BeeSegmented<CloudProvider> picker() =>
+        tester.widget(find.byKey(const ValueKey('transcription-provider')));
+    expect(picker().options.map((o) => o.val), [
+      CloudProvider.geminiApiKey,
+      CloudProvider.vertexAi,
+      CloudProvider.codexOAuth,
+    ]);
+
+    await tester.tap(find.text('ChatGPT'));
+    await tester.pumpAndSettle();
+
+    expect(settings.provider, CloudProvider.codexOAuth);
+    expect(picker().value, CloudProvider.codexOAuth);
+    expect(find.text('ChatGPT Sign-In'), findsOneWidget);
+    expect(find.text('ChatGPT Transcribe'), findsOneWidget);
+    expect(
+      find.text(
+        'ChatGPT transcribes your audio in the cloud. '
+        'Turn on two-step refinement to apply your writing style.',
+      ),
+      findsOneWidget,
+    );
+    expect(find.byKey(const ValueKey('first-pass-thinking')), findsNothing);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('ChatGPT engine description reflects the enabled polish step', (
+    WidgetTester tester,
+  ) async {
+    await _pumpAiModelsPage(
+      tester,
+      FakeAiModelsSettingsService(
+        provider: CloudProvider.codexOAuth,
+        selectedModel: 'chatgpt-transcribe',
+        twoPassEnabled: true,
+      ),
+    );
+
+    expect(
+      find.text(
+        'ChatGPT transcribes your audio in the cloud; '
+        'the polish step applies your writing style.',
+      ),
+      findsOneWidget,
+    );
+    expect(tester.takeException(), isNull);
   });
 
   testWidgets('every provider is offered for the polish step', (

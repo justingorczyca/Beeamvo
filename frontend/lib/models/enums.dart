@@ -65,8 +65,8 @@ extension CloudProviderExtension on CloudProvider {
       case CloudProvider.openaiApiKey:
         return 'An OpenAI API key, or any OpenAI-compatible endpoint.';
       case CloudProvider.codexOAuth:
-        return 'Sign in with your ChatGPT account. GPT-5.6 and GPT-6 models, '
-            'no API key.';
+        return 'Sign in with your ChatGPT account. ChatGPT Transcribe for '
+            'speech plus GPT-5.6 and GPT-6 for polish, no API key.';
       case CloudProvider.grokOAuth:
         return 'Sign in with your xAI account. Grok models, no API key.';
     }
