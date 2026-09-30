@@ -111,10 +111,11 @@ class GeminiModelConfig {
 
   final List<GeminiThinkingLevel> supportedThinkingLevels;
 
-  /// True when this model is a dedicated speech-to-text model. It can be used
-  /// for any raw audio-to-text pass (single-pass or Pass 1 of two-pass), but
-  /// it cannot follow mission prompts, so it is excluded from refinement and
-  /// transcribe-and-improve paths.
+  /// Only `gemini-3.5-transcribe` (Gemini API) and `chatgpt-transcribe`
+  /// (Codex) are selectable first-pass speech-only models. OpenAI Transcribe
+  /// models and `whisper-1` are catalogued but not selectable as first pass.
+  /// These models cannot follow mission prompts, so they are excluded from
+  /// refinement and transcribe-and-improve paths.
   final bool isTranscriptionOnly;
 
   /// Audio support on the provider API used by this application.
@@ -187,6 +188,10 @@ class GeminiModelConfig {
 }
 
 class AppConfig {
+  /// Explains why a transcription-only model cannot apply a writing style.
+  static const String transcriptionOnlyStyleNotice =
+      'Speech-to-text only. Your writing style resets to Default. To use another style, choose a different model or turn on Two-Step Refinement.';
+
   static const List<GeminiModelConfig> availableModels = [
     GeminiModelConfig(
       id: 'gemini-3.7-flash',

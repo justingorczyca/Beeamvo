@@ -1,5 +1,6 @@
 import 'package:beeamvo/models/enums.dart';
 import 'package:beeamvo/models/hotkey_config.dart';
+import 'package:beeamvo/models/system_prompt.dart';
 import 'package:beeamvo/services/settings_service.dart';
 import 'package:beeamvo/theme/app_theme.dart';
 import 'package:beeamvo/widgets/onboarding/onboarding_shared.dart';
@@ -172,6 +173,41 @@ void main() {
       findsNothing,
     );
   });
+
+  testWidgets(
+    'two-step transcription-only Finish style shows the selected prompt',
+    (tester) async {
+      final settings = OnboardingTestSettingsService(
+        provider: CloudProvider.geminiApiKey,
+        hasGeminiKey: true,
+      );
+      await settings.setSelectedModelId('gemini-3.5-transcribe');
+      await settings.setTwoPassTranscriptionEnabled(true);
+      await _pumpStep(
+        tester,
+        ReadyStep(
+          onFinish: () {},
+          onGoToModelStep: () {},
+          settingsService: settings,
+        ),
+        const Size(860, 640),
+      );
+
+      final styleRow = find
+          .ancestor(of: find.text('Style'), matching: find.byType(Row))
+          .first;
+      expect(
+        find.descendant(
+          of: styleRow,
+          matching: find.text(
+            SystemPrompt.getById(settings.selectedPromptId).name,
+          ),
+        ),
+        findsOneWidget,
+      );
+      expect(find.text('Not applied'), findsNothing);
+    },
+  );
 
   testWidgets('onboarding steps do not overflow at 390px width', (
     tester,

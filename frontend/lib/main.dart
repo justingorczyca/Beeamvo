@@ -208,6 +208,9 @@ class _BeeamvoHomeState extends State<BeeamvoHome>
   // same time. A newer request supersedes queued work that has not started.
   Future<void> _backendTransitionQueue = Future<void>.value();
   int _backendTransitionRevision = 0;
+  bool _trayInitialized = false;
+  String? _lastTrayPromptId;
+  bool? _lastTrayPromptsApply;
   // The effective transcription backend captured at recording start. Pinned
   // for the whole session so a mid-session settings change cannot redirect the
   // captured audio to a different (wrong) transcription path at stop time.
@@ -259,6 +262,15 @@ class _BeeamvoHomeState extends State<BeeamvoHome>
       unawaited(_scheduleBackendTransition(current));
     }
     _lastSeenBackend = current;
+    final promptId = _settingsService.selectedPromptId;
+    final promptsApply = _settingsService.promptIsApplied;
+    if (_trayInitialized &&
+        (promptId != _lastTrayPromptId ||
+            promptsApply != _lastTrayPromptsApply)) {
+      unawaited(_trayService.updateContextMenu());
+    }
+    _lastTrayPromptId = promptId;
+    _lastTrayPromptsApply = promptsApply;
     // Clipboard settings are changed from several pages and tray flows. Keep
     // the monitor in sync immediately instead of waiting for Settings to close.
     _syncClipboardMonitor();
@@ -377,6 +389,9 @@ class _BeeamvoHomeState extends State<BeeamvoHome>
             );
           },
         );
+        _trayInitialized = true;
+        _lastTrayPromptId = _settingsService.selectedPromptId;
+        _lastTrayPromptsApply = _settingsService.promptIsApplied;
         debugPrint('Tray initialized');
       } catch (e) {
         debugPrint('Tray initialization failed (non-critical): $e');
@@ -1413,7 +1428,10 @@ class _BeeamvoHomeState extends State<BeeamvoHome>
           'backend=${backend.name} twoPass=$twoPassEnabled',
         );
       }
-      final instruction = selectedPrompt.instruction;
+      final instruction = SystemPrompt.withTone(
+        selectedPrompt.instruction,
+        _settingsService.toneRefinement,
+      );
 
       String improvedText;
       if (backend == TranscriptionBackend.whisper) {

@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/services.dart';
 import 'package:flutter/foundation.dart';
 
+import '../models/system_prompt.dart';
 import '../services/cloud_transcription_client.dart';
 import '../services/cloud_transcription_service.dart';
 import '../services/recording_service.dart';
@@ -212,9 +213,13 @@ class MobileTranscriptionController extends ChangeNotifier {
         );
       }
       final prompt = settingsService.selectedPrompt;
+      final instruction = SystemPrompt.withTone(
+        prompt.instruction,
+        settingsService.toneRefinement,
+      );
       final text = settingsService.twoPassTranscriptionEnabled
-          ? await _twoPass(audio, prompt.instruction)
-          : await _singlePass(audio, prompt.instruction);
+          ? await _twoPass(audio, instruction)
+          : await _singlePass(audio, instruction);
       if (_disposed || operation != _operation) return;
       await Clipboard.setData(ClipboardData(text: text));
       await settingsService.addClipboardEntry(text);

@@ -1,5 +1,6 @@
 import 'dart:typed_data';
 
+import 'package:beeamvo/config.dart';
 import 'package:beeamvo/mobile/mobile_transcription_controller.dart';
 import 'package:beeamvo/mobile/screens/mobile_history_screen.dart';
 import 'package:beeamvo/mobile/screens/mobile_home_screen.dart';
@@ -20,6 +21,7 @@ class _Settings extends SettingsService {
   final history = <ClipboardHistoryEntry>[];
   String promptId = 'standard';
   String modelId = 'gemini-3.5-flash-lite';
+  ToneRefinement tone = ToneRefinement.off;
   CloudProvider provider = CloudProvider.geminiApiKey;
   bool codexSignedIn = false;
   bool? clearKeepPinned;
@@ -44,11 +46,17 @@ class _Settings extends SettingsService {
   @override
   Future<void> setSelectedModelId(String value) async {
     modelId = value;
+    if (!promptIsApplied) {
+      promptId = SystemPrompt.defaultId;
+      tone = ToneRefinement.off;
+    }
     notifyListeners();
   }
 
   @override
   String get selectedPromptId => promptId;
+  @override
+  ToneRefinement get toneRefinement => tone;
   @override
   List<SystemPrompt> get customPrompts => const [];
   @override
@@ -68,7 +76,15 @@ class _Settings extends SettingsService {
 
   @override
   Future<void> setSelectedPromptId(String value) async {
+    if (!promptIsApplied && value != SystemPrompt.defaultId) return;
     promptId = value;
+    notifyListeners();
+  }
+
+  @override
+  Future<void> setToneRefinement(ToneRefinement value) async {
+    if (!promptIsApplied && value != ToneRefinement.off) return;
+    tone = value;
     notifyListeners();
   }
 
@@ -183,14 +199,83 @@ void main() {
     expect(find.text(nextPrompt.name), findsOneWidget);
   });
 
+  testWidgets('mobile resets style when selecting standalone Transcribe', (
+    tester,
+  ) async {
+    await tester.binding.setSurfaceSize(const Size(900, 1200));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+    final settings = _Settings(credentials: true)
+      ..promptId = SystemPrompt.professionalId
+      ..tone = ToneRefinement.high;
+    final cloud = CloudTranscriptionService();
+    addTearDown(cloud.dispose);
+    await tester.pumpWidget(
+      MaterialApp(
+        home: MobileSettingsScreen(
+          settingsService: settings,
+          cloudService: cloud,
+          packageInfoLoader: () async => PackageInfo(
+            appName: 'Beeamvo',
+            packageName: 'com.beeamvo.app',
+            version: '1',
+            buildNumber: '1',
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    final fields = tester
+        .widgetList<DropdownButtonFormField<String>>(
+          find.byType(DropdownButtonFormField<String>),
+        )
+        .toList();
+    final modelDropdown = tester
+        .widgetList<DropdownButton<String>>(find.byType(DropdownButton<String>))
+        .first;
+    expect(
+      modelDropdown.items!.map((item) => item.value),
+      containsAll([
+        'gemini-3.5-transcribe',
+        'gemini-3.1-flash-lite',
+        'gemini-2.5-flash',
+        'gemini-2.5-flash-lite',
+      ]),
+    );
+    fields.first.onChanged!('gemini-3.5-transcribe');
+    await tester.pumpAndSettle();
+    expect(settings.selectedModelId, 'gemini-3.5-transcribe');
+    expect(settings.twoPassTranscriptionEnabled, isFalse);
+    expect(settings.selectedPromptId, SystemPrompt.defaultId);
+    expect(settings.toneRefinement, ToneRefinement.off);
+    expect(find.text(AppConfig.transcriptionOnlyStyleNotice), findsOneWidget);
+    final updated = tester
+        .widgetList<DropdownButtonFormField<String>>(
+          find.byType(DropdownButtonFormField<String>),
+        )
+        .toList();
+    expect(updated[1].onChanged, isNull);
+    expect(updated[1].initialValue, SystemPrompt.defaultId);
+    expect(
+      updated[1].decoration.helperText,
+      'Default only with this model. Choose another model or turn on two-step refinement.',
+    );
+    final toneDropdown = tester.widget<DropdownButtonFormField<ToneRefinement>>(
+      find.byType(DropdownButtonFormField<ToneRefinement>),
+    );
+    expect(toneDropdown.initialValue, ToneRefinement.off);
+  });
+
   testWidgets(
-    'mobile can select standalone Transcribe without offering writing styles',
+    'two-step mode does not describe transcription-only model as style-free',
     (tester) async {
       await tester.binding.setSurfaceSize(const Size(900, 1200));
       addTearDown(() => tester.binding.setSurfaceSize(null));
-      final settings = _Settings(credentials: true);
+      final settings = _Settings(credentials: true)
+        ..modelId = 'gemini-3.5-transcribe';
+      await settings.setTwoPassTranscriptionEnabled(true);
       final cloud = CloudTranscriptionService();
       addTearDown(cloud.dispose);
+
       await tester.pumpWidget(
         MaterialApp(
           home: MobileSettingsScreen(
@@ -206,39 +291,9 @@ void main() {
         ),
       );
       await tester.pumpAndSettle();
-      final fields = tester
-          .widgetList<DropdownButtonFormField<String>>(
-            find.byType(DropdownButtonFormField<String>),
-          )
-          .toList();
-      final modelDropdown = tester
-          .widgetList<DropdownButton<String>>(
-            find.byType(DropdownButton<String>),
-          )
-          .first;
-      expect(
-        modelDropdown.items!.map((item) => item.value),
-        containsAll([
-          'gemini-3.5-transcribe',
-          'gemini-3.1-flash-lite',
-          'gemini-2.5-flash',
-          'gemini-2.5-flash-lite',
-        ]),
-      );
-      fields.first.onChanged!('gemini-3.5-transcribe');
-      await tester.pumpAndSettle();
-      expect(settings.selectedModelId, 'gemini-3.5-transcribe');
-      expect(settings.twoPassTranscriptionEnabled, isFalse);
-      expect(
-        find.text('Speech-to-text only. Writing styles are not applied.'),
-        findsOneWidget,
-      );
-      final updated = tester
-          .widgetList<DropdownButtonFormField<String>>(
-            find.byType(DropdownButtonFormField<String>),
-          )
-          .toList();
-      expect(updated[1].onChanged, isNull);
+
+      expect(settings.twoPassTranscriptionEnabled, isTrue);
+      expect(find.text(AppConfig.transcriptionOnlyStyleNotice), findsNothing);
     },
   );
 

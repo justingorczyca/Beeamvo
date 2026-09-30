@@ -47,6 +47,7 @@ class SettingsService extends ChangeNotifier {
   // ── keys ──────────────────────────────────────────────────────────────────
   static const _kLaunchAtStartup = 'launch_at_startup';
   static const _kSelectedPromptId = 'active_system_prompt_id';
+  static const _kToneRefinement = 'tone_refinement';
   static const _kCustomPrompts = 'custom_prompts';
   static const _kSelectedModelId = 'selected_model_id';
   static const _kTwoPassTranscription = 'two_pass_transcription';
@@ -369,6 +370,7 @@ class SettingsService extends ChangeNotifier {
       dirty = true;
     }
 
+    if (await _resetStyleIfUnavailable()) dirty = true;
     if (dirty) await _save();
   }
 
@@ -541,7 +543,17 @@ class SettingsService extends ChangeNotifier {
       _getString(_kSelectedPromptId) ?? SystemPrompt.defaultId;
 
   Future<void> setSelectedPromptId(String value) async {
+    if (!promptIsApplied && value != SystemPrompt.defaultId) return;
     await _setString(_kSelectedPromptId, value);
+    notifyListeners();
+  }
+
+  ToneRefinement get toneRefinement =>
+      ToneRefinementExtension.fromValue(_getString(_kToneRefinement));
+
+  Future<void> setToneRefinement(ToneRefinement value) async {
+    if (!promptIsApplied && value != ToneRefinement.off) return;
+    await _setString(_kToneRefinement, value.name);
     notifyListeners();
   }
 
@@ -629,6 +641,7 @@ class SettingsService extends ChangeNotifier {
 
   Future<void> setSelectedModelId(String value) async {
     await _setString(_selectedModelKeyFor(cloudProvider), value);
+    await _resetStyleIfUnavailable();
     notifyListeners();
   }
 
@@ -686,6 +699,7 @@ class SettingsService extends ChangeNotifier {
 
   Future<void> setTwoPassTranscriptionEnabled(bool value) async {
     await _setBool(_kTwoPassTranscription, value);
+    await _resetStyleIfUnavailable();
     notifyListeners();
   }
 
@@ -764,13 +778,25 @@ class SettingsService extends ChangeNotifier {
     _ => 'Add your ${provider.displayName} ${provider.credentialLabel}',
   };
 
-  /// Whether the selected prompt shapes the output. Prompts need a capable
-  /// cloud model; standalone speech-to-text and pure offline transcription
-  /// do not apply writing styles.
+  /// Whether the selected prompt shapes the output. When false, the style is
+  /// pinned to Default and tone to Off.
   bool get promptIsApplied =>
       twoPassTranscriptionEnabled ||
       (transcriptionBackend == TranscriptionBackend.cloud &&
           !AppConfig.getModelById(selectedModelId).isTranscriptionOnly);
+
+  Future<bool> _resetStyleIfUnavailable() async {
+    if (promptIsApplied ||
+        (selectedPromptId == SystemPrompt.defaultId &&
+            toneRefinement == ToneRefinement.off)) {
+      return false;
+    }
+
+    _data[_kSelectedPromptId] = SystemPrompt.defaultId;
+    _data[_kToneRefinement] = ToneRefinement.off.name;
+    await _save();
+    return true;
+  }
 
   // ── Hotkey ────────────────────────────────────────────────────────────────
   HotkeyConfig get hotkey {
@@ -1016,6 +1042,7 @@ class SettingsService extends ChangeNotifier {
 
   Future<void> setTranscriptionBackend(TranscriptionBackend backend) async {
     await _setString(_kTranscriptionBackend, backend.name);
+    await _resetStyleIfUnavailable();
     notifyListeners();
   }
 
@@ -1038,6 +1065,7 @@ class SettingsService extends ChangeNotifier {
       );
     }
     await _setString(_kCloudProvider, provider.name);
+    await _resetStyleIfUnavailable();
     notifyListeners();
   }
 

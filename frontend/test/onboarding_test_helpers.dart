@@ -20,6 +20,7 @@ class OnboardingTestSettingsService extends SettingsService {
   String _whisperModelId = 'ggml-tiny.bin';
   RecordingMode _recordingMode = RecordingMode.toggle;
   HotkeyConfig _hotkey = HotkeyConfig.defaultHotkey;
+  bool _twoPassTranscriptionEnabled = false;
 
   @override
   TranscriptionBackend get transcriptionBackend => backend;
@@ -53,6 +54,14 @@ class OnboardingTestSettingsService extends SettingsService {
   }
 
   @override
+  bool get twoPassTranscriptionEnabled => _twoPassTranscriptionEnabled;
+
+  @override
+  Future<void> setTwoPassTranscriptionEnabled(bool value) async {
+    _twoPassTranscriptionEnabled = value;
+  }
+
+  @override
   String get selectedPromptId => _promptId;
 
   @override
@@ -62,8 +71,9 @@ class OnboardingTestSettingsService extends SettingsService {
 
   @override
   bool get promptIsApplied =>
-      backend == TranscriptionBackend.cloud &&
-      !AppConfig.getModelById(selectedModelId).isTranscriptionOnly;
+      twoPassTranscriptionEnabled ||
+      (backend == TranscriptionBackend.cloud &&
+          !AppConfig.getModelById(selectedModelId).isTranscriptionOnly);
 
   @override
   String get whisperModelId => _whisperModelId;

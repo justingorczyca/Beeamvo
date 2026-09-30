@@ -304,8 +304,10 @@ class _MobileSettingsScreenState extends State<MobileSettingsScreen> {
                 labelText: settings.twoPassTranscriptionEnabled
                     ? 'Pass 1 · Transcription model'
                     : 'Model',
-                helperText: firstModel.isTranscriptionOnly
-                    ? 'Speech-to-text only. Writing styles are not applied.'
+                helperText:
+                    firstModel.isTranscriptionOnly &&
+                        !settings.twoPassTranscriptionEnabled
+                    ? AppConfig.transcriptionOnlyStyleNotice
                     : null,
               ),
             ),
@@ -352,6 +354,7 @@ class _MobileSettingsScreenState extends State<MobileSettingsScreen> {
             const SizedBox(height: 20),
             const _SectionTitle('Mode'),
             DropdownButtonFormField<String>(
+              key: ValueKey('prompt-${settings.selectedPromptId}'),
               initialValue: settings.selectedPromptId,
               items: prompts
                   .map(
@@ -366,7 +369,32 @@ class _MobileSettingsScreenState extends State<MobileSettingsScreen> {
                       if (value != null) settings.setSelectedPromptId(value);
                     }
                   : null,
-              decoration: const InputDecoration(labelText: 'Prompt'),
+              decoration: InputDecoration(
+                labelText: 'Prompt',
+                helperText: settings.promptIsApplied
+                    ? null
+                    : 'Default only with this model. Choose another model or turn on two-step refinement.',
+              ),
+            ),
+            const SizedBox(height: 12),
+            DropdownButtonFormField<ToneRefinement>(
+              key: ValueKey('tone-${settings.toneRefinement.name}'),
+              initialValue: settings.toneRefinement,
+              items: [
+                for (final tone in ToneRefinement.values)
+                  DropdownMenuItem(value: tone, child: Text(tone.displayName)),
+              ],
+              onChanged: settings.promptIsApplied
+                  ? (tone) async {
+                      if (tone == null) return;
+                      await settings.setToneRefinement(tone);
+                      if (mounted) setState(() {});
+                    }
+                  : null,
+              decoration: InputDecoration(
+                labelText: 'Tone refinement',
+                helperText: settings.toneRefinement.description,
+              ),
             ),
             const SizedBox(height: 20),
             const _SectionTitle('Appearance'),

@@ -28,10 +28,13 @@ class FakeSettings extends SettingsService {
   bool historyEnabled;
   String modelId;
   String promptId = 'standard';
+  ToneRefinement tone = ToneRefinement.off;
   final entries = <ClipboardHistoryEntry>[];
 
   @override
   bool get hasCloudCredentials => credentials;
+  @override
+  ToneRefinement get toneRefinement => tone;
   @override
   String get selectedPromptId => promptId;
   @override
@@ -129,6 +132,7 @@ class FakeCloud extends CloudTranscriptionService {
   bool fail = false;
   int transcribeCalls = 0;
   int improveCalls = 0;
+  String? lastMissionInstruction;
   Completer<String>? pendingResult;
 
   @override
@@ -142,6 +146,7 @@ class FakeCloud extends CloudTranscriptionService {
     String? modelOverrideId,
     GeminiThinkingLevel? thinkingLevelOverride,
   }) async {
+    lastMissionInstruction = missionInstruction;
     if (pendingResult != null) return pendingResult!.future;
     if (fail) throw CloudTranscriptionException('network failed');
     transcribeCalls++;
@@ -184,6 +189,7 @@ class FakeCloud extends CloudTranscriptionService {
     required SettingsService settings,
     String? missionInstruction,
   }) async {
+    lastMissionInstruction = missionInstruction;
     improveCalls++;
     return 'two pass result';
   }
@@ -262,25 +268,87 @@ void main() {
     controller.dispose();
   });
 
+  test('medium tone is appended to the mobile mission instruction', () async {
+    final settings = FakeSettings()..tone = ToneRefinement.medium;
+    final cloud = FakeCloud();
+    final controller = MobileTranscriptionController(
+      settingsService: settings,
+      cloudService: cloud,
+      usageStatsService: FakeUsageStats(),
+      recorder: FakeRecorder(),
+    );
+    addTearDown(controller.dispose);
+
+    await controller.toggleRecording();
+    await controller.toggleRecording();
+
+    expect(cloud.lastMissionInstruction, contains('TONE REFINEMENT: MEDIUM'));
+  });
+
+  test('Off sends only the selected prompt instruction on mobile', () async {
+    final settings = FakeSettings()..tone = ToneRefinement.off;
+    final cloud = FakeCloud();
+    final controller = MobileTranscriptionController(
+      settingsService: settings,
+      cloudService: cloud,
+      usageStatsService: FakeUsageStats(),
+      recorder: FakeRecorder(),
+    );
+    addTearDown(controller.dispose);
+
+    await controller.toggleRecording();
+    await controller.toggleRecording();
+
+    expect(cloud.lastMissionInstruction, settings.selectedPrompt.instruction);
+  });
+
   test(
-    'standalone Transcribe uses one raw pass without applying a style',
+    'two-pass mobile transcription applies the high tone during polish',
     () async {
+      final settings = FakeSettings(twoPass: true)..tone = ToneRefinement.high;
       final cloud = FakeCloud();
       final controller = MobileTranscriptionController(
-        settingsService: FakeSettings(modelId: 'gemini-3.5-transcribe')
-          ..promptId = 'professional',
+        settingsService: settings,
         cloudService: cloud,
         usageStatsService: FakeUsageStats(),
         recorder: FakeRecorder(),
       );
       addTearDown(controller.dispose);
+
       await controller.toggleRecording();
       await controller.toggleRecording();
-      expect(controller.resultText, 'raw result');
-      expect(cloud.transcribeCalls, 1);
-      expect(cloud.improveCalls, 0);
+
+      expect(cloud.improveCalls, 1);
+      expect(
+        cloud.lastMissionInstruction,
+        startsWith(settings.selectedPrompt.instruction.trimRight()),
+      );
+      expect(
+        cloud.lastMissionInstruction,
+        contains('TONE REFINEMENT: HIGH (PROFESSIONAL)'),
+      );
     },
   );
+
+  test('standalone Transcribe ignores tone and uses one raw pass', () async {
+    final settings = FakeSettings(modelId: 'gemini-3.5-transcribe')
+      ..promptId = 'professional'
+      ..tone = ToneRefinement.high;
+    final cloud = FakeCloud();
+    final controller = MobileTranscriptionController(
+      settingsService: settings,
+      cloudService: cloud,
+      usageStatsService: FakeUsageStats(),
+      recorder: FakeRecorder(),
+    );
+    addTearDown(controller.dispose);
+    await controller.toggleRecording();
+    await controller.toggleRecording();
+    expect(controller.resultText, 'raw result');
+    expect(cloud.transcribeCalls, 1);
+    expect(cloud.improveCalls, 0);
+    expect(cloud.lastMissionInstruction, isNull);
+  });
 
   test('two-pass transcription calls both cloud stages', () async {
     final cloud = FakeCloud();

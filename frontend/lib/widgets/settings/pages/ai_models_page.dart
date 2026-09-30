@@ -921,10 +921,10 @@ class _AiModelsPageState extends State<AiModelsPage> {
         BeeSettingsRow(
           icon: Icons.auto_awesome_rounded,
           label: 'Model',
-          description: model.isTranscriptionOnly
-              ? 'Speech-to-text only. Writing styles are not applied.'
-              : _twoPassEnabled
+          description: _twoPassEnabled
               ? 'Transcribes your audio word for word in step 1.'
+              : model.isTranscriptionOnly
+              ? AppConfig.transcriptionOnlyStyleNotice
               : 'Writes the final text and applies your writing style.',
           showDivider: model.hasSelectableThinkingLevel,
           trailing: BeeDropdown<String>(

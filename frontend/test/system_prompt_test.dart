@@ -1,3 +1,4 @@
+import 'package:beeamvo/models/enums.dart';
 import 'package:beeamvo/models/system_prompt.dart';
 import 'package:beeamvo/services/transcription_result_guard.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -80,6 +81,41 @@ void main() {
       expect(input, contains(rawText));
       expect(input, contains('</transcript-draft>'));
       expect(input, contains('quoted source material'));
+    });
+
+    test(
+      'tone refinement layers exactly the selected tone over the mission',
+      () {
+        const mission = 'Use the selected writing style.   ';
+        final light = SystemPrompt.withTone(mission, ToneRefinement.light);
+        final medium = SystemPrompt.withTone(mission, ToneRefinement.medium);
+        final high = SystemPrompt.withTone(mission, ToneRefinement.high);
+
+        expect(SystemPrompt.withTone(mission, ToneRefinement.off), mission);
+        expect(light, startsWith(mission.trim()));
+        expect(light, contains('TONE REFINEMENT: LIGHT'));
+        expect(light, isNot(contains('TONE REFINEMENT: MEDIUM')));
+        expect(light, isNot(contains('TONE REFINEMENT: HIGH (PROFESSIONAL)')));
+        expect(medium, startsWith(mission.trim()));
+        expect(medium, contains('TONE REFINEMENT: MEDIUM'));
+        expect(medium, isNot(contains('TONE REFINEMENT: LIGHT')));
+        expect(medium, isNot(contains('TONE REFINEMENT: HIGH (PROFESSIONAL)')));
+        expect(high, startsWith(mission.trim()));
+        expect(high, contains('TONE REFINEMENT: HIGH (PROFESSIONAL)'));
+        expect(high, isNot(contains('TONE REFINEMENT: LIGHT')));
+        expect(high, isNot(contains('TONE REFINEMENT: MEDIUM')));
+        expect(light, isNot(equals(medium)));
+        expect(light, isNot(equals(high)));
+        expect(medium, isNot(equals(high)));
+      },
+    );
+
+    test('tone values round-trip and unknown values default to Off', () {
+      for (final tone in ToneRefinement.values) {
+        expect(ToneRefinementExtension.fromValue(tone.name), tone);
+      }
+      expect(ToneRefinementExtension.fromValue(null), ToneRefinement.off);
+      expect(ToneRefinementExtension.fromValue('bogus'), ToneRefinement.off);
     });
   });
 }
