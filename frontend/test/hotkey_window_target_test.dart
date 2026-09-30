@@ -26,71 +26,67 @@ void main() {
     },
   );
 
-  test(
-    'Win32 keeps hotkeys bound to the original HWND after reparenting',
-    () {
-      final className = 'STATIC'.toNativeUtf16(allocator: calloc);
-      var parent = 0;
-      var child = 0;
-      const id = 1;
-      const modifiers = MOD_CONTROL | MOD_ALT | MOD_SHIFT | MOD_NOREPEAT;
-      try {
-        parent = CreateWindowEx(
-          0,
-          className,
-          nullptr,
-          WS_POPUP,
-          0,
-          0,
-          1,
-          1,
-          0,
-          0,
-          0,
-          nullptr,
-        );
-        child = CreateWindowEx(
-          0,
-          className,
-          nullptr,
-          WS_POPUP,
-          0,
-          0,
-          1,
-          1,
-          0,
-          0,
-          0,
-          nullptr,
-        );
-        expect(parent, isNot(0));
-        expect(child, isNot(0));
-        final prematurelyCapturedRoot = GetAncestor(child, GA_ROOT);
-        expect(prematurelyCapturedRoot, child);
+  test('Win32 keeps hotkeys bound to the original HWND after reparenting', () {
+    final className = 'STATIC'.toNativeUtf16(allocator: calloc);
+    var parent = 0;
+    var child = 0;
+    const id = 1;
+    const modifiers = MOD_CONTROL | MOD_ALT | MOD_SHIFT | MOD_NOREPEAT;
+    try {
+      parent = CreateWindowEx(
+        0,
+        className,
+        nullptr,
+        WS_POPUP,
+        0,
+        0,
+        1,
+        1,
+        0,
+        0,
+        0,
+        nullptr,
+      );
+      child = CreateWindowEx(
+        0,
+        className,
+        nullptr,
+        WS_POPUP,
+        0,
+        0,
+        1,
+        1,
+        0,
+        0,
+        0,
+        nullptr,
+      );
+      expect(parent, isNot(0));
+      expect(child, isNot(0));
+      final prematurelyCapturedRoot = GetAncestor(child, GA_ROOT);
+      expect(prematurelyCapturedRoot, child);
 
-        SetParent(child, parent);
-        expect(GetAncestor(child, GA_ROOT), parent);
-        expect(
-          RegisterHotKey(prematurelyCapturedRoot, id, modifiers, VK_F24),
-          isNot(0),
-        );
-        expect(UnregisterHotKey(parent, id), 0);
-        expect(UnregisterHotKey(child, id), isNot(0));
+      SetParent(child, parent);
+      expect(GetAncestor(child, GA_ROOT), parent);
+      expect(
+        RegisterHotKey(prematurelyCapturedRoot, id, modifiers, VK_F24),
+        isNot(0),
+      );
+      expect(UnregisterHotKey(parent, id), 0);
+      expect(UnregisterHotKey(child, id), isNot(0));
 
-        expect(RegisterHotKey(parent, id, modifiers, VK_F24), isNot(0));
-        expect(UnregisterHotKey(parent, id), isNot(0));
-      } finally {
-        if (child != 0) {
-          UnregisterHotKey(child, id);
-          DestroyWindow(child);
-        }
-        if (parent != 0) {
-          UnregisterHotKey(parent, id);
-          DestroyWindow(parent);
-        }
-        calloc.free(className);
+      expect(RegisterHotKey(parent, id, modifiers, VK_F24), isNot(0));
+      expect(UnregisterHotKey(parent, id), isNot(0));
+    } finally {
+      if (child != 0) {
+        UnregisterHotKey(child, id);
+        DestroyWindow(child);
       }
-    },
-    skip: !Platform.isWindows,
-  );
+      if (parent != 0) {
+        UnregisterHotKey(parent, id);
+        DestroyWindow(parent);
+      }
+      calloc.free(className);
+    }
+  }, skip: !Platform.isWindows);
 }
