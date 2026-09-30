@@ -85,6 +85,26 @@ class _PromptsPageState extends State<PromptsPage> {
             ],
             _buildCurrentPromptBlock(stylesActive),
             const SizedBox(height: BeePageHeader.groupGap),
+            const BeeGroupLabel(label: 'Tone'),
+            BeeSettingsRow(
+              icon: Icons.tune_rounded,
+              label: 'Tone refinement',
+              description: settings.toneRefinement.description,
+              showDivider: false,
+              trailing: BeeSegmented<ToneRefinement>(
+                value: settings.toneRefinement,
+                enabled: stylesActive,
+                onChanged: (tone) async {
+                  await settings.setToneRefinement(tone);
+                  setState(() {});
+                },
+                options: [
+                  for (final tone in ToneRefinement.values)
+                    (val: tone, label: tone.displayName, icon: null),
+                ],
+              ),
+            ),
+            const SizedBox(height: BeePageHeader.groupGap),
             Row(
               children: [
                 const Expanded(child: BeeGroupLabel(label: 'All Styles')),

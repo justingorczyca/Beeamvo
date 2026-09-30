@@ -383,6 +383,27 @@ class _GeneralSettingsPageState extends State<GeneralSettingsPage> {
                   ),
 
                   const SizedBox(height: BeePageHeader.groupGap),
+                  const BeeGroupLabel(label: 'Tone'),
+                  BeeSettingsRow(
+                    icon: Icons.tune_rounded,
+                    label: 'Tone refinement',
+                    description: settings.toneRefinement.description,
+                    showDivider: false,
+                    trailing: BeeSegmented<ToneRefinement>(
+                      value: settings.toneRefinement,
+                      enabled: settings.promptIsApplied,
+                      onChanged: (tone) async {
+                        await settings.setToneRefinement(tone);
+                        setState(() {});
+                      },
+                      options: [
+                        for (final tone in ToneRefinement.values)
+                          (val: tone, label: tone.displayName, icon: null),
+                      ],
+                    ),
+                  ),
+
+                  const SizedBox(height: BeePageHeader.groupGap),
 
                   // ── RECORDING ───────────────────────────────────
                   // Audio device + recording mode + auto-stop + duration.

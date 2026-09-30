@@ -1413,7 +1413,10 @@ class _BeeamvoHomeState extends State<BeeamvoHome>
           'backend=${backend.name} twoPass=$twoPassEnabled',
         );
       }
-      final instruction = selectedPrompt.instruction;
+      final instruction = SystemPrompt.withTone(
+        selectedPrompt.instruction,
+        _settingsService.toneRefinement,
+      );
 
       String improvedText;
       if (backend == TranscriptionBackend.whisper) {

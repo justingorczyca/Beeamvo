@@ -64,6 +64,25 @@ void main() {
     expect(settings.selectedPromptId, 'concise');
   });
 
+  test(
+    'tone refinement defaults to Off and persists across launches',
+    () async {
+      final (settings, file) = await _initWith(root, {});
+      expect(settings.toneRefinement, ToneRefinement.off);
+
+      await settings.setToneRefinement(ToneRefinement.high);
+      final persisted = jsonDecode(await file.readAsString()) as Map;
+      expect(persisted['tone_refinement'], 'high');
+
+      final freshSettings = SettingsService(
+        applicationSupportDirectory: root,
+        credentialStore: InMemorySecureCredentialStore(),
+      );
+      await freshSettings.initialize();
+      expect(freshSettings.toneRefinement, ToneRefinement.high);
+    },
+  );
+
   test('cloud and whisper languages merge into spoken_language', () async {
     final (settings, file) = await _initWith(root, {
       'transcription_language': 'de',

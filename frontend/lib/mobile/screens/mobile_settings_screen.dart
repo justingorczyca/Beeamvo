@@ -368,6 +368,25 @@ class _MobileSettingsScreenState extends State<MobileSettingsScreen> {
                   : null,
               decoration: const InputDecoration(labelText: 'Prompt'),
             ),
+            const SizedBox(height: 12),
+            DropdownButtonFormField<ToneRefinement>(
+              initialValue: settings.toneRefinement,
+              items: [
+                for (final tone in ToneRefinement.values)
+                  DropdownMenuItem(value: tone, child: Text(tone.displayName)),
+              ],
+              onChanged: settings.promptIsApplied
+                  ? (tone) async {
+                      if (tone == null) return;
+                      await settings.setToneRefinement(tone);
+                      if (mounted) setState(() {});
+                    }
+                  : null,
+              decoration: InputDecoration(
+                labelText: 'Tone refinement',
+                helperText: settings.toneRefinement.description,
+              ),
+            ),
             const SizedBox(height: 20),
             const _SectionTitle('Appearance'),
             DropdownButtonFormField<String>(

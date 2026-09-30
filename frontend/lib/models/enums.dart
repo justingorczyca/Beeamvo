@@ -96,3 +96,41 @@ extension CloudProviderExtension on CloudProvider {
     return CloudProvider.geminiApiKey;
   }
 }
+
+/// How strongly the wording is refined on top of the selected writing style.
+enum ToneRefinement { off, light, medium, high }
+
+extension ToneRefinementExtension on ToneRefinement {
+  String get displayName {
+    switch (this) {
+      case ToneRefinement.off:
+        return 'Off';
+      case ToneRefinement.light:
+        return 'Light';
+      case ToneRefinement.medium:
+        return 'Medium';
+      case ToneRefinement.high:
+        return 'High';
+    }
+  }
+
+  String get description {
+    switch (this) {
+      case ToneRefinement.off:
+        return 'Only the writing style is applied.';
+      case ToneRefinement.light:
+        return 'A light touch-up. Your tone stays, just a bit cleaner.';
+      case ToneRefinement.medium:
+        return 'Clearer, smoother wording in your own voice.';
+      case ToneRefinement.high:
+        return 'Polished, professional tone.';
+    }
+  }
+
+  static ToneRefinement fromValue(String? value) {
+    for (final tone in ToneRefinement.values) {
+      if (tone.name == value) return tone;
+    }
+    return ToneRefinement.off;
+  }
+}

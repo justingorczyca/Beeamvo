@@ -47,6 +47,7 @@ class SettingsService extends ChangeNotifier {
   // ── keys ──────────────────────────────────────────────────────────────────
   static const _kLaunchAtStartup = 'launch_at_startup';
   static const _kSelectedPromptId = 'active_system_prompt_id';
+  static const _kToneRefinement = 'tone_refinement';
   static const _kCustomPrompts = 'custom_prompts';
   static const _kSelectedModelId = 'selected_model_id';
   static const _kTwoPassTranscription = 'two_pass_transcription';
@@ -542,6 +543,14 @@ class SettingsService extends ChangeNotifier {
 
   Future<void> setSelectedPromptId(String value) async {
     await _setString(_kSelectedPromptId, value);
+    notifyListeners();
+  }
+
+  ToneRefinement get toneRefinement =>
+      ToneRefinementExtension.fromValue(_getString(_kToneRefinement));
+
+  Future<void> setToneRefinement(ToneRefinement value) async {
+    await _setString(_kToneRefinement, value.name);
     notifyListeners();
   }
 
