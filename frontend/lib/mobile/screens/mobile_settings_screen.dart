@@ -307,7 +307,7 @@ class _MobileSettingsScreenState extends State<MobileSettingsScreen> {
                 helperText:
                     firstModel.isTranscriptionOnly &&
                         !settings.twoPassTranscriptionEnabled
-                    ? 'Speech-to-text only. Writing styles are not applied.'
+                    ? AppConfig.transcriptionOnlyStyleNotice
                     : null,
               ),
             ),
@@ -354,6 +354,7 @@ class _MobileSettingsScreenState extends State<MobileSettingsScreen> {
             const SizedBox(height: 20),
             const _SectionTitle('Mode'),
             DropdownButtonFormField<String>(
+              key: ValueKey('prompt-${settings.selectedPromptId}'),
               initialValue: settings.selectedPromptId,
               items: prompts
                   .map(
@@ -368,10 +369,16 @@ class _MobileSettingsScreenState extends State<MobileSettingsScreen> {
                       if (value != null) settings.setSelectedPromptId(value);
                     }
                   : null,
-              decoration: const InputDecoration(labelText: 'Prompt'),
+              decoration: InputDecoration(
+                labelText: 'Prompt',
+                helperText: settings.promptIsApplied
+                    ? null
+                    : 'Default only with this model. Choose another model or turn on two-step refinement.',
+              ),
             ),
             const SizedBox(height: 12),
             DropdownButtonFormField<ToneRefinement>(
+              key: ValueKey('tone-${settings.toneRefinement.name}'),
               initialValue: settings.toneRefinement,
               items: [
                 for (final tone in ToneRefinement.values)

@@ -83,6 +83,137 @@ void main() {
     },
   );
 
+  test(
+    'selecting a transcription-only model resets the style and tone',
+    () async {
+      final (settings, _) = await _initWith(root, {
+        'cloud_provider': 'geminiApiKey',
+        'legacy_primary_roles_migrated': true,
+        'selected_model_id': 'gemini-3.5-flash-lite',
+        'active_system_prompt_id': SystemPrompt.professionalId,
+        'tone_refinement': 'high',
+      });
+
+      await settings.setSelectedModelId('gemini-3.5-transcribe');
+
+      expect(settings.selectedPromptId, SystemPrompt.defaultId);
+      expect(settings.toneRefinement, ToneRefinement.off);
+    },
+  );
+
+  test(
+    'two-step keeps styles when selecting a transcription-only model',
+    () async {
+      final (settings, _) = await _initWith(root, {
+        'cloud_provider': 'geminiApiKey',
+        'legacy_primary_roles_migrated': true,
+        'selected_model_id': 'gemini-3.5-flash-lite',
+        'active_system_prompt_id': SystemPrompt.professionalId,
+        'tone_refinement': 'high',
+      });
+      await settings.setTwoPassTranscriptionEnabled(true);
+
+      await settings.setSelectedModelId('gemini-3.5-transcribe');
+
+      expect(settings.selectedPromptId, SystemPrompt.professionalId);
+      expect(settings.toneRefinement, ToneRefinement.high);
+    },
+  );
+
+  test(
+    'turning off two-step resets style for a transcription-only model',
+    () async {
+      final (settings, _) = await _initWith(root, {
+        'cloud_provider': 'geminiApiKey',
+        'legacy_primary_roles_migrated': true,
+        'selected_model_id': 'gemini-3.5-transcribe',
+        'two_pass_transcription': true,
+        'active_system_prompt_id': SystemPrompt.professionalId,
+        'tone_refinement': 'high',
+      });
+
+      await settings.setTwoPassTranscriptionEnabled(false);
+
+      expect(settings.selectedPromptId, SystemPrompt.defaultId);
+      expect(settings.toneRefinement, ToneRefinement.off);
+    },
+  );
+
+  test('switching to offline Whisper resets style and tone', () async {
+    final (settings, _) = await _initWith(root, {
+      'cloud_provider': 'geminiApiKey',
+      'legacy_primary_roles_migrated': true,
+      'selected_model_id': 'gemini-3.5-flash-lite',
+      'active_system_prompt_id': SystemPrompt.professionalId,
+      'tone_refinement': 'high',
+    });
+
+    await settings.setTranscriptionBackend(TranscriptionBackend.whisper);
+
+    expect(settings.selectedPromptId, SystemPrompt.defaultId);
+    expect(settings.toneRefinement, ToneRefinement.off);
+  });
+
+  test('switching to Codex transcription resets style and tone', () async {
+    final (settings, _) = await _initWith(root, {
+      'cloud_provider': 'geminiApiKey',
+      'legacy_primary_roles_migrated': true,
+      'selected_model_id': 'gemini-3.5-flash-lite',
+      'active_system_prompt_id': SystemPrompt.professionalId,
+      'tone_refinement': 'high',
+    });
+
+    await settings.setCloudProvider(CloudProvider.codexOAuth);
+
+    expect(settings.selectedModelId, 'chatgpt-transcribe');
+    expect(settings.selectedPromptId, SystemPrompt.defaultId);
+    expect(settings.toneRefinement, ToneRefinement.off);
+  });
+
+  test(
+    'style and tone setters ignore non-default values when locked',
+    () async {
+      final (settings, file) = await _initWith(root, {
+        'cloud_provider': 'geminiApiKey',
+        'legacy_primary_roles_migrated': true,
+        'selected_model_id': 'gemini-3.5-transcribe',
+      });
+
+      await settings.setSelectedPromptId(SystemPrompt.professionalId);
+      await settings.setToneRefinement(ToneRefinement.high);
+
+      expect(settings.selectedPromptId, SystemPrompt.defaultId);
+      expect(settings.toneRefinement, ToneRefinement.off);
+      final persisted = jsonDecode(await file.readAsString()) as Map;
+      expect(
+        persisted['active_system_prompt_id'],
+        isNot(SystemPrompt.professionalId),
+      );
+      expect(persisted['tone_refinement'], isNot('high'));
+    },
+  );
+
+  test(
+    'migration resets an unavailable style and persists the defaults',
+    () async {
+      final (settings, file) = await _initWith(root, {
+        'cloud_provider': 'geminiApiKey',
+        'legacy_primary_roles_migrated': true,
+        'transcription_backend': 'cloud',
+        'selected_model_id': 'gemini-3.5-transcribe',
+        'active_system_prompt_id': SystemPrompt.professionalId,
+        'tone_refinement': 'high',
+      });
+
+      expect(settings.promptIsApplied, isFalse);
+      expect(settings.selectedPromptId, SystemPrompt.defaultId);
+      expect(settings.toneRefinement, ToneRefinement.off);
+      final persisted = jsonDecode(await file.readAsString()) as Map;
+      expect(persisted['active_system_prompt_id'], SystemPrompt.defaultId);
+      expect(persisted['tone_refinement'], 'off');
+    },
+  );
+
   test('cloud and whisper languages merge into spoken_language', () async {
     final (settings, file) = await _initWith(root, {
       'transcription_language': 'de',

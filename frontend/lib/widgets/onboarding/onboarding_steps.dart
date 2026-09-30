@@ -932,7 +932,7 @@ class _ModelStepState extends State<ModelStep>
 
   String _modelDescription(GeminiModelConfig model) {
     if (model.isTranscriptionOnly) {
-      return 'Speech-to-text only. Writing styles are not applied.';
+      return AppConfig.transcriptionOnlyStyleNotice;
     }
     return model.description.isNotEmpty
         ? model.description
