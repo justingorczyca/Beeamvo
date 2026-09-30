@@ -206,6 +206,27 @@ void main() {
     },
   );
 
+  testWidgets('two-pass transcription model describes the first step', (
+    tester,
+  ) async {
+    await _pumpAiModelsPage(
+      tester,
+      FakeAiModelsSettingsService(
+        twoPassEnabled: true,
+        selectedModel: 'gemini-3.5-transcribe',
+      ),
+    );
+
+    expect(
+      find.text('Transcribes your audio word for word in step 1.'),
+      findsOneWidget,
+    );
+    expect(
+      find.text('Speech-to-text only. Writing styles are not applied.'),
+      findsNothing,
+    );
+  });
+
   testWidgets(
     'model selection survives two-step toggles and provider switches',
     (tester) async {

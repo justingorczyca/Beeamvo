@@ -242,6 +242,41 @@ void main() {
     },
   );
 
+  testWidgets(
+    'two-step mode does not describe transcription-only model as style-free',
+    (tester) async {
+      await tester.binding.setSurfaceSize(const Size(900, 1200));
+      addTearDown(() => tester.binding.setSurfaceSize(null));
+      final settings = _Settings(credentials: true)
+        ..modelId = 'gemini-3.5-transcribe';
+      await settings.setTwoPassTranscriptionEnabled(true);
+      final cloud = CloudTranscriptionService();
+      addTearDown(cloud.dispose);
+
+      await tester.pumpWidget(
+        MaterialApp(
+          home: MobileSettingsScreen(
+            settingsService: settings,
+            cloudService: cloud,
+            packageInfoLoader: () async => PackageInfo(
+              appName: 'Beeamvo',
+              packageName: 'com.beeamvo.app',
+              version: '1',
+              buildNumber: '1',
+            ),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      expect(settings.twoPassTranscriptionEnabled, isTrue);
+      expect(
+        find.text('Speech-to-text only. Writing styles are not applied.'),
+        findsNothing,
+      );
+    },
+  );
+
   testWidgets('mobile shows ChatGPT sign-in instead of an API-key field', (
     tester,
   ) async {

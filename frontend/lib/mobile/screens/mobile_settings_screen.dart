@@ -304,7 +304,9 @@ class _MobileSettingsScreenState extends State<MobileSettingsScreen> {
                 labelText: settings.twoPassTranscriptionEnabled
                     ? 'Pass 1 · Transcription model'
                     : 'Model',
-                helperText: firstModel.isTranscriptionOnly
+                helperText:
+                    firstModel.isTranscriptionOnly &&
+                        !settings.twoPassTranscriptionEnabled
                     ? 'Speech-to-text only. Writing styles are not applied.'
                     : null,
               ),

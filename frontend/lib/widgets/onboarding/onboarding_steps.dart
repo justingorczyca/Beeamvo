@@ -1625,8 +1625,7 @@ class _ReadyStepState extends State<ReadyStep> {
             WhisperService.listDownloadedModels().contains(s.whisperModelId));
 
     final cloudModel = AppConfig.getModelById(s.selectedModelId);
-    final styleNotApplied =
-        !s.promptIsApplied || cloudModel.isTranscriptionOnly;
+    final styleNotApplied = !s.promptIsApplied;
     final whisperModelInfo = WhisperModelDownloadService.getModelInfo(
       s.whisperModelId,
     );
