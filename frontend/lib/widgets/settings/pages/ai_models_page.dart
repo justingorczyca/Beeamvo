@@ -992,7 +992,7 @@ class _AiModelsPageState extends State<AiModelsPage> {
                     'transcribes the audio. Change it above.',
           trailing: beeBadge(
             context,
-            _isOffline ? 'Offline' : 'Audio',
+            _isOffline ? 'Offline' : 'Audio → Cloud',
             BeeBadgeTone.neutral,
           ),
         ),
