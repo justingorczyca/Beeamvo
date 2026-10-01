@@ -351,7 +351,13 @@ class OnboardingOptionTile extends StatelessWidget {
   Widget _title(BuildContext context) {
     return Row(
       children: [
+        // Both children flex so neither can push past the row's edge on
+        // narrow screens: the badge pill would otherwise lay out at its
+        // full intrinsic width and its ellipsis could never engage. The
+        // 3:2 ratio keeps the title dominant — when the row fits, both
+        // render at natural size (loose fit) and nothing changes visually.
         Flexible(
+          flex: 3,
           child: Text(
             title,
             maxLines: 1,
@@ -365,7 +371,7 @@ class OnboardingOptionTile extends StatelessWidget {
         ),
         if (badge != null && !vertical) ...[
           const SizedBox(width: 8),
-          _badge(context),
+          Flexible(flex: 2, child: _badge(context)),
         ],
       ],
     );

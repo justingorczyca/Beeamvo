@@ -26,4 +26,9 @@ Initial public release.
 - Windows and macOS desktop support, Android and iOS cloud dictation, and an experimental Linux runner built in CI
 - CI with lockfile enforcement, pinned Flutter 3.47.4, `dart format`, `flutter analyze`, `flutter test`, and per-OS builds
 
+### Fixed
+
+- The mode-selection popup (`Ctrl+Shift+M`) no longer offers writing styles the active pipeline cannot apply (single-pass with a transcription-only model, or Whisper without two-step refinement): locked styles are dimmed with a lock icon, cannot be clicked or arrowed onto, and a notice explains how to enable them. The tray menu, mobile pickers, and popup now share the same rule.
+- Onboarding option tiles no longer overflow on narrow (390px) screens: model badges such as "Downloaded · 466 MB" now ellipsize within the tile instead of pushing past its edge.
+
 [0.1.0]: https://github.com/justingorczyca/Beeamvo/releases/tag/v0.1.0

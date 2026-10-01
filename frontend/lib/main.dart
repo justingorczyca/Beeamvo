@@ -903,16 +903,27 @@ class _BeeamvoHomeState extends State<BeeamvoHome>
       scope: HotKeyScope.inapp,
       onPressed: _cancelModeSelection,
     );
+    // Arrow keys step only onto tiles the active pipeline can honor
+    // (see promptSelectableInModePopup); when every style is available
+    // this behaves exactly like a plain step-and-clamp with no wrapping.
     await _hotkeyService.registerHotkey(
       id: 'mode_up',
       key: LogicalKeyboardKey.arrowUp,
       scope: HotKeyScope.inapp,
       onPressed: () {
-        setState(() {
-          _modeSelectionIndex = (_modeSelectionIndex ?? 0) > 0
-              ? _modeSelectionIndex! - 1
-              : 0;
-        });
+        final prompts = [
+          ...SystemPrompt.availablePrompts,
+          ..._settingsService.customPrompts,
+        ];
+        final next = nextSelectableModeIndex(
+          prompts: prompts,
+          settings: _settingsService,
+          current: _modeSelectionIndex ?? 0,
+          delta: -1,
+        );
+        if (next != (_modeSelectionIndex ?? 0)) {
+          setState(() => _modeSelectionIndex = next);
+        }
       },
     );
     await _hotkeyService.registerHotkey(
@@ -920,15 +931,19 @@ class _BeeamvoHomeState extends State<BeeamvoHome>
       key: LogicalKeyboardKey.arrowDown,
       scope: HotKeyScope.inapp,
       onPressed: () {
-        final count =
-            SystemPrompt.availablePrompts.length +
-            _settingsService.customPrompts.length;
-        setState(() {
-          _modeSelectionIndex = ((_modeSelectionIndex ?? 0) + 1).clamp(
-            0,
-            count - 1,
-          );
-        });
+        final prompts = [
+          ...SystemPrompt.availablePrompts,
+          ..._settingsService.customPrompts,
+        ];
+        final next = nextSelectableModeIndex(
+          prompts: prompts,
+          settings: _settingsService,
+          current: _modeSelectionIndex ?? 0,
+          delta: 1,
+        );
+        if (next != (_modeSelectionIndex ?? 0)) {
+          setState(() => _modeSelectionIndex = next);
+        }
       },
     );
     await _hotkeyService.registerHotkey(
@@ -959,8 +974,6 @@ class _BeeamvoHomeState extends State<BeeamvoHome>
   }
 
   void _selectModeByIndex(int index) async {
-    await _unregisterModeSelectionHotkeys();
-
     final allPrompts = [
       ...SystemPrompt.availablePrompts,
       ..._settingsService.customPrompts,
@@ -971,6 +984,18 @@ class _BeeamvoHomeState extends State<BeeamvoHome>
     }
 
     final prompt = allPrompts[index];
+    // Defense in depth: navigation skips locked styles, but a stale index
+    // (pipeline changed while the popup was open) could still land here.
+    // Refuse before unregistering hotkeys or resizing the window so the
+    // popup stays open and keyboard navigation keeps working.
+    if (!promptSelectableInModePopup(_settingsService, prompt)) {
+      debugPrint(
+        'Mode selection ignored: styles unavailable for this pipeline',
+      );
+      return;
+    }
+
+    await _unregisterModeSelectionHotkeys();
 
     _temporaryPromptId = prompt.id;
     _modeSelectionIndex = null;

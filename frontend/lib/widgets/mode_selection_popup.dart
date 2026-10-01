@@ -5,6 +5,42 @@ import '../services/settings_service.dart';
 import '../theme/app_theme.dart';
 import 'settings/settings_shared.dart';
 
+/// Whether [prompt] may be chosen in the mode popup right now. Default is
+/// always selectable; every other style requires a pipeline that applies
+/// prompts (cloud prompt-capable model, or two-step refinement).
+bool promptSelectableInModePopup(
+  SettingsService settings,
+  SystemPrompt prompt,
+) => prompt.id == SystemPrompt.defaultId || settings.promptIsApplied;
+
+/// Next index from [current] (stepping in the direction of [delta].sign)
+/// whose prompt is selectable. Returns [current] when no selectable index
+/// exists in that direction. Never wraps. Pure, no side effects.
+int nextSelectableModeIndex({
+  required List<SystemPrompt> prompts,
+  required SettingsService settings,
+  required int current,
+  required int delta,
+}) {
+  final step = delta.sign;
+  if (step == 0) return current;
+  for (var i = current + step; i >= 0 && i < prompts.length; i += step) {
+    if (promptSelectableInModePopup(settings, prompts[i])) return i;
+  }
+  return current;
+}
+
+/// Copy for the notice strip shown while styles are locked, phrased for the
+/// active backend so the way out is actionable. Kept as a pure top-level
+/// function so tests can pin the exact strings.
+String modePopupLockNotice(SettingsService settings) {
+  if (settings.transcriptionBackend == TranscriptionBackend.whisper) {
+    return 'Whisper transcribes only. Turn on Two-Step Refinement to apply styles.';
+  }
+  // Cloud engine with a transcription-only model in single-pass mode.
+  return 'Styles need a prompt-capable model or Two-Step Refinement. Only Default is available.';
+}
+
 /// Compact popup that lists all available transcription prompts for quick
 /// one-off mode selection. Keyboard-navigable (arrows, Enter, Escape).
 class ModeSelectionPopup extends StatefulWidget {
@@ -88,6 +124,8 @@ class _ModeSelectionPopupState extends State<ModeSelectionPopup> {
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               _buildHeader(context),
+              if (!widget.settingsService.promptIsApplied)
+                _buildLockNotice(context),
               Expanded(
                 child: ListView.builder(
                   padding: const EdgeInsets.symmetric(
@@ -95,14 +133,25 @@ class _ModeSelectionPopupState extends State<ModeSelectionPopup> {
                     vertical: 4,
                   ),
                   itemCount: allPrompts.length,
-                  itemBuilder: (_, i) => _PromptTile(
-                    key: i == widget.selectedIndex ? _selectedTileKey : null,
-                    prompt: allPrompts[i],
-                    isSelected: i == widget.selectedIndex,
-                    isDefault: allPrompts[i].id == savedId,
-                    settingsService: widget.settingsService,
-                    onTap: () => widget.onSelect(allPrompts[i].id),
-                  ),
+                  itemBuilder: (_, i) {
+                    final prompt = allPrompts[i];
+                    // Selectability lives in one place so the tray menu,
+                    // keyboard stepping, and the tiles can never drift.
+                    final isBlocked = !promptSelectableInModePopup(
+                      widget.settingsService,
+                      prompt,
+                    );
+                    return _PromptTile(
+                      key: i == widget.selectedIndex ? _selectedTileKey : null,
+                      prompt: prompt,
+                      isSelected: i == widget.selectedIndex,
+                      isDefault: prompt.id == savedId,
+                      isBlocked: isBlocked,
+                      onTap: isBlocked
+                          ? null
+                          : () => widget.onSelect(prompt.id),
+                    );
+                  },
                 ),
               ),
               _buildFooter(context),
@@ -130,6 +179,38 @@ class _ModeSelectionPopupState extends State<ModeSelectionPopup> {
               fontSize: 14,
               fontWeight: FontWeight.w700,
               color: beeText(context),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// Quiet notice between header and list, shown only while the active
+  /// pipeline cannot apply writing styles. Explains the dimmed, locked
+  /// tiles so the state is self-explanatory instead of silently ignored.
+  Widget _buildLockNotice(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.fromLTRB(16, 8, 16, 8),
+      decoration: BoxDecoration(
+        color: beeYellow(context).withValues(alpha: 0.06),
+        border: Border(bottom: BorderSide(color: beeDivider(context))),
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Icon(Icons.info_outline_rounded, size: 13, color: beeYellow(context)),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Text(
+              modePopupLockNotice(widget.settingsService),
+              maxLines: 3,
+              overflow: TextOverflow.ellipsis,
+              style: GoogleFonts.inter(
+                fontSize: 11,
+                color: beeTextMuted(context),
+                height: 1.35,
+              ),
             ),
           ),
         ],
@@ -173,16 +254,23 @@ class _ModeSelectionPopupState extends State<ModeSelectionPopup> {
 class _PromptTile extends StatefulWidget {
   final SystemPrompt prompt;
   final bool isSelected;
+
+  /// Marks the saved style with the trailing DEFAULT badge.
   final bool isDefault;
-  final SettingsService settingsService;
-  final VoidCallback onTap;
+
+  /// A blocked style cannot affect the pipeline's output: the tile is
+  /// dimmed, untappable, never highlighted, and not a semantic button.
+  final bool isBlocked;
+
+  /// Null while blocked so the tile gives no tap feedback at all.
+  final VoidCallback? onTap;
 
   const _PromptTile({
     super.key,
     required this.prompt,
     required this.isSelected,
     required this.isDefault,
-    required this.settingsService,
+    required this.isBlocked,
     required this.onTap,
   });
 
@@ -198,96 +286,113 @@ class _PromptTileState extends State<_PromptTile>
   @override
   Widget build(BuildContext context) {
     super.build(context); // Required for AutomaticKeepAliveClientMixin
-    // Prompts other than Default only shape the output when a cloud model is
-    // in the pipeline; on pure offline Whisper they read as inactive.
-    final isBlocked =
-        !widget.isDefault && !widget.settingsService.promptIsApplied;
+    // Styles other than Default only shape the output when the pipeline
+    // applies prompts. A blocked tile stays visible but inert: no tap
+    // target, no selection highlight, and no button semantics.
+    final showSelected = widget.isSelected && !widget.isBlocked;
 
-    return GestureDetector(
-      onTap: widget.onTap,
-      child: AnimatedContainer(
-        duration: const Duration(milliseconds: 100),
-        margin: const EdgeInsets.symmetric(vertical: 2),
-        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 10),
-        decoration: BoxDecoration(
-          color: widget.isSelected
-              ? beeYellow(context).withValues(alpha: 0.10)
-              : Colors.transparent,
-          borderRadius: BorderRadius.circular(kBeeRadiusSm),
-          border: widget.isSelected
-              ? Border.all(color: beeYellow(context).withValues(alpha: 0.70))
-              : null,
-        ),
-        child: Opacity(
-          opacity: isBlocked ? 0.5 : 1.0,
-          child: Row(
-            children: [
-              AnimatedContainer(
-                duration: const Duration(milliseconds: 150),
-                width: 14,
-                height: 14,
-                decoration: BoxDecoration(
-                  shape: BoxShape.circle,
-                  color: widget.isSelected
-                      ? beeYellow(context)
-                      : Colors.transparent,
-                  border: Border.all(
-                    color: widget.isSelected
-                        ? beeYellow(context)
-                        : beeBorder(context),
-                    width: 1.5,
-                  ),
-                ),
-                child: widget.isSelected
-                    ? Center(
-                        child: Container(
-                          width: 5,
-                          height: 5,
-                          decoration: BoxDecoration(
-                            shape: BoxShape.circle,
-                            color: beeBlack(context),
-                          ),
-                        ),
-                      )
-                    : null,
-              ),
-              const SizedBox(width: 10),
-              Expanded(
-                child: Text(
-                  widget.prompt.name,
-                  style: GoogleFonts.inter(
-                    fontSize: 13,
-                    fontWeight: widget.isSelected
-                        ? FontWeight.w600
-                        : FontWeight.w500,
-                    color: widget.isSelected
-                        ? beeText(context)
-                        : beeTextSub(context),
-                  ),
-                ),
-              ),
-              if (widget.isDefault)
-                Container(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 6,
-                    vertical: 2,
-                  ),
+    return Semantics(
+      label: widget.prompt.name,
+      button: !widget.isBlocked,
+      enabled: !widget.isBlocked,
+      selected: showSelected,
+      onTap: widget.isBlocked ? null : widget.onTap,
+      child: GestureDetector(
+        onTap: widget.onTap,
+        child: AnimatedContainer(
+          duration: const Duration(milliseconds: 100),
+          margin: const EdgeInsets.symmetric(vertical: 2),
+          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 10),
+          decoration: BoxDecoration(
+            color: showSelected
+                ? beeYellow(context).withValues(alpha: 0.10)
+                : Colors.transparent,
+            borderRadius: BorderRadius.circular(kBeeRadiusSm),
+            border: showSelected
+                ? Border.all(color: beeYellow(context).withValues(alpha: 0.70))
+                : null,
+          ),
+          child: Opacity(
+            opacity: widget.isBlocked ? 0.5 : 1.0,
+            child: Row(
+              children: [
+                AnimatedContainer(
+                  duration: const Duration(milliseconds: 150),
+                  width: 14,
+                  height: 14,
                   decoration: BoxDecoration(
-                    color: beeYellow(context).withValues(alpha: 0.12),
-                    borderRadius: BorderRadius.circular(kBeeRadiusXs),
+                    shape: BoxShape.circle,
+                    color: showSelected
+                        ? beeYellow(context)
+                        : Colors.transparent,
+                    border: Border.all(
+                      color: showSelected
+                          ? beeYellow(context)
+                          : beeBorder(context),
+                      width: 1.5,
+                    ),
                   ),
+                  child: showSelected
+                      ? Center(
+                          child: Container(
+                            width: 5,
+                            height: 5,
+                            decoration: BoxDecoration(
+                              shape: BoxShape.circle,
+                              color: beeBlack(context),
+                            ),
+                          ),
+                        )
+                      : null,
+                ),
+                const SizedBox(width: 10),
+                Expanded(
                   child: Text(
-                    'DEFAULT',
+                    widget.prompt.name,
                     style: GoogleFonts.inter(
-                      fontSize: 8,
-                      fontWeight: FontWeight.w800,
-                      color: beeYellow(context),
-                      letterSpacing: 0.5,
+                      fontSize: 13,
+                      fontWeight: showSelected
+                          ? FontWeight.w600
+                          : FontWeight.w500,
+                      color: showSelected
+                          ? beeText(context)
+                          : beeTextSub(context),
                     ),
                   ),
                 ),
-            ],
+                // The trailing slot holds the DEFAULT badge, or — only on a
+                // blocked tile, which is never the default — the lock icon.
+                if (widget.isDefault)
+                  _buildDefaultBadge(context)
+                else if (widget.isBlocked)
+                  Icon(
+                    Icons.lock_outline_rounded,
+                    size: 13,
+                    color: beeTextMuted(context),
+                  ),
+              ],
+            ),
           ),
+        ),
+      ),
+    );
+  }
+
+  /// Trailing pill that marks the saved style.
+  Widget _buildDefaultBadge(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+      decoration: BoxDecoration(
+        color: beeYellow(context).withValues(alpha: 0.12),
+        borderRadius: BorderRadius.circular(kBeeRadiusXs),
+      ),
+      child: Text(
+        'DEFAULT',
+        style: GoogleFonts.inter(
+          fontSize: 8,
+          fontWeight: FontWeight.w800,
+          color: beeYellow(context),
+          letterSpacing: 0.5,
         ),
       ),
     );
