@@ -1,8 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
+import '../../../config.dart';
 import '../../../providers/settings_provider.dart';
 import '../../../models/system_prompt.dart';
 import '../../../services/settings_service.dart';
+import '../../../services/whisper_model_download_service.dart';
 import '../bee_input.dart';
 import '../bee_page_header.dart';
 import '../settings_shared.dart';
@@ -172,6 +174,7 @@ class _PromptsPageState extends State<PromptsPage> {
   Widget _buildCurrentPromptBlock(bool stylesActive) {
     final prompt = _effectiveSelectedPrompt();
     final isBuiltIn = _builtInPrompts.any((p) => p.id == prompt.id);
+    final pipelineSummary = _currentPipelineSummary(prompt);
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -223,6 +226,18 @@ class _PromptsPageState extends State<PromptsPage> {
                         ],
                       ),
                       const SizedBox(height: 3),
+                      if (pipelineSummary != null) ...[
+                        Text(
+                          pipelineSummary,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: GoogleFonts.inter(
+                            fontSize: 10.5,
+                            color: beeTextMuted(context),
+                          ),
+                        ),
+                        const SizedBox(height: 3),
+                      ],
                       Text(
                         _truncatePromptText(prompt.instruction, 110),
                         maxLines: 2,
@@ -280,6 +295,46 @@ class _PromptsPageState extends State<PromptsPage> {
     );
   }
 
+  /// Whether [prompt] carries any per-style pipeline override. Built-ins
+  /// never do; a custom style does as soon as one of the three override
+  /// fields is set.
+  bool _promptHasPipelineOverrides(SystemPrompt prompt) =>
+      prompt.twoPassOverride != null ||
+      prompt.modelOverrideId != null ||
+      prompt.polishModelOverrideId != null;
+
+  /// One-line summary of the pipeline [prompt] runs on, shown in the Current
+  /// Style block — or null when the style simply follows the global setup.
+  ///
+  /// Model names come from the effective pipeline
+  /// ([SettingsService.resolvePipelineForPrompt], which already falls back
+  /// safely for stale overrides); on the Whisper backend the audio stage is
+  /// local, so the whisper model name is shown instead of the unused cloud
+  /// id.
+  String? _currentPipelineSummary(SystemPrompt prompt) {
+    if (!_promptHasPipelineOverrides(prompt)) return null;
+    final settings = _settingsService;
+    if (settings == null) return null;
+    final pipeline = settings.resolvePipelineForPrompt(prompt);
+    final String pass1Name;
+    if (settings.transcriptionBackend == TranscriptionBackend.whisper) {
+      pass1Name =
+          WhisperModelDownloadService.getModelInfo(
+            settings.whisperModelId,
+          )?.name ??
+          settings.whisperModelId;
+    } else {
+      pass1Name = AppConfig.getModelById(pipeline.pass1ModelId).displayName;
+    }
+    if (!pipeline.twoPass) {
+      return 'Own pipeline · One-pass · $pass1Name';
+    }
+    final polishName = AppConfig.getModelById(
+      pipeline.polishModelId,
+    ).displayName;
+    return 'Own pipeline · Two-pass · $pass1Name → $polishName';
+  }
+
   Widget _buildPromptRow({
     required SystemPrompt prompt,
     required bool isBuiltIn,
@@ -296,6 +351,15 @@ class _PromptsPageState extends State<PromptsPage> {
       badge: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
+          // Custom styles that override the pipeline get a tune affordance
+          // before the generic actions; tapping it opens the edit dialog.
+          if (!isBuiltIn && _promptHasPipelineOverrides(prompt))
+            _rowAction(
+              icon: Icons.tune_rounded,
+              size: 13,
+              label: 'Uses its own pipeline settings',
+              onTap: () => _showEditDialog(settings, prompt),
+            ),
           _rowAction(
             icon: Icons.copy_rounded,
             label: 'Duplicate ${prompt.name}',
@@ -331,6 +395,7 @@ class _PromptsPageState extends State<PromptsPage> {
     required String label,
     required VoidCallback onTap,
     Color? color,
+    double size = 14,
   }) {
     return BeeInteractive(
       onTap: onTap,
@@ -338,7 +403,7 @@ class _PromptsPageState extends State<PromptsPage> {
       tooltip: label,
       builder: (context, focused) => Padding(
         padding: const EdgeInsets.all(4),
-        child: Icon(icon, size: 14, color: color ?? beeTextMuted(context)),
+        child: Icon(icon, size: size, color: color ?? beeTextMuted(context)),
       ),
     );
   }
@@ -440,6 +505,128 @@ class _PromptsPageState extends State<PromptsPage> {
     _showPromptDialog(settings, existingPrompt: existing);
   }
 
+  // ── Pipeline override helpers (style dialog) ────────────────────────
+
+  /// Dialog value for the transcription-mode selector:
+  /// `''` = Follow global, `'one'` = One-pass, `'two'` = Two-pass.
+  static String _modeValueFor(bool? twoPassOverride) =>
+      switch (twoPassOverride) {
+        true => 'two',
+        false => 'one',
+        null => '',
+      };
+
+  /// Inverse of [_modeValueFor]: the `twoPassOverride` to persist.
+  static bool? _modeOverrideFor(String value) => switch (value) {
+    'one' => false,
+    'two' => true,
+    _ => null,
+  };
+
+  /// The dialog value for a stored model override: the id when it still
+  /// resolves in [models] (display-only check), otherwise `''` so a stale
+  /// override reads as 'Follow global' until it is re-saved.
+  static String _validOverrideId(String? id, List<GeminiModelConfig> models) =>
+      id != null && models.any((model) => model.id == id) ? id : '';
+
+  /// Small muted label above a pipeline control inside the style dialog.
+  Widget _dialogFieldLabel(String label) {
+    return Align(
+      alignment: Alignment.centerLeft,
+      child: Padding(
+        padding: const EdgeInsets.only(bottom: 4),
+        child: Text(
+          label,
+          style: GoogleFonts.inter(
+            fontSize: 10.5,
+            fontWeight: FontWeight.w500,
+            color: beeTextMuted(context),
+            letterSpacing: 0.2,
+          ),
+        ),
+      ),
+    );
+  }
+
+  /// Dropdown for a pipeline model override, styled like the dialog's
+  /// 'Start from' selector: 'Follow global' plus one entry per [models].
+  Widget _pipelineModelDropdown({
+    required String label,
+    required String value,
+    required List<GeminiModelConfig> models,
+    required ValueChanged<String> onChanged,
+  }) {
+    return DropdownButtonFormField<String>(
+      initialValue: value,
+      isExpanded: true,
+      style: GoogleFonts.inter(color: beeText(context), fontSize: 14),
+      iconEnabledColor: beeTextMuted(context),
+      dropdownColor: beeSurfaceRaised(context),
+      decoration: beeInputDecoration(context, label: label),
+      items: [
+        DropdownMenuItem(
+          value: '',
+          child: Text(
+            'Follow global',
+            style: GoogleFonts.inter(color: beeText(context), fontSize: 14),
+          ),
+        ),
+        for (final model in models)
+          DropdownMenuItem(
+            value: model.id,
+            child: Text(
+              model.displayName,
+              style: GoogleFonts.inter(color: beeText(context), fontSize: 14),
+            ),
+          ),
+      ],
+      onChanged: (value) {
+        if (value == null) return;
+        onChanged(value);
+      },
+    );
+  }
+
+  /// Muted notice shown while the dialog's current pipeline state would not
+  /// apply writing styles, with the readiness reason as a second line when
+  /// the pipeline cannot run.
+  Widget _pipelineWarning(BuildContext context, {required String? issue}) {
+    final muted = beeTextMuted(context);
+    final textStyle = GoogleFonts.inter(
+      fontSize: 11,
+      color: muted,
+      height: 1.35,
+    );
+    return Padding(
+      padding: const EdgeInsets.only(top: 10),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Icon(Icons.info_outline_rounded, size: 13, color: muted),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  "This style won't shape the transcript while a "
+                  'transcription-only model runs it. Choose Two-pass or a '
+                  'prompt-capable model.',
+                  style: textStyle,
+                ),
+                if (issue != null)
+                  Padding(
+                    padding: const EdgeInsets.only(top: 2),
+                    child: Text(issue, style: textStyle),
+                  ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
   void _showPromptDialog(
     SettingsService settings, {
     SystemPrompt? existingPrompt,
@@ -451,6 +638,29 @@ class _PromptsPageState extends State<PromptsPage> {
     );
     String? nameError;
     String? instrError;
+    // 'Start from' base for the create dialog: '' = Blank, otherwise the id
+    // of a built-in prompt whose instruction seeds the new style.
+    var baseId = '';
+    // The last name auto-suggested from a base pick, so a later pick may
+    // replace its own suggestion but never a name the user typed.
+    var autoName = '';
+    // ── Per-style pipeline overrides (dialog state) ──
+    // modeValue: '' = Follow global, 'one' = One-pass, 'two' = Two-pass.
+    var modeValue = _modeValueFor(existingPrompt?.twoPassOverride);
+    // A stored model override that no longer resolves in the current global
+    // catalogs displays as 'Follow global' without erasing the stored id
+    // while the dialog is merely open; saving then writes null.
+    var modelValue = _validOverrideId(
+      existingPrompt?.modelOverrideId,
+      settings.primaryModels,
+    );
+    // The polish override keeps its value while its picker is hidden (for
+    // example while the effective mode is one-pass), so temporarily
+    // switching never silently drops it.
+    var polishValue = _validOverrideId(
+      existingPrompt?.polishModelOverrideId,
+      settings.refinementModels,
+    );
 
     showDialog(
       context: context,
@@ -458,6 +668,27 @@ class _PromptsPageState extends State<PromptsPage> {
         builder: (context, setDialogState) {
           final availableWidth = MediaQuery.sizeOf(context).width - 96;
           final contentWidth = availableWidth < 420 ? availableWidth : 420.0;
+          // The Model picker is meaningful only on the cloud backend; local
+          // Whisper always serves the audio stage.
+          final showModelPicker =
+              settings.transcriptionBackend == TranscriptionBackend.cloud;
+          final effectiveTwoPass =
+              _modeOverrideFor(modeValue) ??
+              settings.twoPassTranscriptionEnabled;
+          // Draft carrying the dialog's current override state, evaluated
+          // against the same service logic the recording pipeline uses.
+          final pipelineDraft = SystemPrompt(
+            id: existingPrompt?.id ?? 'draft',
+            name: existingPrompt?.name ?? '',
+            instruction: '',
+            modelOverrideId: modelValue.isEmpty ? null : modelValue,
+            polishModelOverrideId: polishValue.isEmpty ? null : polishValue,
+            twoPassOverride: _modeOverrideFor(modeValue),
+          );
+          final styleApplies = settings.promptAppliesFor(pipelineDraft);
+          final pipelineIssue = styleApplies
+              ? null
+              : settings.pipelineIssueForPrompt(pipelineDraft);
 
           return AlertDialog(
             insetPadding: const EdgeInsets.symmetric(
@@ -476,79 +707,202 @@ class _PromptsPageState extends State<PromptsPage> {
             ),
             content: SizedBox(
               width: contentWidth,
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  TextField(
-                    controller: nameCtrl,
-                    style: GoogleFonts.inter(
-                      color: beeText(context),
-                      fontSize: 14,
-                    ),
-                    onChanged: (_) {
-                      if (nameError != null) {
-                        setDialogState(() {
-                          nameError = _validatePromptName(
-                            nameCtrl.text,
-                            existingPrompt: existingPrompt,
-                          );
-                        });
-                      }
-                    },
-                    decoration: beeInputDecoration(context, label: 'Name')
-                        .copyWith(
-                          errorText: nameError,
-                          errorStyle: GoogleFonts.inter(
-                            color: beeError(context),
-                            fontSize: 11,
-                          ),
+              child: SingleChildScrollView(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    if (!isEdit) ...[
+                      DropdownButtonFormField<String>(
+                        initialValue: baseId,
+                        isExpanded: true,
+                        style: GoogleFonts.inter(
+                          color: beeText(context),
+                          fontSize: 14,
                         ),
-                  ),
-                  const SizedBox(height: 16),
-                  TextField(
-                    controller: instrCtrl,
-                    maxLines: 6,
-                    style: GoogleFonts.inter(
-                      color: beeText(context),
-                      fontSize: 13,
-                      height: 1.5,
-                    ),
-                    onChanged: (_) {
-                      setDialogState(() {
-                        if (instrError != null) {
-                          instrError = _validatePromptInstruction(
-                            instrCtrl.text,
-                          );
-                        }
-                      });
-                    },
-                    decoration:
-                        beeInputDecoration(
+                        iconEnabledColor: beeTextMuted(context),
+                        dropdownColor: beeSurfaceRaised(context),
+                        decoration: beeInputDecoration(
                           context,
-                          label: 'Instruction',
-                        ).copyWith(
-                          errorText: instrError,
-                          errorStyle: GoogleFonts.inter(
-                            color: beeError(context),
-                            fontSize: 11,
-                          ),
-                          alignLabelWithHint: true,
+                          label: 'Start from',
                         ),
-                  ),
-                  const SizedBox(height: 6),
-                  Align(
-                    alignment: Alignment.centerRight,
-                    child: Text(
-                      '${instrCtrl.text.length} characters',
+                        items: [
+                          DropdownMenuItem(
+                            value: '',
+                            child: Text(
+                              'Blank',
+                              style: GoogleFonts.inter(
+                                color: beeText(context),
+                                fontSize: 14,
+                              ),
+                            ),
+                          ),
+                          for (final prompt in _builtInPrompts)
+                            DropdownMenuItem(
+                              value: prompt.id,
+                              child: Text(
+                                prompt.name,
+                                style: GoogleFonts.inter(
+                                  color: beeText(context),
+                                  fontSize: 14,
+                                ),
+                              ),
+                            ),
+                        ],
+                        onChanged: (value) {
+                          if (value == null) return;
+                          setDialogState(() {
+                            baseId = value;
+                            if (value.isEmpty) {
+                              // Back to Blank: undo what the base pick added,
+                              // but never a name the user typed themselves.
+                              instrCtrl.text = '';
+                              if (nameCtrl.text == autoName) {
+                                nameCtrl.text = '';
+                              }
+                              autoName = '';
+                            } else {
+                              final base = _builtInPrompts.firstWhere(
+                                (p) => p.id == value,
+                              );
+                              // The base is only a starting point: the text
+                              // lands in the field for the user to rework.
+                              instrCtrl.text = base.instruction;
+                              if (nameCtrl.text.isEmpty ||
+                                  nameCtrl.text == autoName) {
+                                autoName = '${base.name} (custom)';
+                                nameCtrl.text = autoName;
+                              }
+                            }
+                            if (instrError != null) {
+                              instrError = _validatePromptInstruction(
+                                instrCtrl.text,
+                              );
+                            }
+                          });
+                        },
+                      ),
+                      const SizedBox(height: 16),
+                    ],
+                    TextField(
+                      controller: nameCtrl,
                       style: GoogleFonts.inter(
-                        fontSize: 10,
-                        color: instrCtrl.text.length > 6000
-                            ? beeError(context)
-                            : beeTextMuted(context),
+                        color: beeText(context),
+                        fontSize: 14,
+                      ),
+                      onChanged: (_) {
+                        if (nameError != null) {
+                          setDialogState(() {
+                            nameError = _validatePromptName(
+                              nameCtrl.text,
+                              existingPrompt: existingPrompt,
+                            );
+                          });
+                        }
+                      },
+                      decoration: beeInputDecoration(context, label: 'Name')
+                          .copyWith(
+                            errorText: nameError,
+                            errorStyle: GoogleFonts.inter(
+                              color: beeError(context),
+                              fontSize: 11,
+                            ),
+                          ),
+                    ),
+                    const SizedBox(height: 16),
+                    TextField(
+                      controller: instrCtrl,
+                      maxLines: 6,
+                      style: GoogleFonts.inter(
+                        color: beeText(context),
+                        fontSize: 13,
+                        height: 1.5,
+                      ),
+                      onChanged: (_) {
+                        setDialogState(() {
+                          if (instrError != null) {
+                            instrError = _validatePromptInstruction(
+                              instrCtrl.text,
+                            );
+                          }
+                        });
+                      },
+                      decoration:
+                          beeInputDecoration(
+                            context,
+                            label: 'Instruction',
+                          ).copyWith(
+                            errorText: instrError,
+                            errorStyle: GoogleFonts.inter(
+                              color: beeError(context),
+                              fontSize: 11,
+                            ),
+                            alignLabelWithHint: true,
+                          ),
+                    ),
+                    const SizedBox(height: 6),
+                    Align(
+                      alignment: Alignment.centerRight,
+                      child: Text(
+                        '${instrCtrl.text.length} characters',
+                        style: GoogleFonts.inter(
+                          fontSize: 10,
+                          color: instrCtrl.text.length > 6000
+                              ? beeError(context)
+                              : beeTextMuted(context),
+                        ),
                       ),
                     ),
-                  ),
-                ],
+                    // ── Per-style pipeline ───────────────────────────────
+                    const BeeGroupLabel(label: 'Pipeline'),
+                    Align(
+                      alignment: Alignment.centerLeft,
+                      child: Text(
+                        'This style may run on its own setup. Anything left '
+                        'on Follow global keeps using the global '
+                        'Transcription settings.',
+                        style: GoogleFonts.inter(
+                          fontSize: 10.5,
+                          color: beeTextMuted(context),
+                          height: 1.4,
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 10),
+                    _dialogFieldLabel('Transcription mode'),
+                    BeeSegmented<String>(
+                      value: modeValue,
+                      options: const [
+                        (val: '', label: 'Follow global', icon: null),
+                        (val: 'one', label: 'One-pass', icon: null),
+                        (val: 'two', label: 'Two-pass', icon: null),
+                      ],
+                      onChanged: (value) =>
+                          setDialogState(() => modeValue = value),
+                    ),
+                    if (showModelPicker) ...[
+                      const SizedBox(height: 12),
+                      _pipelineModelDropdown(
+                        label: 'Model',
+                        value: modelValue,
+                        models: settings.primaryModels,
+                        onChanged: (value) =>
+                            setDialogState(() => modelValue = value),
+                      ),
+                    ],
+                    if (effectiveTwoPass) ...[
+                      const SizedBox(height: 12),
+                      _pipelineModelDropdown(
+                        label: 'Polish model',
+                        value: polishValue,
+                        models: settings.refinementModels,
+                        onChanged: (value) =>
+                            setDialogState(() => polishValue = value),
+                      ),
+                    ],
+                    if (!styleApplies)
+                      _pipelineWarning(context, issue: pipelineIssue),
+                  ],
+                ),
               ),
             ),
             actions: [
@@ -586,6 +940,11 @@ class _PromptsPageState extends State<PromptsPage> {
                       id: existingPrompt.id,
                       name: promptName,
                       instruction: promptInstruction,
+                      modelOverrideId: modelValue.isEmpty ? null : modelValue,
+                      polishModelOverrideId: polishValue.isEmpty
+                          ? null
+                          : polishValue,
+                      twoPassOverride: _modeOverrideFor(modeValue),
                     );
                     await settings.updateCustomPrompt(updated);
                     if (!mounted) return;
@@ -596,6 +955,11 @@ class _PromptsPageState extends State<PromptsPage> {
                       id: _generatePromptId(),
                       name: promptName,
                       instruction: promptInstruction,
+                      modelOverrideId: modelValue.isEmpty ? null : modelValue,
+                      polishModelOverrideId: polishValue.isEmpty
+                          ? null
+                          : polishValue,
+                      twoPassOverride: _modeOverrideFor(modeValue),
                     );
                     await settings.addCustomPrompt(p);
                     await settings.setSelectedPromptId(p.id);

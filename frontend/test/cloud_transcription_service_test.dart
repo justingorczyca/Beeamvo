@@ -451,6 +451,219 @@ void main() {
       },
     );
 
+    test(
+      'two-pass routes a pass-1 model override and keeps the stored polish',
+      () async {
+        final geminiClient = FakeCloudClient(response: 'raw transcript');
+        final settings = FakeCloudSettingsService(
+          modelId: AppConfig.defaultModelId,
+        );
+        final service = CloudTranscriptionService(
+          geminiInteractionsService: geminiClient,
+        );
+        addTearDown(service.dispose);
+        service.attachSettings(settings);
+        await settings.setTwoPassRefinementModelId('gemini-3.7-flash');
+        await settings.setThinkingLevelForModel(
+          'gemini-3.6-flash',
+          GeminiThinkingLevel.high,
+        );
+
+        final result = await service.transcribeTwoPass(
+          Uint8List.fromList([1, 2, 3]),
+          'audio/wav',
+          settings: settings,
+          pass1ModelOverrideId: 'gemini-3.6-flash',
+        );
+
+        expect(result, equals('raw transcript'));
+        // Pass 1 uses the override id (and its own thinking level) instead of
+        // the stored first-pass model.
+        expect(geminiClient.transcribeCalls, equals(1));
+        expect(geminiClient.lastTranscribeModelOverrideId, 'gemini-3.6-flash');
+        expect(
+          geminiClient.lastTranscribeThinkingLevelOverride,
+          GeminiThinkingLevel.high,
+        );
+        // Pass 2 is untouched by the pass-1 override.
+        expect(geminiClient.improveCalls, equals(1));
+        expect(geminiClient.lastImproveModelOverrideId, 'gemini-3.7-flash');
+      },
+    );
+
+    test(
+      'two-pass routes a polish model override with its own thinking level',
+      () async {
+        final geminiClient = FakeCloudClient(response: 'polished');
+        final settings = FakeCloudSettingsService();
+        final service = CloudTranscriptionService(
+          geminiInteractionsService: geminiClient,
+        );
+        addTearDown(service.dispose);
+        service.attachSettings(settings);
+        await settings.setTwoPassRefinementModelId('gemini-3.7-flash');
+        await settings.setRefinementThinkingLevel(
+          'gemini-3.7-flash',
+          GeminiThinkingLevel.medium,
+        );
+        await settings.setRefinementThinkingLevel(
+          'gemini-3.6-flash',
+          GeminiThinkingLevel.high,
+        );
+
+        final result = await service.transcribeTwoPass(
+          Uint8List.fromList([1]),
+          'audio/wav',
+          settings: settings,
+          polishModelOverrideId: 'gemini-3.6-flash',
+        );
+
+        expect(result, equals('polished'));
+        // Pass 1 is untouched by the polish override.
+        expect(geminiClient.transcribeCalls, equals(1));
+        expect(
+          geminiClient.lastTranscribeModelOverrideId,
+          AppConfig.defaultModelId,
+        );
+        // Pass 2 uses the override id, and the polish thinking level resolves
+        // for that override id — never the stored model's level.
+        expect(geminiClient.improveCalls, equals(1));
+        expect(geminiClient.lastImproveModelOverrideId, 'gemini-3.6-flash');
+        expect(
+          geminiClient.lastImproveThinkingLevelOverride,
+          GeminiThinkingLevel.high,
+        );
+      },
+    );
+
+    test('two-pass composes pass-1 and polish model overrides', () async {
+      final geminiClient = FakeCloudClient(response: 'raw transcript');
+      final openAiClient = FakeCloudClient(response: 'polished transcript');
+      final settings = FakeCloudSettingsService(
+        modelId: AppConfig.defaultModelId,
+        refinement: CloudProvider.openaiApiKey,
+      );
+      final service = CloudTranscriptionService(
+        geminiInteractionsService: geminiClient,
+        openAiService: openAiClient,
+      );
+      addTearDown(service.dispose);
+      service.attachSettings(settings);
+
+      final result = await service.transcribeTwoPass(
+        Uint8List.fromList([1, 2, 3]),
+        'audio/wav',
+        settings: settings,
+        missionInstruction: 'clean this up',
+        pass1ModelOverrideId: 'gemini-3.5-transcribe',
+        polishModelOverrideId: 'gpt-5.6-terra',
+      );
+
+      expect(result, equals('polished transcript'));
+      // A dedicated speech model is still a legal pass-1 override.
+      expect(geminiClient.transcribeCalls, equals(1));
+      expect(
+        geminiClient.lastTranscribeModelOverrideId,
+        'gemini-3.5-transcribe',
+      );
+      expect(geminiClient.improveCalls, equals(0));
+      expect(openAiClient.transcribeCalls, equals(0));
+      expect(openAiClient.improveCalls, equals(1));
+      expect(openAiClient.lastImproveModelOverrideId, 'gpt-5.6-terra');
+    });
+
+    test(
+      'a transcription-only polish override is rejected before any request',
+      () async {
+        final geminiClient = FakeCloudClient();
+        final settings = FakeCloudSettingsService();
+        final service = CloudTranscriptionService(
+          geminiInteractionsService: geminiClient,
+        );
+        addTearDown(service.dispose);
+        service.attachSettings(settings);
+
+        await expectLater(
+          () => service.transcribeTwoPass(
+            Uint8List.fromList([1]),
+            'audio/wav',
+            settings: settings,
+            polishModelOverrideId: 'gemini-3.5-transcribe',
+          ),
+          throwsA(
+            isA<CloudTranscriptionException>().having(
+              (error) => error.message,
+              'message',
+              contains('only transcribes'),
+            ),
+          ),
+        );
+        // Both stages are captured up front, so neither request runs.
+        expect(geminiClient.transcribeCalls, equals(0));
+        expect(geminiClient.improveCalls, equals(0));
+      },
+    );
+
+    test('a pass-1 override that cannot receive audio is rejected', () async {
+      final vertexClient = FakeCloudClient();
+      final settings = FakeCloudSettingsService(
+        provider: CloudProvider.vertexAi,
+      );
+      final service = CloudTranscriptionService(vertexAiService: vertexClient);
+      addTearDown(service.dispose);
+      service.attachSettings(settings);
+
+      // Vertex shares the Gemini catalog but cannot serve the dedicated
+      // transcription-only speech model.
+      await expectLater(
+        () => service.transcribeTwoPass(
+          Uint8List.fromList([1]),
+          'audio/wav',
+          settings: settings,
+          pass1ModelOverrideId: 'gemini-3.5-transcribe',
+        ),
+        throwsA(
+          isA<CloudTranscriptionException>().having(
+            (error) => error.message,
+            'message',
+            contains('cannot receive audio'),
+          ),
+        ),
+      );
+      expect(vertexClient.transcribeCalls, equals(0));
+    });
+
+    test('refineTranscript routes a polish model override', () async {
+      final geminiClient = FakeCloudClient(response: 'polished');
+      final settings = FakeCloudSettingsService();
+      final service = CloudTranscriptionService(
+        geminiInteractionsService: geminiClient,
+      );
+      addTearDown(service.dispose);
+      service.attachSettings(settings);
+      await settings.setTwoPassRefinementModelId('gemini-3.7-flash');
+      await settings.setRefinementThinkingLevel(
+        'gemini-3.6-flash',
+        GeminiThinkingLevel.high,
+      );
+
+      // Null keeps the stored refinement model.
+      await service.refineTranscript('raw', settings: settings);
+      expect(geminiClient.lastImproveModelOverrideId, 'gemini-3.7-flash');
+
+      await service.refineTranscript(
+        'raw',
+        settings: settings,
+        polishModelOverrideId: 'gemini-3.6-flash',
+      );
+      expect(geminiClient.improveCalls, equals(2));
+      expect(geminiClient.lastImproveModelOverrideId, 'gemini-3.6-flash');
+      expect(
+        geminiClient.lastImproveThinkingLevelOverride,
+        GeminiThinkingLevel.high,
+      );
+    });
+
     test('verifies both stage providers with their own models', () async {
       final geminiClient = FakeCloudClient();
       final codexClient = FakeCloudClient();

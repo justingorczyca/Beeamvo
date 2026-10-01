@@ -209,8 +209,6 @@ class _BeeamvoHomeState extends State<BeeamvoHome>
   Future<void> _backendTransitionQueue = Future<void>.value();
   int _backendTransitionRevision = 0;
   bool _trayInitialized = false;
-  String? _lastTrayPromptId;
-  bool? _lastTrayPromptsApply;
   // The effective transcription backend captured at recording start. Pinned
   // for the whole session so a mid-session settings change cannot redirect the
   // captured audio to a different (wrong) transcription path at stop time.
@@ -262,15 +260,15 @@ class _BeeamvoHomeState extends State<BeeamvoHome>
       unawaited(_scheduleBackendTransition(current));
     }
     _lastSeenBackend = current;
-    final promptId = _settingsService.selectedPromptId;
-    final promptsApply = _settingsService.promptIsApplied;
-    if (_trayInitialized &&
-        (promptId != _lastTrayPromptId ||
-            promptsApply != _lastTrayPromptsApply)) {
+    // The tray's Writing Style submenu derives its checked/disabled state
+    // from each style's resolved pipeline (prompt selection, backend,
+    // provider, pass-1 model, two-pass toggle, custom styles and their
+    // overrides), so any settings change may affect it. The rebuild is
+    // idempotent and notifications are human-rate — refresh unconditionally
+    // instead of tracking each input.
+    if (_trayInitialized) {
       unawaited(_trayService.updateContextMenu());
     }
-    _lastTrayPromptId = promptId;
-    _lastTrayPromptsApply = promptsApply;
     // Clipboard settings are changed from several pages and tray flows. Keep
     // the monitor in sync immediately instead of waiting for Settings to close.
     _syncClipboardMonitor();
@@ -390,8 +388,6 @@ class _BeeamvoHomeState extends State<BeeamvoHome>
           },
         );
         _trayInitialized = true;
-        _lastTrayPromptId = _settingsService.selectedPromptId;
-        _lastTrayPromptsApply = _settingsService.promptIsApplied;
         debugPrint('Tray initialized');
       } catch (e) {
         debugPrint('Tray initialization failed (non-critical): $e');
@@ -995,6 +991,22 @@ class _BeeamvoHomeState extends State<BeeamvoHome>
       return;
     }
 
+    // Selectable is not the same as runnable: a style's overrides can force
+    // a pipeline whose credentials are missing (e.g. forced two-step without
+    // a refinement-provider key). Block BEFORE starting, with the same orb
+    // error surface the start gate in [_startRecording] produces for
+    // hotkey-started sessions.
+    final pipelineIssue = _settingsService.pipelineIssueForPrompt(prompt);
+    if (pipelineIssue != null) {
+      await _unregisterModeSelectionHotkeys();
+      _temporaryPromptId = null;
+      _modeSelectionIndex = null;
+      await windowManager.setMinimumSize(const Size(150, 150));
+      await windowManager.setSize(const Size(150, 150));
+      await _presentOrbError(pipelineIssue, hideAfterSeconds: 5);
+      return;
+    }
+
     await _unregisterModeSelectionHotkeys();
 
     _temporaryPromptId = prompt.id;
@@ -1097,7 +1109,20 @@ class _BeeamvoHomeState extends State<BeeamvoHome>
 
       await WindowHelper.positionAtActiveMonitorBottomCenter(150, 150);
 
-      final setupIssue = _settingsService.transcriptionSetupIssue;
+      // Start gate: block before any capture on the pipeline the upcoming
+      // session will actually run. A per-style override can force two-step
+      // (which then needs refinement credentials) or single-step even when
+      // the global toggle says otherwise, so the reason is resolved for the
+      // effective prompt — `_temporaryPromptId` is already set when the
+      // session comes from the mode popup. For a style without overrides
+      // this is byte-identical to the global transcriptionSetupIssue gate.
+      final effectivePrompt = SystemPrompt.getById(
+        _temporaryPromptId ?? _settingsService.selectedPromptId,
+        customPrompts: _settingsService.customPrompts,
+      );
+      final setupIssue = _settingsService.pipelineIssueForPrompt(
+        effectivePrompt,
+      );
       if (setupIssue != null) {
         await _presentOrbError(setupIssue, hideAfterSeconds: 5);
         return;
@@ -1385,18 +1410,26 @@ class _BeeamvoHomeState extends State<BeeamvoHome>
         effectivePromptId,
         customPrompts: _settingsService.customPrompts,
       );
+      // The pipeline the captured audio will run through: the selected
+      // style's overrides (forced one/two-step, pinned pass-1/polish models)
+      // applied over the global settings. A style without overrides resolves
+      // to exactly the global pipeline, so every request below is unchanged.
+      final pipeline = _settingsService.resolvePipelineForPrompt(
+        selectedPrompt,
+      );
 
       // A session pins its backend at recording start. During a non-retry
       // stop we reuse that captured decision so a mid-session settings change
       // (e.g. switching Cloud↔Whisper) cannot redirect the already-captured
       // audio to a different — and for stream sessions incompatible — path.
       // Retry intentionally resolves fresh so the user can re-run with the
-      // newly chosen settings.
+      // newly chosen settings. The backend itself stays GLOBAL: overrides
+      // never switch Whisper↔Cloud.
       final backend = retryExisting
           ? _settingsService.transcriptionBackend
           : (_activeRecordingBackend ?? _settingsService.transcriptionBackend);
       final isOffline = backend == TranscriptionBackend.whisper;
-      final twoPassEnabled = _settingsService.twoPassTranscriptionEnabled;
+      final twoPassEnabled = pipeline.twoPass;
       final whisperModelId = _settingsService.whisperModelId;
       final whisperLanguage = _settingsService.spokenLanguage;
 
@@ -1525,6 +1558,7 @@ class _BeeamvoHomeState extends State<BeeamvoHome>
             rawTranscript,
             settings: _settingsService,
             missionInstruction: instruction,
+            polishModelOverrideId: pipeline.polishModelId,
           );
           debugPrint('Whisper two-step: refined with cloud model');
         } else {
@@ -1536,13 +1570,15 @@ class _BeeamvoHomeState extends State<BeeamvoHome>
           'audio/wav',
           settings: _settingsService,
           missionInstruction: instruction,
+          pass1ModelOverrideId: pipeline.pass1ModelId,
+          polishModelOverrideId: pipeline.polishModelId,
         );
       } else {
         improvedText = await _cloudService.transcribeSinglePass(
           audioBytes!,
           'audio/wav',
           missionInstruction: instruction,
-          modelOverrideId: _settingsService.selectedModelId,
+          modelOverrideId: pipeline.pass1ModelId,
         );
       }
       // If state changed (e.g. cancelled), don't paste

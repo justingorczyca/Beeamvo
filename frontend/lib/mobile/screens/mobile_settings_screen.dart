@@ -161,6 +161,14 @@ class _MobileSettingsScreenState extends State<MobileSettingsScreen> {
       ...SystemPrompt.availablePrompts,
       ...settings.customPrompts,
     ];
+    // Dropdown gating follows the SELECTED style's effective pipeline: a
+    // style carrying overrides can apply when the global setup cannot (and
+    // vice versa), so resolve applicability for that style, not globally.
+    final selectedPrompt = SystemPrompt.getById(
+      settings.selectedPromptId,
+      customPrompts: settings.customPrompts,
+    );
+    final promptApplies = settings.promptAppliesFor(selectedPrompt);
     return Scaffold(
       backgroundColor: Theme.of(context).colorScheme.surface,
       appBar: AppBar(title: const Text('Settings')),
@@ -364,14 +372,14 @@ class _MobileSettingsScreenState extends State<MobileSettingsScreen> {
                     ),
                   )
                   .toList(),
-              onChanged: settings.promptIsApplied
+              onChanged: promptApplies
                   ? (value) {
                       if (value != null) settings.setSelectedPromptId(value);
                     }
                   : null,
               decoration: InputDecoration(
                 labelText: 'Prompt',
-                helperText: settings.promptIsApplied
+                helperText: promptApplies
                     ? null
                     : 'Default only with this model. Choose another model or turn on two-step refinement.',
               ),
@@ -384,7 +392,9 @@ class _MobileSettingsScreenState extends State<MobileSettingsScreen> {
                 for (final tone in ToneRefinement.values)
                   DropdownMenuItem(value: tone, child: Text(tone.displayName)),
               ],
-              onChanged: settings.promptIsApplied
+              // Tone follows the selected prompt, so it unlocks under the
+              // same per-style applicability.
+              onChanged: promptApplies
                   ? (tone) async {
                       if (tone == null) return;
                       await settings.setToneRefinement(tone);

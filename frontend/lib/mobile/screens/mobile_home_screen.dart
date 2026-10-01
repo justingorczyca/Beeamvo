@@ -94,6 +94,10 @@ class _MobileHomeScreenState extends State<MobileHomeScreen> {
       widget.settingsService.selectedPromptId,
       customPrompts: widget.settingsService.customPrompts,
     );
+    // The chip reflects the SELECTED style's effective pipeline: a style
+    // carrying overrides (forced two-step, prompt-capable pass-1 model) can
+    // apply even when the global setup cannot.
+    final promptApplies = widget.settingsService.promptAppliesFor(prompt);
     final state = controller.state;
     return Scaffold(
       backgroundColor: colors.surface,
@@ -117,14 +121,8 @@ class _MobileHomeScreenState extends State<MobileHomeScreen> {
                       ),
                       const Spacer(),
                       ActionChip(
-                        label: Text(
-                          widget.settingsService.promptIsApplied
-                              ? prompt.name
-                              : 'Raw',
-                        ),
-                        onPressed: widget.settingsService.promptIsApplied
-                            ? _openModePicker
-                            : null,
+                        label: Text(promptApplies ? prompt.name : 'Raw'),
+                        onPressed: promptApplies ? _openModePicker : null,
                         avatar: Icon(
                           Icons.tune,
                           size: 16,

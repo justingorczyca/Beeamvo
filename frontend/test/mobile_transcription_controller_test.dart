@@ -29,6 +29,9 @@ class FakeSettings extends SettingsService {
   String modelId;
   String promptId = 'standard';
   ToneRefinement tone = ToneRefinement.off;
+  // When set, serves as the resolved selected style (the real getter reads
+  // the private custom-prompt list, which this fake cannot populate).
+  SystemPrompt? promptOverride;
   final entries = <ClipboardHistoryEntry>[];
 
   @override
@@ -37,6 +40,9 @@ class FakeSettings extends SettingsService {
   ToneRefinement get toneRefinement => tone;
   @override
   String get selectedPromptId => promptId;
+  @override
+  SystemPrompt get selectedPrompt =>
+      promptOverride ?? SystemPrompt.getById(promptId);
   @override
   List<SystemPrompt> get customPrompts => const [];
   @override
@@ -162,6 +168,7 @@ class FakeCloud extends CloudTranscriptionService {
     CloudProvider? providerOverride,
   }) async {
     lastTranscribeProviderOverride = providerOverride;
+    lastPass1ModelOverrideId = modelOverrideId;
     transcribeCalls++;
     return 'raw result';
   }
@@ -174,12 +181,19 @@ class FakeCloud extends CloudTranscriptionService {
     String mimeType, {
     required SettingsService settings,
     String? missionInstruction,
+    String? pass1ModelOverrideId,
+    String? polishModelOverrideId,
   }) async {
-    final raw = await transcribeAudio(audio, mimeType);
+    final raw = await transcribeAudio(
+      audio,
+      mimeType,
+      modelOverrideId: pass1ModelOverrideId,
+    );
     return refineTranscript(
       raw,
       settings: settings,
       missionInstruction: missionInstruction,
+      polishModelOverrideId: polishModelOverrideId,
     );
   }
 
@@ -188,11 +202,16 @@ class FakeCloud extends CloudTranscriptionService {
     String rawText, {
     required SettingsService settings,
     String? missionInstruction,
+    String? polishModelOverrideId,
   }) async {
     lastMissionInstruction = missionInstruction;
+    lastPolishModelOverrideId = polishModelOverrideId;
     improveCalls++;
     return 'two pass result';
   }
+
+  String? lastPass1ModelOverrideId;
+  String? lastPolishModelOverrideId;
 }
 
 class _FakeClient implements CloudTranscriptionClient {
@@ -394,6 +413,41 @@ void main() {
     expect(denied.errorAction, MobileErrorAction.none);
     denied.dispose();
   });
+
+  test(
+    'per-style pipeline overrides thread through both mobile stages',
+    () async {
+      final styled = SystemPrompt(
+        id: 'styled',
+        name: 'Styled',
+        instruction: 'Write with flair.',
+        modelOverrideId: 'gemini-2.5-flash',
+        polishModelOverrideId: 'gemini-3.7-flash',
+        twoPassOverride: true,
+      );
+      final settings = FakeSettings()..promptOverride = styled;
+      final cloud = FakeCloud();
+      final controller = MobileTranscriptionController(
+        settingsService: settings,
+        cloudService: cloud,
+        usageStatsService: FakeUsageStats(),
+        recorder: FakeRecorder(),
+      );
+      addTearDown(controller.dispose);
+
+      await controller.toggleRecording();
+      await controller.toggleRecording();
+
+      // The style forces two-step although the global toggle is off, and
+      // pins both stage models for this request only.
+      expect(settings.twoPassTranscriptionEnabled, isFalse);
+      expect(cloud.transcribeCalls, 1);
+      expect(cloud.improveCalls, 1);
+      expect(cloud.lastPass1ModelOverrideId, 'gemini-2.5-flash');
+      expect(cloud.lastPolishModelOverrideId, 'gemini-3.7-flash');
+      expect(controller.resultText, 'two pass result');
+    },
+  );
 
   test('cloud failure can retry using the retained recording', () async {
     final cloud = FakeCloud()..fail = true;

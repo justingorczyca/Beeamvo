@@ -28,6 +28,42 @@ class LaunchAtStartupException implements Exception {
   String toString() => message;
 }
 
+/// The resolved pipeline one writing style runs on, after that style's
+/// per-style overrides (if any) are applied over the global transcription
+/// settings.
+///
+/// Value type produced by [SettingsService.resolvePipelineForPrompt]:
+/// [twoPass] is the effective transcription mode, [pass1ModelId] the model
+/// serving the audio first pass, and [polishModelId] the model serving the
+/// pass-2 polish (identical to [pass1ModelId]'s stage peer even when
+/// [twoPass] is false, so consumers never branch on null).
+class PromptPipeline {
+  final bool twoPass;
+  final String pass1ModelId;
+  final String polishModelId;
+
+  const PromptPipeline({
+    required this.twoPass,
+    required this.pass1ModelId,
+    required this.polishModelId,
+  });
+
+  @override
+  bool operator ==(Object other) =>
+      other is PromptPipeline &&
+      other.twoPass == twoPass &&
+      other.pass1ModelId == pass1ModelId &&
+      other.polishModelId == polishModelId;
+
+  @override
+  int get hashCode => Object.hash(twoPass, pass1ModelId, polishModelId);
+
+  @override
+  String toString() =>
+      'PromptPipeline(twoPass: $twoPass, pass1: $pass1ModelId, '
+      'polish: $polishModelId)';
+}
+
 /// Robust file-based settings storage.
 ///
 /// We use a JSON file in [getApplicationSupportDirectory] rather than
@@ -796,6 +832,93 @@ class SettingsService extends ChangeNotifier {
     _data[_kToneRefinement] = ToneRefinement.off.name;
     await _save();
     return true;
+  }
+
+  // ── Per-style pipeline overrides ──────────────────────────────────────────
+  //
+  // A custom writing style may override the global pipeline: the
+  // transcription mode, the pass-1 model, and the pass-2 polish model.
+  // Providers and credentials stay global; an override model id is honored
+  // only while it resolves inside the matching global catalog, exactly like
+  // the saved global preferences, so a stale id (or one from a provider the
+  // user switched away from) never reaches a request.
+  //
+  // Everything in this section is pure: no state is written, nothing throws
+  // before [initialize], and a style without overrides resolves to the
+  // global setup unchanged.
+
+  /// Resolves the pipeline [prompt] runs on.
+  ///
+  /// - [PromptPipeline.twoPass]: `prompt.twoPassOverride` when set, else the
+  ///   global [twoPassTranscriptionEnabled].
+  /// - [PromptPipeline.pass1ModelId]: `prompt.modelOverrideId` when it
+  ///   resolves within [primaryModels] (the same safety
+  ///   [resolvePrimaryModelId] applies to the global preference), else
+  ///   [selectedModelId]. On the Whisper backend the id is still resolved
+  ///   from the global cloud account but unused — local Whisper always
+  ///   serves the audio stage.
+  /// - [PromptPipeline.polishModelId]: `prompt.polishModelOverrideId` when
+  ///   it resolves within [refinementModels], else
+  ///   [twoPassRefinementModelId].
+  PromptPipeline resolvePipelineForPrompt(SystemPrompt prompt) {
+    final pass1Models = primaryModels;
+    final modelOverride = prompt.modelOverrideId;
+    final pass1ModelId =
+        modelOverride != null &&
+            pass1Models.any((model) => model.id == modelOverride)
+        ? modelOverride
+        : selectedModelId;
+
+    final polishModels = refinementModels;
+    final polishOverride = prompt.polishModelOverrideId;
+    final polishModelId =
+        polishOverride != null &&
+            polishModels.any((model) => model.id == polishOverride)
+        ? polishOverride
+        : twoPassRefinementModelId;
+
+    return PromptPipeline(
+      twoPass: prompt.twoPassOverride ?? twoPassTranscriptionEnabled,
+      pass1ModelId: pass1ModelId,
+      polishModelId: polishModelId,
+    );
+  }
+
+  /// Whether [prompt] shapes the output under the pipeline it runs on —
+  /// the per-style counterpart of [promptIsApplied].
+  ///
+  /// True when the effective pipeline is two-pass, or when the single pass
+  /// runs on the cloud backend with a prompt-capable model. A style with no
+  /// overrides resolves exactly like [promptIsApplied].
+  bool promptAppliesFor(SystemPrompt prompt) {
+    final pipeline = resolvePipelineForPrompt(prompt);
+    return pipeline.twoPass ||
+        (transcriptionBackend == TranscriptionBackend.cloud &&
+            !AppConfig.getModelById(pipeline.pass1ModelId).isTranscriptionOnly);
+  }
+
+  /// Whether every stage of [prompt]'s effective pipeline has local
+  /// credentials — the per-style counterpart of [isTranscriptionReady].
+  bool pipelineReadyForPrompt(SystemPrompt prompt) =>
+      pipelineIssueForPrompt(prompt) == null;
+
+  /// User-facing reason [prompt]'s pipeline cannot run, or null when every
+  /// stage in use has local credentials — the per-style counterpart of
+  /// [transcriptionSetupIssue]. Mirrors its logic for the effective stages:
+  /// the cloud backend needs transcription-account credentials, and an
+  /// effective two-pass needs refinement-provider credentials.
+  String? pipelineIssueForPrompt(SystemPrompt prompt) {
+    final pipeline = resolvePipelineForPrompt(prompt);
+    if (transcriptionBackend == TranscriptionBackend.cloud &&
+        !hasCloudCredentials) {
+      return '${_credentialAction(cloudProvider)} in Settings to start '
+          'dictating.';
+    }
+    if (pipeline.twoPass && !hasRefinementCredentials) {
+      return '${_credentialAction(refinementProvider)} in Settings to use it '
+          'for two-step polish.';
+    }
+    return null;
   }
 
   // ── Hotkey ────────────────────────────────────────────────────────────────

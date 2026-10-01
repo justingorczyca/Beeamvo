@@ -7,11 +7,14 @@ import 'settings/settings_shared.dart';
 
 /// Whether [prompt] may be chosen in the mode popup right now. Default is
 /// always selectable; every other style requires a pipeline that applies
-/// prompts (cloud prompt-capable model, or two-step refinement).
+/// prompts (cloud prompt-capable model, or two-step refinement) — resolved
+/// for THAT style, so a style carrying overrides (forced two-step, or a
+/// prompt-capable pass-1 model) stays usable even when the global setup
+/// cannot apply styles, and vice versa.
 bool promptSelectableInModePopup(
   SettingsService settings,
   SystemPrompt prompt,
-) => prompt.id == SystemPrompt.defaultId || settings.promptIsApplied;
+) => prompt.id == SystemPrompt.defaultId || settings.promptAppliesFor(prompt);
 
 /// Next index from [current] (stepping in the direction of [delta].sign)
 /// whose prompt is selectable. Returns [current] when no selectable index

@@ -84,15 +84,20 @@ class TrayService with TrayListener {
       ..._settingsService.customPrompts,
     ];
 
-    // Prompts only shape the output when a cloud model is in the pipeline.
-    final promptsApply = _settingsService.promptIsApplied;
+    // A style only shapes the output when ITS effective pipeline applies
+    // prompts — the global setup, or the style's own overrides (forced
+    // two-step, or a prompt-capable pass-1 model). Resolved per prompt so a
+    // style with overrides can stay enabled while the global setup locks
+    // the rest, and vice versa.
     final promptItems = <MenuItem>[
       for (final prompt in allPrompts)
         MenuItem(
           key: 'prompt_${prompt.id}',
           label: prompt.name,
           checked: currentPromptId == prompt.id,
-          disabled: !promptsApply && prompt.id != SystemPrompt.defaultId,
+          disabled:
+              !_settingsService.promptAppliesFor(prompt) &&
+              prompt.id != SystemPrompt.defaultId,
         ),
     ];
 

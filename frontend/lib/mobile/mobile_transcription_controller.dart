@@ -217,9 +217,14 @@ class MobileTranscriptionController extends ChangeNotifier {
         prompt.instruction,
         settingsService.toneRefinement,
       );
-      final text = settingsService.twoPassTranscriptionEnabled
-          ? await _twoPass(audio, instruction)
-          : await _singlePass(audio, instruction);
+      // Resolve the pipeline once per stop: the selected style's overrides
+      // (forced one/two-step, pinned models) applied over the global
+      // settings. A style without overrides resolves to exactly the global
+      // pipeline, so the requests below are unchanged.
+      final pipeline = settingsService.resolvePipelineForPrompt(prompt);
+      final text = pipeline.twoPass
+          ? await _twoPass(audio, instruction, pipeline)
+          : await _singlePass(audio, instruction, pipeline);
       if (_disposed || operation != _operation) return;
       await Clipboard.setData(ClipboardData(text: text));
       await settingsService.addClipboardEntry(text);
@@ -242,21 +247,31 @@ class MobileTranscriptionController extends ChangeNotifier {
     }
   }
 
-  Future<String> _singlePass(Uint8List audio, String instruction) {
+  Future<String> _singlePass(
+    Uint8List audio,
+    String instruction,
+    PromptPipeline pipeline,
+  ) {
     return cloudService.transcribeSinglePass(
       audio,
       'audio/wav',
       missionInstruction: instruction,
-      modelOverrideId: settingsService.selectedModelId,
+      modelOverrideId: pipeline.pass1ModelId,
     );
   }
 
-  Future<String> _twoPass(Uint8List audio, String instruction) async {
+  Future<String> _twoPass(
+    Uint8List audio,
+    String instruction,
+    PromptPipeline pipeline,
+  ) async {
     return cloudService.transcribeTwoPass(
       audio,
       'audio/wav',
       settings: settingsService,
       missionInstruction: instruction,
+      pass1ModelOverrideId: pipeline.pass1ModelId,
+      polishModelOverrideId: pipeline.polishModelId,
     );
   }
 

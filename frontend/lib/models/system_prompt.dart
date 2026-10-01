@@ -2,15 +2,38 @@ import '../services/transcription_result_guard.dart';
 import 'enums.dart';
 
 /// A writing style: the mission instruction that shapes the transcript.
+///
+/// Custom styles may additionally carry pipeline overrides that replace the
+/// global transcription settings while the style is active: the transcription
+/// mode (one-pass vs two-pass), the pass-1 model, and the pass-2 polish
+/// model. Built-in styles never carry overrides (all three fields stay
+/// `null`, i.e. "follow the global setup"). Providers and credentials stay
+/// global — only these model ids and the mode flag are per-style.
 class SystemPrompt {
   final String id;
   final String name;
   final String instruction;
 
+  /// Pass-1 (audio) model override. Must resolve within the global
+  /// transcription account's [AppConfig.audioModelsForProvider] list to be
+  /// honored; anything else falls back to the global selection.
+  final String? modelOverrideId;
+
+  /// Pass-2 (polish) model override. Must resolve within the global
+  /// refinement provider's prompt-capable model list to be honored.
+  final String? polishModelOverrideId;
+
+  /// Transcription-mode override for this style: `true` forces two-pass,
+  /// `false` forces one-pass, `null` follows the global setting.
+  final bool? twoPassOverride;
+
   const SystemPrompt({
     required this.id,
     required this.name,
     required this.instruction,
+    this.modelOverrideId,
+    this.polishModelOverrideId,
+    this.twoPassOverride,
   });
 
   static const String defaultId = 'standard';
@@ -277,18 +300,72 @@ FORMAT:
     );
   }
 
+  /// Serializes the style for persistence. The core keys are always present;
+  /// the pipeline-override keys are written only when set, so the stored
+  /// JSON of a style without overrides stays byte-identical to what earlier
+  /// releases wrote.
   Map<String, dynamic> toMap() {
-    return {'id': id, 'name': name, 'instruction': instruction};
+    final Map<String, dynamic> map = {
+      'id': id,
+      'name': name,
+      'instruction': instruction,
+    };
+    if (modelOverrideId != null) map['model_override_id'] = modelOverrideId;
+    if (polishModelOverrideId != null) {
+      map['polish_model_override_id'] = polishModelOverrideId;
+    }
+    if (twoPassOverride != null) map['two_pass_override'] = twoPassOverride;
+    return map;
   }
 
   factory SystemPrompt.fromMap(Map<String, dynamic> map) {
     final id = map['id'];
     final name = map['name'];
     final instruction = map['instruction'];
+    final modelOverrideId = map['model_override_id'];
+    final polishModelOverrideId = map['polish_model_override_id'];
+    final twoPassOverride = map['two_pass_override'];
     return SystemPrompt(
       id: id is String ? id : '',
       name: name is String ? name : '',
       instruction: instruction is String ? instruction : '',
+      modelOverrideId: modelOverrideId is String ? modelOverrideId : null,
+      polishModelOverrideId: polishModelOverrideId is String
+          ? polishModelOverrideId
+          : null,
+      twoPassOverride: twoPassOverride is bool ? twoPassOverride : null,
+    );
+  }
+
+  /// Copies the style with the given replacements. Because the three
+  /// pipeline overrides are nullable, passing a new value alone cannot clear
+  /// one back to `null` ("follow the global setup") — set the matching
+  /// `clear…` flag instead. A `clear…` flag always wins over a value passed
+  /// in the same call.
+  SystemPrompt copyWith({
+    String? id,
+    String? name,
+    String? instruction,
+    String? modelOverrideId,
+    String? polishModelOverrideId,
+    bool? twoPassOverride,
+    bool clearModelOverride = false,
+    bool clearPolishModelOverride = false,
+    bool clearTwoPassOverride = false,
+  }) {
+    return SystemPrompt(
+      id: id ?? this.id,
+      name: name ?? this.name,
+      instruction: instruction ?? this.instruction,
+      modelOverrideId: clearModelOverride
+          ? null
+          : modelOverrideId ?? this.modelOverrideId,
+      polishModelOverrideId: clearPolishModelOverride
+          ? null
+          : polishModelOverrideId ?? this.polishModelOverrideId,
+      twoPassOverride: clearTwoPassOverride
+          ? null
+          : twoPassOverride ?? this.twoPassOverride,
     );
   }
 }

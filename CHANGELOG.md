@@ -19,6 +19,8 @@ Initial public release.
 - Two-step refinement: local Whisper or Gemini/Vertex transcribes the audio, then a freely chosen polish provider (Gemini, Vertex AI, OpenAI, ChatGPT/Codex, or xAI Grok) refines the transcript with its own model, thinking level, and credentials; polish providers receive text only, never audio
 - Clear per-account setup messages when a credential needed by any pipeline stage is missing, plus polish-account checks in Troubleshooting
 - Built-in writing styles (Standard, Concise, Smart, Professional, and more) and unlimited custom styles
+- Custom styles can start from a built-in base: the New Style dialog's "Start from" picker seeds the instruction (and suggests a name) while leaving everything editable before creation
+- Per-style pipeline overrides: a custom style can force one-pass or two-pass transcription and pick its own transcription and polish models, overriding the global Transcription settings whenever it is active; overrides resolve safely to global when a stored model no longer fits the account, recording is gated on the credentials of every effective stage, and styles that force two-pass stay selectable even when the global pipeline cannot apply styles
 - Clipboard history with full-text search, pinning, a popup hotkey (`Ctrl+Shift+H`), and a best-effort sensitive-text filter
 - System tray menu for switching writing styles
 - Onboarding wizard, settings UI, and usage statistics dashboard

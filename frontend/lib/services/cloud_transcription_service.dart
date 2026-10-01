@@ -182,11 +182,14 @@ class CloudTranscriptionService {
 
   /// Pass-2 role captured from [settings]: provider, model, and the polish
   /// thinking level, resolved explicitly so clients never fall back to the
-  /// first-pass level of the same model.
+  /// first-pass level of the same model. A non-null [polishModelOverrideId]
+  /// replaces the stored refinement model for this request only — still
+  /// prompt-capability checked, with its thinking level resolved against the
+  /// override id.
   ({CloudProvider provider, String modelId, GeminiThinkingLevel? thinking})
-  _refinementStage(SettingsService settings) {
+  _refinementStage(SettingsService settings, {String? polishModelOverrideId}) {
     final provider = settings.refinementProvider;
-    final modelId = settings.twoPassRefinementModelId;
+    final modelId = polishModelOverrideId ?? settings.twoPassRefinementModelId;
     final model = _assertPromptCapable(modelId, provider);
     return (
       provider: provider,
@@ -221,16 +224,18 @@ class CloudTranscriptionService {
   }
 
   /// Pass 2 alone, for transcripts produced locally (offline Whisper): the
-  /// refinement provider, model and thinking level from [settings].
+  /// refinement provider, model and thinking level from [settings], or from
+  /// [polishModelOverrideId] when a writing style pins the polish model.
   Future<String> refineTranscript(
     String rawText, {
     required SettingsService settings,
     String? missionInstruction,
+    String? polishModelOverrideId,
   }) async {
     _ensureNotDisposed();
     return _refine(
       rawText,
-      _refinementStage(settings),
+      _refinementStage(settings, polishModelOverrideId: polishModelOverrideId),
       missionInstruction: missionInstruction,
     );
   }
@@ -314,18 +319,28 @@ class CloudTranscriptionService {
   /// an invalid/empty first transcript never reaches the refinement provider.
   /// Pass 1 is always the Gemini-family [SettingsService.cloudProvider]; pass
   /// 2 may be any provider and only ever receives transcript text.
+  ///
+  /// A non-null [pass1ModelOverrideId] replaces the stored first-pass model
+  /// for this request (still validated for audio like any pass-1 id), and a
+  /// non-null [polishModelOverrideId] replaces the stored refinement model;
+  /// `null` for either keeps [settings] in charge of that stage.
   Future<String> transcribeTwoPass(
     Uint8List audioData,
     String mimeType, {
     required SettingsService settings,
     String? missionInstruction,
+    String? pass1ModelOverrideId,
+    String? polishModelOverrideId,
   }) async {
     _ensureNotDisposed();
     final firstProvider = settings.cloudProvider;
-    final firstModel = settings.selectedModelId;
+    final firstModel = pass1ModelOverrideId ?? settings.selectedModelId;
     final firstThinking = settings.getThinkingLevelForModel(firstModel);
     _requestModel(firstProvider, firstModel, audio: true);
-    final refinement = _refinementStage(settings);
+    final refinement = _refinementStage(
+      settings,
+      polishModelOverrideId: polishModelOverrideId,
+    );
     final raw = await transcribeAudio(
       audioData,
       mimeType,
