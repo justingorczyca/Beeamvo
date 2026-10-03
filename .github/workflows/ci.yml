@@ -28,7 +28,7 @@ jobs:
         working-directory: frontend
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       # Deterministic pub cache location so it can be cached across all jobs/OSes.
       # (`runner.temp` is not available in job-level `env`, so export it here.)
@@ -87,7 +87,7 @@ jobs:
         working-directory: frontend
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       # Deterministic pub cache location so it can be cached across all jobs/OSes.
       # (`runner.temp` is not available in job-level `env`, so export it here.)
